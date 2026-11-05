@@ -34,7 +34,7 @@ test("safe_stop causes use the plain-language text", () => {
 test("permission error names what to grant; timeout and other failures are distinct", () => {
   assert.match(axErrorMessage(2, "ISHARA_PERMISSION: Accessibility"), /Accessibility permission is missing.*Terminal/);
   assert.match(axErrorMessage(null, "", true), /took longer than 6 s/);
-  assert.match(axErrorMessage(1, "ishara-ax: no readable window\n"), /exit 1: ishara-ax: no readable window/);
+  assert.match(axErrorMessage(1, "ishara-ax: no readable window\n"), /exit 1\): ishara-ax: no readable window/);
 });
 test("normalizeOutline drops duplicates, bad rows, renumbers ids and rebuilds text", () => {
   const o = normalizeOutline({
