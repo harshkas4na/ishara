@@ -1,0 +1,277 @@
+{
+ "source": "browser",
+ "url": "http://127.0.0.1:7777/test/long-article.html",
+ "title": "A plain guide to layer 2 | Demo Swap",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "A plain guide to layer 2",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 80,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "h",
+   "text": "Why layer 2 exists",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 124,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "p",
+   "text": "Layer 2 networks exist because Ethereum mainnet can only process a limited number of transactions per second, which keeps fees high when demand rises.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 168,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "h",
+   "text": "How rollups work",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 212,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t4",
+   "kind": "p",
+   "text": "A rollup executes transactions off the main chain and posts compressed data back to Ethereum. Optimistic rollups assume transactions are valid and allow a challenge window of about seven days.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 256,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t5",
+   "kind": "h",
+   "text": "Zero-knowledge rollups",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 300,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t6",
+   "kind": "p",
+   "text": "Zero-knowledge rollups instead post a cryptographic proof that the batch was computed correctly, so withdrawals can finish much faster.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 344,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t7",
+   "kind": "h",
+   "text": "Where the fees go",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 388,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t8",
+   "kind": "p",
+   "text": "Fees on a rollup have two parts: the cost of execution on the layer 2, which is tiny, and the cost of posting data to Ethereum, which dominates.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 432,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t9",
+   "kind": "h",
+   "text": "Blobs and Dencun",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 476,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t10",
+   "kind": "p",
+   "text": "Since the Dencun upgrade in March 2024, rollups post data in blobs, which cut layer 2 fees by roughly an order of magnitude.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 520,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t11",
+   "kind": "h",
+   "text": "Bridges",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 564,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t12",
+   "kind": "p",
+   "text": "Bridges move assets between chains. A canonical bridge is run by the rollup itself; third-party bridges are faster but add trust assumptions.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 608,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t13",
+   "kind": "h",
+   "text": "Sequencers",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 652,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t14",
+   "kind": "p",
+   "text": "Sequencers order transactions on most rollups today. Most are run by a single company, which is a centralisation risk the teams plan to remove.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 696,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t15",
+   "kind": "h",
+   "text": "Forced inclusion",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 740,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t16",
+   "kind": "p",
+   "text": "If a sequencer goes offline, users can usually force transactions through the contract on Ethereum, though it is slower and costs more.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 784,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t17",
+   "kind": "h",
+   "text": "Choosing one",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 828,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t18",
+   "kind": "p",
+   "text": "Choosing a layer 2 depends on what you need: low fees, fast withdrawals, the apps you want to use, or the strength of the security model.",
+   "inView": false,
+   "rect": {
+    "x": 360,
+    "y": 872,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t19",
+   "kind": "h",
+   "text": "A rule of thumb",
+   "inView": false,
+   "rect": {
+    "x": 360,
+    "y": 916,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t20",
+   "kind": "p",
+   "text": "For small payments, almost any rollup is fine. For large sums, look at how decentralised the sequencer and the upgrade keys are.",
+   "inView": false,
+   "rect": {
+    "x": 360,
+    "y": 960,
+    "w": 760,
+    "h": 28
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "Back to guides",
+   "role": "link",
+   "rect": {
+    "x": 360,
+    "y": 1008,
+    "w": 220,
+    "h": 32
+   }
+  }
+ ],
+ "errors": []
+}

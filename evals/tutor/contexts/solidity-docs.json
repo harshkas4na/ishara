@@ -1,0 +1,672 @@
+{
+ "source": "browser",
+ "url": "https://docs.soliditylang.org/en/latest/",
+ "title": "Solidity — Solidity 0.8.39-develop documentation",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "Solidity",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 90,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "p",
+   "text": "Solidity is an object-oriented, high-level language for implementing smart contracts. Smart contracts are programs that govern the behavior of accounts within the Ethereum state.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 160,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "p",
+   "text": "Solidity is a curly-bracket language designed to target the Ethereum Virtual Machine (EVM). It is influenced by C++, Python, and JavaScript.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 230,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "p",
+   "text": "Solidity is statically typed, supports inheritance, libraries, and complex user-defined types, among other features.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 300,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t4",
+   "kind": "p",
+   "text": "With Solidity, you can create contracts for uses such as voting, crowdfunding, blind auctions, and multi-signature wallets.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 370,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t5",
+   "kind": "p",
+   "text": "When deploying contracts, you should use the latest released version of Solidity. Apart from exceptional cases, only the latest version receives security fixes.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 440,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t6",
+   "kind": "p",
+   "text": "Warning: The Solidity 0.8.x release introduced a lot of breaking changes. Make sure you read the full list.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 510,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t7",
+   "kind": "p",
+   "text": "Ideas for improving Solidity or this documentation are always welcome, read our contributors guide for more details.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 580,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t8",
+   "kind": "p",
+   "text": "Hint: You can download this documentation as PDF, HTML or Epub by clicking on the versions flyout menu in the bottom-left corner and selecting the preferred download format.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 650,
+    "w": 760,
+    "h": 44
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "Solidity home",
+   "role": "link",
+   "rect": {
+    "x": 127,
+    "y": 16,
+    "w": 25,
+    "h": 40
+   }
+  },
+  {
+   "id": "b1",
+   "label": "Blog",
+   "role": "link",
+   "rect": {
+    "x": 806,
+    "y": 21,
+    "w": 49,
+    "h": 30
+   }
+  },
+  {
+   "id": "b2",
+   "label": "Documentation",
+   "role": "link",
+   "rect": {
+    "x": 856,
+    "y": 21,
+    "w": 124,
+    "h": 30
+   }
+  },
+  {
+   "id": "b3",
+   "label": "Use cases",
+   "role": "link",
+   "rect": {
+    "x": 980,
+    "y": 21,
+    "w": 91,
+    "h": 30
+   }
+  },
+  {
+   "id": "b4",
+   "label": "Contribute",
+   "role": "link",
+   "rect": {
+    "x": 1071,
+    "y": 21,
+    "w": 99,
+    "h": 30
+   }
+  },
+  {
+   "id": "b5",
+   "label": "About",
+   "role": "link",
+   "rect": {
+    "x": 1171,
+    "y": 21,
+    "w": 58,
+    "h": 30
+   }
+  },
+  {
+   "id": "b6",
+   "label": "Forum",
+   "role": "link",
+   "rect": {
+    "x": 1229,
+    "y": 21,
+    "w": 74,
+    "h": 30
+   }
+  },
+  {
+   "id": "b7",
+   "label": "Toggle light dark mode",
+   "role": "button",
+   "rect": {
+    "x": 1309,
+    "y": 22,
+    "w": 28,
+    "h": 28
+   }
+  },
+  {
+   "id": "b8",
+   "label": "",
+   "role": "select",
+   "rect": {
+    "x": 178,
+    "y": 82,
+    "w": 137,
+    "h": 36
+   }
+  },
+  {
+   "id": "b9",
+   "label": "",
+   "role": "select",
+   "rect": {
+    "x": 161,
+    "y": 124,
+    "w": 172,
+    "h": 36
+   }
+  },
+  {
+   "id": "b10",
+   "label": "Search docs",
+   "role": "input",
+   "rect": {
+    "x": 108,
+    "y": 175,
+    "w": 274,
+    "h": 34
+   }
+  },
+  {
+   "id": "b11",
+   "label": "Introduction to Smart Contracts",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 267,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b12",
+   "label": "Solidity by Example",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 300,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b13",
+   "label": "Installing the Solidity Compiler",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 333,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b14",
+   "label": "Layout of a Solidity Source File",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 446,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b15",
+   "label": "Structure of a Contract",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 479,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b16",
+   "label": "Types",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 512,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b17",
+   "label": "Units and Globally Available Variables",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 545,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b18",
+   "label": "Expressions and Control Structures",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 598,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b19",
+   "label": "Contracts",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 651,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b20",
+   "label": "Inline Assembly",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 684,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b21",
+   "label": "Cheatsheet",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 717,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b22",
+   "label": "Language Grammar",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 749,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b23",
+   "label": "Using the Compiler",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 862,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b24",
+   "label": "Analysing the Compiler Output",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 895,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b25",
+   "label": "Solidity IR-based Codegen Changes",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 928,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b26",
+   "label": "Layout of State Variables in Storage and Transient Storage",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1061,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b27",
+   "label": "Layout in Memory",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1114,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b28",
+   "label": "Layout of Call Data",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1147,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b29",
+   "label": "Cleaning Up Variables",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1180,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b30",
+   "label": "Source Mappings",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1213,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b31",
+   "label": "The Optimizer",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1246,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b32",
+   "label": "Contract Metadata",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1279,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b33",
+   "label": "Contract ABI Specification",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1312,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b34",
+   "label": "Security Considerations",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1425,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b35",
+   "label": "List of Known Bugs",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1458,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b36",
+   "label": "Frequently Reported Non-Bugs",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1491,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b37",
+   "label": "Solidity v0.5.0 Breaking Changes",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1524,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b38",
+   "label": "Solidity v0.6.0 Breaking Changes",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1576,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b39",
+   "label": "Solidity v0.7.0 Breaking Changes",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1629,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b40",
+   "label": "Solidity v0.8.0 Breaking Changes",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1682,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b41",
+   "label": "NatSpec Format",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1815,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b42",
+   "label": "SMTChecker and Formal Verification",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1848,
+    "w": 300,
+    "h": 53
+   }
+  },
+  {
+   "id": "b43",
+   "label": "Yul",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1901,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b44",
+   "label": "Import Path Resolution",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 1934,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b45",
+   "label": "Style Guide",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 2047,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b46",
+   "label": "Common Patterns",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 2080,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b47",
+   "label": "Resources",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 2113,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b48",
+   "label": "Contributing",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 2146,
+    "w": 300,
+    "h": 33
+   }
+  },
+  {
+   "id": "b49",
+   "label": "Language Influences",
+   "role": "link",
+   "rect": {
+    "x": 95,
+    "y": 2179,
+    "w": 300,
+    "h": 33
+   }
+  }
+ ],
+ "errors": []
+}

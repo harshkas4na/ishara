@@ -1,0 +1,653 @@
+{
+ "source": "browser",
+ "url": "https://en.wikipedia.org/wiki/Ethereum",
+ "title": "Ethereum - Wikipedia",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "Ethereum",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 90,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "p",
+   "text": "Ethereum is a decentralized blockchain with smart contract functionality. Ether (ETH) is the native cryptocurrency of the platform. Among cryptocurrencies, ether is second only to bitcoin in market capitalization.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 160,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "p",
+   "text": "In 2022, Ethereum transitioned its consensus mechanism from proof-of-work (PoW) to proof-of-stake (PoS) in an update known as the Merge, which reduced Ethereum's energy usage by 99%.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 230,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "p",
+   "text": "The idea of Ethereum was proposed by Vitalik Buterin in late 2013. Development was crowdfunded in 2014, and the network went live on 30 July 2015.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 300,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t4",
+   "kind": "h",
+   "text": "History",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 370,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t5",
+   "kind": "p",
+   "text": "Ethereum was conceived in 2013 by programmer Vitalik Buterin. Additional founders of Ethereum included Gavin Wood, Charles Hoskinson, Anthony Di Iorio and Joseph Lubin.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 440,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t6",
+   "kind": "p",
+   "text": "In 2016, a smart contract called The DAO was exploited, and about 3.6 million ether was drained. The community chose a hard fork to reverse it, which created Ethereum Classic from the chain that did not fork.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 510,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t7",
+   "kind": "h",
+   "text": "Design",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 580,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t8",
+   "kind": "p",
+   "text": "Ethereum's code is run on the Ethereum Virtual Machine (EVM), and smart contracts are mostly written in Solidity. Users pay gas, denominated in gwei, to run transactions.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 650,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t9",
+   "kind": "p",
+   "text": "Staking requires 32 ETH per validator. Validators propose and attest to blocks and can be penalised (slashed) for misbehaviour.",
+   "inView": false,
+   "rect": {
+    "x": 360,
+    "y": 720,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t10",
+   "kind": "h",
+   "text": "Applications",
+   "inView": false,
+   "rect": {
+    "x": 360,
+    "y": 790,
+    "w": 760,
+    "h": 44
+   }
+  },
+  {
+   "id": "t11",
+   "kind": "p",
+   "text": "Applications on Ethereum include decentralized finance (DeFi), non-fungible tokens (NFTs) and stablecoins.",
+   "inView": false,
+   "rect": {
+    "x": 360,
+    "y": 860,
+    "w": 760,
+    "h": 44
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "Search Wikipedia",
+   "role": "input",
+   "rect": {
+    "x": 266,
+    "y": -235,
+    "w": 404,
+    "h": 32
+   }
+  },
+  {
+   "id": "b1",
+   "label": "Search",
+   "role": "button",
+   "rect": {
+    "x": 669,
+    "y": -235,
+    "w": 71,
+    "h": 32
+   }
+  },
+  {
+   "id": "b2",
+   "label": "Donate",
+   "role": "link",
+   "rect": {
+    "x": 1228,
+    "y": -227,
+    "w": 45,
+    "h": 16
+   }
+  },
+  {
+   "id": "b3",
+   "label": "Create account",
+   "role": "link",
+   "rect": {
+    "x": 1281,
+    "y": -227,
+    "w": 95,
+    "h": 16
+   }
+  },
+  {
+   "id": "b4",
+   "label": "Log in",
+   "role": "link",
+   "rect": {
+    "x": 1384,
+    "y": -227,
+    "w": 38,
+    "h": 16
+   }
+  },
+  {
+   "id": "b6",
+   "label": "Hide Contents",
+   "role": "button",
+   "rect": {
+    "x": 133,
+    "y": 25,
+    "w": 39,
+    "h": 22
+   }
+  },
+  {
+   "id": "b7",
+   "label": "(Top)",
+   "role": "link",
+   "rect": {
+    "x": 60,
+    "y": 61,
+    "w": 164,
+    "h": 28
+   }
+  },
+  {
+   "id": "b8",
+   "label": "History",
+   "role": "link",
+   "rect": {
+    "x": 60,
+    "y": 89,
+    "w": 164,
+    "h": 28
+   }
+  },
+  {
+   "id": "b9",
+   "label": "Toggle History subsection",
+   "role": "button",
+   "rect": {
+    "x": 37,
+    "y": 90,
+    "w": 22,
+    "h": 22
+   }
+  },
+  {
+   "id": "b10",
+   "label": "Design",
+   "role": "link",
+   "rect": {
+    "x": 60,
+    "y": 117,
+    "w": 164,
+    "h": 28
+   }
+  },
+  {
+   "id": "b11",
+   "label": "Toggle Design subsection",
+   "role": "button",
+   "rect": {
+    "x": 37,
+    "y": 118,
+    "w": 22,
+    "h": 22
+   }
+  },
+  {
+   "id": "b12",
+   "label": "Applications",
+   "role": "link",
+   "rect": {
+    "x": 60,
+    "y": 145,
+    "w": 164,
+    "h": 28
+   }
+  },
+  {
+   "id": "b13",
+   "label": "Toggle Applications subsection",
+   "role": "button",
+   "rect": {
+    "x": 37,
+    "y": 146,
+    "w": 22,
+    "h": 22
+   }
+  },
+  {
+   "id": "b14",
+   "label": "Legal status and regulation",
+   "role": "link",
+   "rect": {
+    "x": 60,
+    "y": 173,
+    "w": 164,
+    "h": 44
+   }
+  },
+  {
+   "id": "b15",
+   "label": "Notes",
+   "role": "link",
+   "rect": {
+    "x": 60,
+    "y": 217,
+    "w": 164,
+    "h": 28
+   }
+  },
+  {
+   "id": "b16",
+   "label": "References",
+   "role": "link",
+   "rect": {
+    "x": 60,
+    "y": 245,
+    "w": 164,
+    "h": 28
+   }
+  },
+  {
+   "id": "b17",
+   "label": "External links",
+   "role": "link",
+   "rect": {
+    "x": 60,
+    "y": 273,
+    "w": 164,
+    "h": 28
+   }
+  },
+  {
+   "id": "b19",
+   "label": "Article",
+   "role": "link",
+   "rect": {
+    "x": 264,
+    "y": -123,
+    "w": 39,
+    "h": 32
+   }
+  },
+  {
+   "id": "b20",
+   "label": "Talk",
+   "role": "link",
+   "rect": {
+    "x": 319,
+    "y": -123,
+    "w": 25,
+    "h": 32
+   }
+  },
+  {
+   "id": "b21",
+   "label": "Read",
+   "role": "link",
+   "rect": {
+    "x": 925,
+    "y": -123,
+    "w": 33,
+    "h": 32
+   }
+  },
+  {
+   "id": "b22",
+   "label": "View source",
+   "role": "link",
+   "rect": {
+    "x": 975,
+    "y": -123,
+    "w": 76,
+    "h": 32
+   }
+  },
+  {
+   "id": "b23",
+   "label": "View history",
+   "role": "link",
+   "rect": {
+    "x": 1067,
+    "y": -123,
+    "w": 75,
+    "h": 32
+   }
+  },
+  {
+   "id": "b24",
+   "label": "Save",
+   "role": "link",
+   "rect": {
+    "x": 1150,
+    "y": -123,
+    "w": 32,
+    "h": 32
+   }
+  },
+  {
+   "id": "b25",
+   "label": "Hide Appearance",
+   "role": "button",
+   "rect": {
+    "x": 1338,
+    "y": 25,
+    "w": 39,
+    "h": 22
+   }
+  },
+  {
+   "id": "b26",
+   "label": "This article is semi-protected.",
+   "role": "link",
+   "rect": {
+    "x": 1186,
+    "y": -79,
+    "w": 20,
+    "h": 16
+   }
+  },
+  {
+   "id": "b27",
+   "label": "Original author(s)",
+   "role": "link",
+   "rect": {
+    "x": 904,
+    "y": 241,
+    "w": 118,
+    "h": 16
+   }
+  },
+  {
+   "id": "b28",
+   "label": "Vitalik Buterin",
+   "role": "link",
+   "rect": {
+    "x": 1043,
+    "y": 241,
+    "w": 86,
+    "h": 16
+   }
+  },
+  {
+   "id": "b29",
+   "label": "Gavin Wood",
+   "role": "link",
+   "rect": {
+    "x": 1043,
+    "y": 262,
+    "w": 77,
+    "h": 16
+   }
+  },
+  {
+   "id": "b30",
+   "label": "Stable release",
+   "role": "link",
+   "rect": {
+    "x": 904,
+    "y": 336,
+    "w": 95,
+    "h": 16
+   }
+  },
+  {
+   "id": "b31",
+   "label": "[1]",
+   "role": "link",
+   "rect": {
+    "x": 1174,
+    "y": 355,
+    "w": 13,
+    "h": 13
+   }
+  },
+  {
+   "id": "b32",
+   "label": "Bytecode",
+   "role": "link",
+   "rect": {
+    "x": 1089,
+    "y": 409,
+    "w": 59,
+    "h": 16
+   }
+  },
+  {
+   "id": "b33",
+   "label": "Written in",
+   "role": "link",
+   "rect": {
+    "x": 904,
+    "y": 435,
+    "w": 65,
+    "h": 16
+   }
+  },
+  {
+   "id": "b34",
+   "label": "Go",
+   "role": "link",
+   "rect": {
+    "x": 1043,
+    "y": 435,
+    "w": 19,
+    "h": 16
+   }
+  },
+  {
+   "id": "b35",
+   "label": "Rust",
+   "role": "link",
+   "rect": {
+    "x": 1069,
+    "y": 435,
+    "w": 29,
+    "h": 16
+   }
+  },
+  {
+   "id": "b36",
+   "label": "C#",
+   "role": "link",
+   "rect": {
+    "x": 1106,
+    "y": 435,
+    "w": 18,
+    "h": 16
+   }
+  },
+  {
+   "id": "b37",
+   "label": "C++",
+   "role": "link",
+   "rect": {
+    "x": 1132,
+    "y": 435,
+    "w": 27,
+    "h": 16
+   }
+  },
+  {
+   "id": "b38",
+   "label": "Java",
+   "role": "link",
+   "rect": {
+    "x": 1043,
+    "y": 456,
+    "w": 30,
+    "h": 16
+   }
+  },
+  {
+   "id": "b39",
+   "label": "Python",
+   "role": "link",
+   "rect": {
+    "x": 1080,
+    "y": 456,
+    "w": 44,
+    "h": 16
+   }
+  },
+  {
+   "id": "b40",
+   "label": "Nim",
+   "role": "link",
+   "rect": {
+    "x": 1132,
+    "y": 456,
+    "w": 25,
+    "h": 16
+   }
+  },
+  {
+   "id": "b41",
+   "label": "TypeScript",
+   "role": "link",
+   "rect": {
+    "x": 1043,
+    "y": 477,
+    "w": 67,
+    "h": 16
+   }
+  },
+  {
+   "id": "b42",
+   "label": "Operating system",
+   "role": "link",
+   "rect": {
+    "x": 904,
+    "y": 503,
+    "w": 119,
+    "h": 16
+   }
+  },
+  {
+   "id": "b43",
+   "label": "Cross-platform",
+   "role": "link",
+   "rect": {
+    "x": 1043,
+    "y": 503,
+    "w": 92,
+    "h": 16
+   }
+  },
+  {
+   "id": "b44",
+   "label": "Platform",
+   "role": "link",
+   "rect": {
+    "x": 904,
+    "y": 530,
+    "w": 57,
+    "h": 16
+   }
+  },
+  {
+   "id": "b45",
+   "label": "x86-64",
+   "role": "link",
+   "rect": {
+    "x": 1043,
+    "y": 530,
+    "w": 43,
+    "h": 16
+   }
+  },
+  {
+   "id": "b46",
+   "label": "ARM",
+   "role": "link",
+   "rect": {
+    "x": 1093,
+    "y": 530,
+    "w": 31,
+    "h": 16
+   }
+  }
+ ],
+ "errors": []
+}

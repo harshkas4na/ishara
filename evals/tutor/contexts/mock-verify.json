@@ -1,0 +1,379 @@
+{
+ "source": "browser",
+ "url": "http://127.0.0.1:7777/test/etherscan-verify.html",
+ "title": "Verify & Publish Contract Source Code | Mock Explorer",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "Verify & Publish Contract Source Code",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 100,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "p",
+   "text": "Source code verification provides transparency for users interacting with smart contracts.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 144,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "text",
+   "text": "Please enter the Contract Address you would like to verify",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 188,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "text",
+   "text": "Please select Compiler Type",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 236,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t4",
+   "kind": "text",
+   "text": "Please select Compiler Version",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 284,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t5",
+   "kind": "text",
+   "text": "Open Source License Type",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 332,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t6",
+   "kind": "text",
+   "text": "I agree to the terms of service",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 384,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t7",
+   "kind": "text",
+   "text": "Enter the Solidity Contract Code below",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 428,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t8",
+   "kind": "text",
+   "text": "Optimization",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 476,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t9",
+   "kind": "text",
+   "text": "Runs (Optimizer)",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 524,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t10",
+   "kind": "text",
+   "text": "Constructor Arguments (ABI-encoded, optional)",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 572,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t11",
+   "kind": "text",
+   "text": "Contract Library Name 1 (optional)",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 620,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t12",
+   "kind": "p",
+   "text": "Need help? See the verification guide.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 672,
+    "w": 760,
+    "h": 28
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "Home",
+   "role": "link",
+   "rect": {
+    "x": 171,
+    "y": 15,
+    "w": 38,
+    "h": 21
+   }
+  },
+  {
+   "id": "b1",
+   "label": "Blockchain",
+   "role": "link",
+   "rect": {
+    "x": 233,
+    "y": 15,
+    "w": 70,
+    "h": 21
+   }
+  },
+  {
+   "id": "b2",
+   "label": "Tokens",
+   "role": "link",
+   "rect": {
+    "x": 327,
+    "y": 15,
+    "w": 46,
+    "h": 21
+   }
+  },
+  {
+   "id": "b3",
+   "label": "Developers",
+   "role": "link",
+   "rect": {
+    "x": 397,
+    "y": 15,
+    "w": 73,
+    "h": 21
+   }
+  },
+  {
+   "id": "b4",
+   "label": "Sign In",
+   "role": "link",
+   "rect": {
+    "x": 494,
+    "y": 15,
+    "w": 44,
+    "h": 21
+   }
+  },
+  {
+   "id": "b6",
+   "label": "Please enter the Contract Address you would like to verify",
+   "role": "input",
+   "rect": {
+    "x": 355,
+    "y": 200,
+    "w": 760,
+    "h": 39
+   }
+  },
+  {
+   "id": "b7",
+   "label": "Please select Compiler Type",
+   "role": "select",
+   "rect": {
+    "x": 355,
+    "y": 278,
+    "w": 372,
+    "h": 37
+   }
+  },
+  {
+   "id": "b8",
+   "label": "Please select Compiler Version",
+   "role": "select",
+   "rect": {
+    "x": 743,
+    "y": 278,
+    "w": 372,
+    "h": 37
+   }
+  },
+  {
+   "id": "b9",
+   "label": "Open Source License Type",
+   "role": "select",
+   "rect": {
+    "x": 355,
+    "y": 354,
+    "w": 760,
+    "h": 37
+   }
+  },
+  {
+   "id": "b10",
+   "label": "I agree to the terms of service",
+   "role": "checkbox",
+   "rect": {
+    "x": 359,
+    "y": 409,
+    "w": 13,
+    "h": 13
+   }
+  },
+  {
+   "id": "b11",
+   "label": "Enter the Solidity Contract Code below",
+   "role": "input",
+   "rect": {
+    "x": 355,
+    "y": 468,
+    "w": 760,
+    "h": 160
+   }
+  },
+  {
+   "id": "b12",
+   "label": "Optimization",
+   "role": "select",
+   "rect": {
+    "x": 355,
+    "y": 673,
+    "w": 372,
+    "h": 37
+   }
+  },
+  {
+   "id": "b13",
+   "label": "Runs (Optimizer)",
+   "role": "input",
+   "rect": {
+    "x": 743,
+    "y": 673,
+    "w": 372,
+    "h": 39
+   }
+  },
+  {
+   "id": "b14",
+   "label": "Constructor Arguments (ABI-encoded, optional)",
+   "role": "input",
+   "rect": {
+    "x": 355,
+    "y": 751,
+    "w": 760,
+    "h": 70
+   }
+  },
+  {
+   "id": "b15",
+   "label": "Contract Library Name 1 (optional)",
+   "role": "input",
+   "rect": {
+    "x": 355,
+    "y": 865,
+    "w": 760,
+    "h": 39
+   }
+  },
+  {
+   "id": "b16",
+   "label": "verification guide",
+   "role": "link",
+   "rect": {
+    "x": 469,
+    "y": 918,
+    "w": 98,
+    "h": 14
+   }
+  },
+  {
+   "id": "b17",
+   "label": "Verify and Publish",
+   "role": "button",
+   "rect": {
+    "x": 355,
+    "y": 954,
+    "w": 154,
+    "h": 41
+   }
+  },
+  {
+   "id": "b18",
+   "label": "Reset",
+   "role": "button",
+   "rect": {
+    "x": 521,
+    "y": 954,
+    "w": 75,
+    "h": 41
+   }
+  },
+  {
+   "id": "b19",
+   "label": "Return to Main",
+   "role": "button",
+   "rect": {
+    "x": 608,
+    "y": 954,
+    "w": 132,
+    "h": 41
+   }
+  }
+ ],
+ "errors": []
+}

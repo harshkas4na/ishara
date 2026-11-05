@@ -1,0 +1,123 @@
+{
+ "source": "browser",
+ "url": "http://127.0.0.1:7777/test/error-page.html",
+ "title": "Transaction failed | Demo Swap",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "Swap 0.5 ETH for USDC",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 80,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "error",
+   "text": "Error: execution reverted: Too little received (code -32603)",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 124,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "p",
+   "text": "Your transaction was not sent. No funds left your wallet and you were not charged gas.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 168,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "p",
+   "text": "This usually means the price moved by more than your slippage tolerance (currently 0.5%) before the swap could execute.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 212,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t4",
+   "kind": "text",
+   "text": "Slippage tolerance",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 260,
+    "w": 760,
+    "h": 28
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "Slippage tolerance",
+   "role": "select",
+   "rect": {
+    "x": 360,
+    "y": 260,
+    "w": 220,
+    "h": 32
+   },
+   "state": {
+    "selectedOption": "0.5%"
+   }
+  },
+  {
+   "id": "b1",
+   "label": "Try again",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 308,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b2",
+   "label": "Cancel",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 312,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b3",
+   "label": "View on explorer",
+   "role": "link",
+   "rect": {
+    "x": 360,
+    "y": 316,
+    "w": 220,
+    "h": 32
+   }
+  }
+ ],
+ "errors": [
+  "t1"
+ ]
+}

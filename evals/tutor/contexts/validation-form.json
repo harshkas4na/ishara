@@ -1,0 +1,178 @@
+{
+ "source": "browser",
+ "url": "http://127.0.0.1:7777/test/validation-form.html",
+ "title": "Create account | Demo Swap",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "Create your account",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 80,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "text",
+   "text": "Email",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 124,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "error",
+   "text": "Enter a valid email address.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 172,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "text",
+   "text": "Username",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 216,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t4",
+   "kind": "error",
+   "text": "Username must be at least 3 characters.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 264,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t5",
+   "kind": "text",
+   "text": "Password",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 308,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t6",
+   "kind": "error",
+   "text": "Password must include a number and a symbol.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 356,
+    "w": 760,
+    "h": 28
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "Email",
+   "role": "input",
+   "rect": {
+    "x": 360,
+    "y": 172,
+    "w": 220,
+    "h": 32
+   },
+   "state": {
+    "filledChars": 14,
+    "value": "harsh@@example",
+    "invalid": true
+   },
+   "errorText": "Enter a valid email address."
+  },
+  {
+   "id": "b1",
+   "label": "Username",
+   "role": "input",
+   "rect": {
+    "x": 360,
+    "y": 264,
+    "w": 220,
+    "h": 32
+   },
+   "state": {
+    "filledChars": 2,
+    "value": "hk",
+    "invalid": true
+   },
+   "errorText": "Username must be at least 3 characters."
+  },
+  {
+   "id": "b2",
+   "label": "Password",
+   "role": "input",
+   "rect": {
+    "x": 360,
+    "y": 356,
+    "w": 220,
+    "h": 32
+   },
+   "state": {
+    "empty": true,
+    "filledChars": 0,
+    "invalid": true
+   },
+   "errorText": "Password must include a number and a symbol."
+  },
+  {
+   "id": "b3",
+   "label": "I agree to the Terms of Use",
+   "role": "checkbox",
+   "rect": {
+    "x": 360,
+    "y": 404,
+    "w": 220,
+    "h": 32
+   },
+   "state": {
+    "checked": false
+   }
+  },
+  {
+   "id": "b4",
+   "label": "Sign up",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 408,
+    "w": 220,
+    "h": 32
+   }
+  }
+ ],
+ "errors": [
+  "t2",
+  "t4",
+  "t6"
+ ]
+}

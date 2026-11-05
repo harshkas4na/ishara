@@ -1,0 +1,143 @@
+{
+ "source": "browser",
+ "url": "http://127.0.0.1:7777/test/table-demo.html",
+ "title": "Portfolio dashboard | Demo Swap",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "Portfolio",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 80,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "p",
+   "text": "Total value: 12,480.52 USD. Updated 2 minutes ago.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 124,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "cell",
+   "text": "Asset | Balance | Price (USD) | 24h change",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 168,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "cell",
+   "text": "ETH | 3.20 | 2,410.00 | +1.8%",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 212,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t4",
+   "kind": "cell",
+   "text": "USDC | 2,150.00 | 1.00 | 0.0%",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 256,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t5",
+   "kind": "cell",
+   "text": "ARB | 1,400 | 0.74 | -4.2%",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 300,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t6",
+   "kind": "cell",
+   "text": "LINK | 85 | 14.10 | +0.6%",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 344,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t7",
+   "kind": "p",
+   "text": "Export CSV Add asset Settings",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 400,
+    "w": 760,
+    "h": 28
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "Export CSV",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 392,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b1",
+   "label": "Add asset",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 396,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b2",
+   "label": "Settings",
+   "role": "link",
+   "rect": {
+    "x": 360,
+    "y": 400,
+    "w": 220,
+    "h": 32
+   }
+  }
+ ],
+ "errors": []
+}

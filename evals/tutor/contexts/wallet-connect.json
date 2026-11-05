@@ -1,0 +1,176 @@
+{
+ "source": "browser",
+ "url": "http://127.0.0.1:7777/test/wallet-connect.html",
+ "title": "Connect Wallet | Demo Swap",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "Connect a wallet",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 80,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "p",
+   "text": "Choose a wallet to start swapping. We never ask for your seed phrase and never hold your funds.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 124,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "li",
+   "text": "MetaMask Browser extension, most popular on Ethereum.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 172,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "li",
+   "text": "WalletConnect Scan a QR code with a mobile wallet.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 220,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t4",
+   "kind": "li",
+   "text": "Coinbase Wallet Extension or mobile app.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 268,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t5",
+   "kind": "p",
+   "text": "Network: Ethereum Mainnet. Switch to Base or Optimism after connecting.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 312,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t6",
+   "kind": "p",
+   "text": "By connecting you accept the Terms of Use and the Privacy Policy.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 364,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t7",
+   "kind": "p",
+   "text": "I do not have a wallet",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 412,
+    "w": 760,
+    "h": 28
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "MetaMask",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 172,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b1",
+   "label": "WalletConnect",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 220,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b2",
+   "label": "Coinbase Wallet",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 268,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b3",
+   "label": "Terms of Use",
+   "role": "link",
+   "rect": {
+    "x": 360,
+    "y": 360,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b4",
+   "label": "Privacy Policy",
+   "role": "link",
+   "rect": {
+    "x": 360,
+    "y": 364,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b5",
+   "label": "I do not have a wallet",
+   "role": "link",
+   "rect": {
+    "x": 360,
+    "y": 412,
+    "w": 220,
+    "h": 32
+   }
+  }
+ ],
+ "errors": []
+}

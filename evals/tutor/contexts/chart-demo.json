@@ -1,0 +1,87 @@
+{
+ "source": "browser",
+ "url": "http://127.0.0.1:7777/test/chart-demo.html",
+ "title": "Gas fees this week | Demo Swap",
+ "viewport": {
+  "w": 1470,
+  "h": 835
+ },
+ "blocks": [
+  {
+   "id": "t0",
+   "kind": "h",
+   "text": "Average gas price, last 7 days",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 80,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t1",
+   "kind": "caption",
+   "text": "Figure 1. Average gas price in gwei by day. The peak of 42 gwei was on Thursday during the NFT mint; the low of 9 gwei was on Sunday.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 124,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t2",
+   "kind": "p",
+   "text": "Gas is cheapest on weekends, when fewer people are transacting.",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 168,
+    "w": 760,
+    "h": 28
+   }
+  },
+  {
+   "id": "t3",
+   "kind": "text",
+   "text": "Time range",
+   "inView": true,
+   "rect": {
+    "x": 360,
+    "y": 220,
+    "w": 760,
+    "h": 28
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "b0",
+   "label": "Download data",
+   "role": "button",
+   "rect": {
+    "x": 360,
+    "y": 216,
+    "w": 220,
+    "h": 32
+   }
+  },
+  {
+   "id": "b1",
+   "label": "Time range",
+   "role": "select",
+   "rect": {
+    "x": 360,
+    "y": 220,
+    "w": 220,
+    "h": 32
+   },
+   "state": {
+    "selectedOption": "7 days"
+   }
+  }
+ ],
+ "errors": []
+}

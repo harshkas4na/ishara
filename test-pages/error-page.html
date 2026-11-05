@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Transaction failed | Demo Swap</title><style>body{font:15px/1.5 system-ui,sans-serif;margin:0;color:#222}main{max-width:760px;margin:24px auto;padding:0 16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left}.err{background:#fdecea;border:1px solid #f5c2c0;color:#8a1c14;padding:10px;border-radius:6px}button{padding:8px 16px}input,select{padding:6px;margin:4px 0}</style></head><body><main>
+<h1>Swap 0.5 ETH for USDC</h1>
+<div class="err" role="alert">Error: execution reverted: Too little received (code -32603)</div>
+<p>Your transaction was not sent. No funds left your wallet and you were not charged gas.</p>
+<p>This usually means the price moved by more than your slippage tolerance (currently 0.5%) before the swap could execute.</p>
+<label>Slippage tolerance <select id="s"><option>0.5%</option><option>1%</option><option>3%</option></select></label><br>
+<button type="button">Try again</button> <button type="button">Cancel</button> <a href="#">View on explorer</a>
+</main></body></html>
