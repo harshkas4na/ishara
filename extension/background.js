@@ -2,6 +2,7 @@
 // fetch to 127.0.0.1 would hit CORS / mixed-content rules while the worker, holding the host
 // permission, does not; (2) run the offscreen document that records the mic.
 import { fromBase64 } from "./wav.js";
+import "./sse.js"; // sets globalThis.IsharaSSE (parser + relay core, unit-tested in node)
 
 const HELPER = "http://127.0.0.1:7777";
 
@@ -68,6 +69,14 @@ async function handle(msg, sender) {
     case "frame-reply": // an iframe's outline/locate answer -> every frame of the tab; only the asker holds the request id
       if (sender?.tab?.id != null && sender.frameId !== 0) chrome.tabs.sendMessage(sender.tab.id, { type: "frame-reply", data: msg.data }).catch(() => {});
       return {};
+    // Spoken answers (helper/src/speech.ts): a new question stops the voice; the Mute chord / debug button toggles it.
+    case "speech-stop": return helper("/speech/stop", json({}), 3000);
+    case "speech-status": return helper("/speech", {}, 3000);
+    case "speech-toggle": { // read, then flip: one source of truth (the helper's persisted flag)
+      const s = await helper("/speech", {}, 3000);
+      if (s.error) return s;
+      return helper("/speech/mute", json({ muted: !s.data.muted }), 3000);
+    }
     case "open-setup": chrome.tabs.create({ url: chrome.runtime.getURL("setup.html") }); return {};
   }
   return { error: "unknown message " + msg.type };
@@ -78,6 +87,37 @@ chrome.runtime.onMessage.addListener((msg, sender, send) => {
   // A thrown error (offscreen document missing, tab gone) must still answer, or the page waits on a closed port.
   handle(msg, sender).then(send, (e) => send({ error: String(e?.message ?? e) }));
   return true; // async response
+});
+
+// ---- Tutor stream relay ----
+// The content script opens a port named "tutor" and posts {type:"ask", body} or {type:"walk", sessionId, cmd}. We fetch the
+// helper's text/event-stream here (a page's own fetch to 127.0.0.1 hits CORS / mixed content; the worker holds the host
+// permission) and post each parsed event back as {event, data}. The parsing and failure rules live in sse.js (tested in node).
+// An open port with events flowing keeps the worker alive; the ping covers the gap while 0G thinks before the first token.
+// The question text is never logged here.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "tutor" || port.sender?.id !== chrome.runtime.id) return;
+  let ctl = null, ping = 0;
+  const stop = () => { if (ctl) ctl.abort(); ctl = null; clearInterval(ping); ping = 0; };
+  const speechStop = () => { fetch(HELPER + "/speech/stop", { method: "POST" }).catch(() => {}); }; // fire and forget; the route may not exist
+  const start = (path, body) => {
+    stop(); // a new question (or walk command) ends the previous stream; the helper keeps draining 0G for the proof
+    speechStop();
+    const mine = (ctl = new AbortController());
+    const cap = setTimeout(() => mine.abort(), 90000); // never hold a stream longer than a whole answer plus proof
+    ping = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
+    const post = (m) => { try { port.postMessage(m); } catch { stop(); } };
+    globalThis.IsharaSSE.relay({
+      fetchFn: fetch, url: HELPER + path, signal: mine.signal, post,
+      init: { method: "POST", headers: { "content-type": "application/json", accept: "text/event-stream" }, body: JSON.stringify(body) },
+    }).finally(() => { clearTimeout(cap); if (ctl === mine) { clearInterval(ping); ping = 0; ctl = null; } });
+  };
+  port.onMessage.addListener((m) => {
+    if (m?.type === "ask") start("/tutor", m.body);
+    else if (m?.type === "walk") start("/tutor/walk", { sessionId: m.sessionId, cmd: m.cmd });
+    else if (m?.type === "cancel") { stop(); speechStop(); }
+  });
+  port.onDisconnect.addListener(stop);
 });
 
 // Toolbar click is the one-time microphone setup.
