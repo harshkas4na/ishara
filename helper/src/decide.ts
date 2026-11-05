@@ -43,6 +43,8 @@ export async function decide(sessionId: string, question: string, outline: Outli
   saveOutline(outline);
   const decision: Decision = {
     ...g,
+    ...(brain.ok && brain.targetId ? { proposedId: brain.targetId } : {}),
+    ...(verify?.ok ? { layaP: verify.p } : {}),
     requestIds: {
       ...(brain.ok && brain.requestId ? { brain: brain.requestId } : {}),
       ...(verify?.ok && verify.requestId ? { laya: verify.requestId } : {}),

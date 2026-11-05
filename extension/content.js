@@ -28,7 +28,8 @@
       const r = await send({ type: "decide", body: { sessionId, question, outline } });
       if (r.error) return showError("Ishara helper problem: " + r.error, question);
       const d = r.data;
-      NS.overlay.setDebug({ question, decision: d, outlineMs: ms });
+      const labelOf = (id) => (outline.elements.find((e) => e.id === id) || {}).label;
+      NS.overlay.setDebug({ question, decision: d, outlineMs: ms, proposedLabel: labelOf(d.proposedId), targetLabel: labelOf(d.targetId) });
       // The element may have been removed since compile; refuse to point rather than guess.
       const el = d.targetId && map.get(d.targetId);
       if (d.outcome === "point" && el && el.isConnected) await NS.overlay.point(el, d.say);
@@ -93,6 +94,7 @@
     } else if (e.altKey && e.shiftKey && e.code === "KeyD") {
       e.preventDefault();
       NS.overlay.toggleDebug({
+        sessionId,
         proof: (id) => send({ type: "proof", requestId: id }),
         endSession: () => send({ type: "session-end", sessionId }),
       });

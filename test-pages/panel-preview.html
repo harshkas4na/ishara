@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ishara panel preview</title>
+<!-- Dev only: renders the debug panel with sample decisions so its look can be checked without asking 0G.
+     Use ?state=point | ask | stop | nofit | error  -->
+<style>body{font:16px system-ui;margin:2rem;color:#222}</style>
+<h1>Panel preview</h1>
+<p>The panel opens on the right. Sample data only.</p>
+<script src="/ext/overlay.js"></script>
+<script>
+  const state = new URLSearchParams(location.search).get("state") || "point";
+  const ids = { brain: "9d838747-d2f1-47fe-a702-bb30fc23560c", laya: "99fbafb5-cc9c-48dc-8de4-69fba1a1497c" };
+  const samples = {
+    point: { question: "where do I put the contract address", outlineMs: 4,
+      proposedLabel: "Please enter the Contract Address you would like to verify", targetLabel: "Please enter the Contract Address you would like to verify",
+      decision: { outcome: "point", targetId: "b6", proposedId: "b6", layaP: 0.77, say: "Enter your contract address in the first input field.", reason: "ok", requestIds: ids, ms: { total: 2700, brain: 1800, laya: 900 } } },
+    ask: { question: "help", outlineMs: 4, proposedLabel: "verification guide",
+      decision: { outcome: "ask", proposedId: "b16", layaP: 0.13, say: "Which step do you mean?", reason: "low", requestIds: ids, ms: { total: 2800, brain: 1900, laya: 900 } } },
+    nofit: { question: "is my contract safe", outlineMs: 4,
+      decision: { outcome: "ask", say: "Which step do you mean?", reason: "none", requestIds: { brain: ids.brain }, ms: { total: 1900, brain: 1900 } } },
+    stop: { question: "where do I put the contract address", outlineMs: 4,
+      decision: { outcome: "safe_stop", safeStopCause: "unavailable", say: "", reason: "0GM down", requestIds: {}, ms: { total: 8000 } } },
+    error: { question: "", error: "I could not hear any sound from the microphone" },
+  };
+  Ishara.overlay.setDebug(samples[state]);
+  Ishara.overlay.toggleDebug({ sessionId: "preview", proof: async () => ({ data: {} }), endSession: async () => ({ data: { root: "0xabc", storage: { ms: 14800 }, contract: { address: "0x1" }, entries: 2 } }) });
+</script>

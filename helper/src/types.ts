@@ -25,6 +25,8 @@ export type Decision = {
   say: string;
   reason: string;
   safeStopCause?: Cause;
+  proposedId?: string; // what 0GM proposed, even if laya then rejected it
+  layaP?: number;      // laya's P(yes) for that proposal
   requestIds: { brain?: string; laya?: string };
   ms: { total: number; brain?: number; laya?: number };
 };

@@ -27,10 +27,29 @@
       background:#fff;border:2px solid #6d28d9;border-radius:10px;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.3)}
   .tb input{width:min(480px,80vw);font-size:16px;padding:8px;border:1px solid #ccc;border-radius:6px;color:#000;background:#fff}
   .tb div{font-size:11px;color:#555;margin-top:4px}
-  .dbg{position:fixed;right:12px;top:12px;width:340px;max-height:80vh;overflow:auto;pointer-events:auto;display:none;
-       background:#111827;color:#e5e7eb;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.45;box-shadow:0 6px 24px rgba(0,0,0,.4)}
-  .dbg b{color:#fff}.dbg button{font:inherit;margin:4px 4px 0 0;padding:3px 8px;cursor:pointer}
-  .dbg pre{white-space:pre-wrap;word-break:break-all;margin:4px 0;background:#1f2937;padding:6px;border-radius:6px}
+  .dbg{position:fixed;right:12px;top:12px;width:372px;max-height:86vh;overflow:auto;pointer-events:auto;display:none;
+       background:#0f172a;color:#e2e8f0;border-radius:12px;padding:0;font-size:13px;line-height:1.4;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+  .dbg .hd{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px}
+  .dbg .hd b{color:#fff;font-size:13px;letter-spacing:.02em}
+  .dbg .verdict{margin:12px 14px 0;padding:12px 14px;border-radius:10px;border:1px solid}
+  .dbg .verdict.point{background:#052e1a;border-color:#15803d}.dbg .verdict.ask{background:#3a2a05;border-color:#b45309}
+  .dbg .verdict.stop{background:#3b0d0d;border-color:#b91c1c}.dbg .verdict.err{background:#3b0d0d;border-color:#b91c1c}
+  .dbg .tag{font-size:11px;font-weight:700;letter-spacing:.08em}
+  .dbg .point .tag{color:#4ade80}.dbg .ask .tag{color:#fbbf24}.dbg .stop .tag,.dbg .err .tag{color:#f87171}
+  .dbg .q{font-size:15px;color:#fff;margin-top:4px}.dbg .a{margin-top:6px;color:#cbd5e1}
+  .dbg .steps{margin:10px 14px 0;display:flex;flex-direction:column;gap:2px}
+  .dbg .row{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:baseline;padding:7px 0;border-bottom:1px solid #1e293b}
+  .dbg .row:last-child{border-bottom:0}
+  .dbg .ic{font-weight:700;text-align:center}.dbg .ok .ic{color:#4ade80}.dbg .no .ic{color:#f87171}.dbg .na .ic{color:#64748b}
+  .dbg .na{color:#64748b}.dbg .what b{color:#fff;font-weight:600}.dbg .why{color:#94a3b8;font-size:12px}
+  .dbg .ms{color:#94a3b8;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .dbg .total{margin:4px 14px 0;color:#94a3b8;font-size:12px}
+  .dbg .sec{margin:14px 14px 6px;color:#64748b;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  .dbg .btns{margin:0 14px;display:flex;gap:8px;flex-wrap:wrap}
+  .dbg button{font:inherit;font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer}
+  .dbg button:hover{background:#334155}.dbg button.main{background:#2563eb;border-color:#2563eb;color:#fff}
+  .dbg .res{margin:8px 14px 14px;font-size:12px;color:#cbd5e1}.dbg .res a{color:#7dd3fc}
+  .dbg .id{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#94a3b8}
 </style>
 <div class="layer"></div><div class="bub"></div><div class="tb"><input placeholder="Ask where something is, then Enter"><div>Esc to close</div></div><div class="dbg"></div>`;
     layer = root.querySelector(".layer");
@@ -135,39 +154,74 @@
     panel.style.display = panel.style.display === "block" ? "none" : "block";
     renderDebug();
   }
+  // The panel is for a glance: one verdict, then the three steps that led to it, then the receipts.
+  const HELPER = "http://127.0.0.1:7777";
+  const secs = (ms) => (ms == null ? "" : (ms / 1000).toFixed(1) + " s");
   function renderDebug() {
     panel.textContent = "";
-    const add = (tag, text, cls) => { const n = document.createElement(tag); n.textContent = text; panel.append(n); return n; };
-    add("b", "Ishara debug (Alt+Shift+D to close)");
-    if (!last) { add("div", "No question asked yet."); return; }
-    const { decision: d, question, error, outlineMs } = last;
-    add("div", "Question: " + (question || "-"));
-    if (error) { add("div", "Error: " + error); }
-    if (d) {
-      add("div", `Outcome: ${d.outcome}${d.targetId ? " -> " + d.targetId : ""}${d.candidates ? " -> " + d.candidates.join(", ") : ""}`);
-      add("div", "Reason: " + d.reason);
-      if (d.safeStopCause) add("div", "Cause: " + d.safeStopCause);
-      add("div", `ms: total ${d.ms?.total ?? "-"}, brain ${d.ms?.brain ?? "-"}, laya ${d.ms?.laya ?? "-"}`);
-      if (outlineMs != null) add("div", `outline compile: ${outlineMs.toFixed(1)} ms`);
-      for (const [who, id] of Object.entries(d.requestIds || {})) {
-        if (!id) continue;
-        add("div", `${who} request: ${id}`);
-        const out = document.createElement("pre"); out.style.display = "none";
-        const btn = add("button", "How do I know? (" + who + ")");
-        btn.onclick = async () => {
-          out.style.display = "block"; out.textContent = "Checking…";
-          const r = await NS._dbgHandlers.proof(id);
-          out.textContent = r.error ? "Error: " + r.error : Object.entries(r.data).map(([k, v]) => `${k}: ${v}`).join("\n");
-        };
-        panel.append(out);
-      }
-    }
-    const end = add("button", "End session (encrypt + upload log)");
-    const endOut = document.createElement("pre"); endOut.style.display = "none"; panel.append(endOut);
+    const el = (tag, cls, text, parent = panel) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; parent.append(n); return n; };
+    const hd = el("div", "hd"); el("b", "", "Ishara", hd); el("span", "", "Alt+Shift+D hides this", hd);
+    if (!last) { el("div", "sec", "Nothing asked yet"); return; }
+    const { decision: d, question, error, proposedLabel, targetLabel, outlineMs } = last;
+
+    // 1. The verdict, in one look.
+    const kind = error ? "err" : !d ? "err" : d.outcome === "point" ? "point" : d.outcome === "safe_stop" ? "stop" : "ask";
+    const tagText = { point: "POINTED", ask: "ASKED YOU", stop: "REFUSED TO GUESS", err: "PROBLEM" }[kind];
+    const v = el("div", "verdict " + kind);
+    el("div", "tag", tagText, v);
+    el("div", "q", question ? "“" + question + "”" : "", v);
+    if (error) el("div", "a", error, v);
+    else if (d.outcome === "point") el("div", "a", `Pointed at “${targetLabel || d.targetId}”. ${d.say}`, v);
+    else if (d.outcome === "safe_stop") el("div", "a", "0G could not answer, so nothing moved. This is on purpose.", v);
+    else el("div", "a", "I was not sure enough to point, so I asked.", v);
+    if (error || !d) return;
+
+    // 2. The steps. A tick means it worked, a cross means it failed, a dash means it was not needed.
+    const steps = el("div", "steps");
+    const row = (state, what, why, ms) => {
+      const r = el("div", "row " + state, null, steps);
+      el("span", "ic", state === "ok" ? "✓" : state === "no" ? "✗" : "–", r);
+      const w = el("span", "what", null, r); w.innerHTML = ""; const bb = el("b", "", what, w);
+      if (why) { w.append(document.createElement("br")); el("span", "why", why, w); }
+      el("span", "ms", ms, r); void bb;
+    };
+    row("ok", "I heard you", outlineMs != null ? `page read in ${outlineMs.toFixed(0)} ms` : "", "");
+    if (d.proposedId) row("ok", `0GM proposed “${proposedLabel || d.proposedId}”`, "sealed model on 0G read the page", secs(d.ms?.brain));
+    else if (d.safeStopCause) row("no", "0GM did not answer", "cause: " + d.safeStopCause, "");
+    else row("no", "0GM found nothing that fits", "", secs(d.ms?.brain));
+    if (d.layaP != null) {
+      const sure = Math.round(d.layaP * 100);
+      row(d.outcome === "point" ? "ok" : "no", `laya is ${sure}% sure it is right`, d.outcome === "point" ? "needed at least 40%" : "needed at least 40%, so I asked", secs(d.ms?.laya));
+    } else row("na", "laya was not asked", d.proposedId ? "could not be reached" : "nothing to check", "");
+    row(d.outcome === "point" ? "ok" : d.outcome === "safe_stop" ? "no" : "na", d.outcome === "point" ? "Pointer moved" : d.outcome === "safe_stop" ? "Stopped instead of guessing" : "Asked you instead of pointing", "", "");
+    el("div", "total", "Total " + secs(d.ms?.total), panel);
+
+    // 3. Receipts.
+    el("div", "sec", "Proof this came from 0G", panel);
+    const btns = el("div", "btns");
+    const ids = d.requestIds || {};
+    if (ids.brain) { const b = el("button", "main", "How do I know?", btns); b.onclick = () => window.open(`${HELPER}/app/proof.html?id=${encodeURIComponent(ids.brain)}`, "_blank"); }
+    if (ids.laya) { const b = el("button", "", "laya's receipt", btns); b.onclick = () => window.open(`${HELPER}/app/proof.html?id=${encodeURIComponent(ids.laya)}`, "_blank"); }
+    if (!ids.brain && !ids.laya) el("div", "res", "No answer, so no receipt for this question.");
+    else el("div", "res id", "request " + (ids.brain || ids.laya).slice(0, 8) + "…");
+
+    // 4. End the session: encrypt the log, store it on 0G, record its root on the chain.
+    el("div", "sec", "Save this session", panel);
+    const btns2 = el("div", "btns");
+    const end = el("button", "", "Save to 0G Storage", btns2);
+    const res = el("div", "res", "", panel);
     end.onclick = async () => {
-      endOut.style.display = "block"; endOut.textContent = "Uploading…";
+      res.textContent = "Encrypting and uploading, about 15 s…";
       const r = await NS._dbgHandlers.endSession();
-      endOut.textContent = r.error ? "Error: " + r.error : JSON.stringify(r.data, null, 2);
+      res.textContent = "";
+      const data = r.data;
+      if (r.error || !data) { res.textContent = "Failed: " + (r.error || "no answer"); return; }
+      const line = (ok, text) => { const n = el("div", "", (ok ? "✓ " : "✗ ") + text, res); n.style.color = ok ? "#4ade80" : "#f87171"; };
+      if (data.root) line(true, `Stored on 0G Storage (${secs(data.storage?.ms)})`);
+      else line(false, data.error || "Not stored");
+      if (data.contract) line(true, "Root recorded on the Galileo contract");
+      else if (data.root) line(false, "Contract write failed");
+      if (data.root) { const a = el("a", "", "Open the replay", res); a.href = `${HELPER}/app/replay.html?session=${encodeURIComponent(NS._dbgHandlers.sessionId)}`; a.target = "_blank"; }
     };
   }
 

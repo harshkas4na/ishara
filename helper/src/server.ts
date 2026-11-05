@@ -9,6 +9,7 @@ import { episodeLog } from "./episode-log.ts";
 import { startWhisper, transcribe, whisperStatus } from "./whisper.ts";
 
 const TEST_DIR = fileURLToPath(new URL("../../test-pages/", import.meta.url));
+const EXT_DIR = fileURLToPath(new URL("../../extension/", import.meta.url));
 const WEB_DIR = fileURLToPath(new URL("../../web/", import.meta.url));
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png" };
 
@@ -71,6 +72,17 @@ const server = createServer(async (req, res) => {
         const data = await readFile(file);
         res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
         return res.end(data);
+      } catch { return send(res, 404, { error: "not found" }); }
+    }
+    if (req.method === "GET" && path.startsWith("/ext/")) {
+      // Dev only: lets test-pages/panel-preview.html load the overlay code to preview the panel without reloading the
+      // extension. Plain scripts and styles only; same traversal guard as the other static routes.
+      const rel = normalize(decodeURIComponent(path.slice(5))).replace(/^(\.\.[/\\])+/, "");
+      const file = join(EXT_DIR, rel);
+      if (!file.startsWith(EXT_DIR) || ![".js", ".css"].includes(extname(file))) return send(res, 403, { error: "forbidden" });
+      try {
+        res.writeHead(200, { "content-type": MIME[extname(file)] });
+        return res.end(await readFile(file));
       } catch { return send(res, 404, { error: "not found" }); }
     }
     if (req.method === "GET" && path.startsWith("/test/")) {
