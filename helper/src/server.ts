@@ -6,6 +6,7 @@ import { HELPER_PORT } from "./config.ts";
 import { decide, recordsFor } from "./decide.ts";
 import { hasKey, warm } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
+import { desktopAsk, warmDesktop } from "./desktop.ts";
 import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
 import { allowedOrigin, refuse, staticPath } from "./http-guard.ts";
 
@@ -91,6 +92,16 @@ const server = createServer(async (req, res) => {
       const b = JSON.parse((await readBody(req)).toString("utf8"));
       return send(res, 200, await episodeLog.endSession(String(b.sessionId)));
     }
+    // Desktop path: read the frontmost app's window (accessibility tree + local OCR), decide with the same sealed
+    // calls as the browser, and draw the answer in a click-through overlay. Nothing but text leaves the laptop.
+    if (req.method === "POST" && path === "/desktop/ask") {
+      const b = JSON.parse((await readBody(req)).toString("utf8"));
+      if (typeof b?.question !== "string" || !b.question.trim()) return send(res, 400, { error: "need { question }" });
+      try {
+        const r = await desktopAsk(b.question.trim(), decide, { sessionId: String(b.sessionId ?? "desktop") });
+        return send(res, 200, { decision: r.decision, ms: r.ms, elements: r.outline.elements.length });
+      } catch (e: any) { return send(res, 503, { error: String(e?.message ?? e) }); } // e.g. the Accessibility permission message
+    }
     return send(res, 404, { error: "no such route" });
   } catch (e: any) {
     if (res.headersSent) return void res.destroy(); // a second writeHead would throw out of this handler and kill the helper
@@ -102,6 +113,8 @@ server.listen(HELPER_PORT, "127.0.0.1", () => {
   console.log(`helper on http://127.0.0.1:${HELPER_PORT}`);
   startWhisper().then(() => console.log("whisper:", JSON.stringify(whisperStatus())));
   warm();
+  // Vision loads its OCR model on first use (measured up to 56 s). Opt-in, because warming it reads the screen once.
+  if (process.env.ISHARA_DESKTOP === "1") warmDesktop();
 });
 // Ctrl-C does not fire "exit", so whisper-server outlived every helper restart (10 orphans found on 5 Nov, each
 // holding the model). Stop it on the signals too.
