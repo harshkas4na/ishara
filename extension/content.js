@@ -49,7 +49,7 @@
           offline: "There is no connection to 0G.",
         };
         NS.overlay.say("I can't decide right now", { stop: true, sub: (WHY[d.safeStopCause] || d.reason) + " I won't guess, so nothing moved." });
-      } else NS.overlay.say(d.say); // "ask": words only, never a pointer
+      } else NS.overlay.say(d.say, { hidePointer: true }); // "ask": words only, never a pointer
     } finally { busy = false; }
   }
 

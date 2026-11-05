@@ -99,6 +99,8 @@
   }
 
   function say(text, opts = {}) {
+    // A refusal or a question means the cursor has nothing to point at: stop the thinking dance and hide it.
+    if (opts.stop || opts.hidePointer) { clearTimeout(arriveTimer); pointer.className = "ptr"; pointer.style.display = "none"; }
     bubble.className = "bub" + (opts.stop ? " stop" : "");
     bubble.textContent = text;
     if (opts.sub) { const s = document.createElement("small"); s.textContent = opts.sub; bubble.append(s); }
