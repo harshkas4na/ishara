@@ -6,15 +6,38 @@
 //   Alt+Shift+O           show what Ishara sees (a numbered box on every control it kept)
 (() => {
   const NS = globalThis.Ishara;
+  // Content scripts run in every frame (all_frames). Only the TOP frame owns the overlay, the helper and the chords.
+  // Key events inside a focused iframe never reach the top window, so a child watches for the same chords and
+  // forwards them up, one level at a time, as a tiny message; the top then runs the usual handler.
+  if (window !== window.top) {
+    const CHORD = (e) => e.altKey && (e.code === "Space" || (e.shiftKey && (e.code === "KeyO" || e.code === "KeyD")));
+    const up = (m) => parent.postMessage({ ishara: "key", ...m }, "*");
+    addEventListener("keydown", (e) => {
+      if (CHORD(e) || e.key === "Escape") {
+        if (CHORD(e)) { e.preventDefault(); e.stopPropagation(); }
+        up({ type: "down", code: e.code, key: e.key, altKey: e.altKey, shiftKey: e.shiftKey, repeat: e.repeat });
+      }
+    }, true);
+    addEventListener("keyup", (e) => { if (e.code === "Space" || e.code.startsWith("Alt")) up({ type: "up", code: e.code }); }, true);
+    addEventListener("blur", () => up({ type: "blur" })); // Option+Tab away mid-hold
+    // Relay from a grandchild: only from a direct child iframe of this document.
+    addEventListener("message", (e) => { const d = e.data; if (d && d.ishara === "key" && NS.frames.isChild(e.source)) up(d); });
+    return;
+  }
   // One id per page load: the helper keys its log and the 0G session root on it. A new one after "End session",
   // because the contract takes one root per session and later answers would otherwise never be stored.
   let sessionId = crypto.randomUUID();
   let recording = false, busy = false, pending = null, inspecting = false; // pending: outline compiled at key-down
   let startP = null, transcribing = false;
 
-  const send = (msg) => new Promise((res) => chrome.runtime.sendMessage(msg, (r) => {
-    res(chrome.runtime.lastError ? { error: chrome.runtime.lastError.message } : r);
-  }));
+  // If the extension was reloaded or updated while this page was open, this page's script is orphaned: sendMessage
+  // throws "Extension context invalidated" or never answers. Say so plainly instead of leaving "thinking" on screen.
+  const send = (msg) => new Promise((res) => {
+    const timer = setTimeout(() => res({ error: "Ishara did not answer. If it was just updated, reload this page." }), 25000);
+    try {
+      chrome.runtime.sendMessage(msg, (r) => { clearTimeout(timer); res(chrome.runtime.lastError ? { error: chrome.runtime.lastError.message } : (r ?? { error: "Ishara did not answer. If it was just updated, reload this page." })); });
+    } catch { clearTimeout(timer); res({ error: "Ishara was updated or reloaded. Reload this page to continue." }); }
+  });
 
   function showError(text, question) {
     NS.overlay.say(text, { stop: true });
@@ -28,7 +51,7 @@
     try {
       // Show what we understood so a wrong transcript is visible at once (voice errors look like wrong answers otherwise).
       NS.overlay.thinking(`I heard: “${question}” …thinking`);
-      const { outline, map, ms } = compiled || NS.compileOutline();
+      const { outline, map, ms } = await (compiled || NS.compileOutlineAsync()); // compiled may be the promise started at key-down
       const r = await send({ type: "decide", body: { sessionId, question, outline } });
       if (r.error) return showError("Ishara helper problem: " + r.error, question);
       const d = r.data;
@@ -36,7 +59,8 @@
       NS.overlay.setDebug({ question, decision: d, outlineMs: ms, proposedLabel: labelOf(d.proposedId), targetLabel: labelOf(d.targetId) });
       // The element may have been removed since compile; refuse to point rather than guess.
       const el = d.targetId && current(map.get(d.targetId), outline.elements.find((e) => e.id === d.targetId));
-      if (d.outcome === "point" && el) { await NS.overlay.point(el, d.say, d.requestIds && d.requestIds.brain); watchAccepted(el, question); }
+      if (d.outcome === "point" && el && el.frame) await NS.overlay.pointAtFrameElement(el, d.say, d.requestIds && d.requestIds.brain); // no accept-watch: clicks inside a frame never reach us
+      else if (d.outcome === "point" && el) { await NS.overlay.point(el, d.say, d.requestIds && d.requestIds.brain); watchAccepted(el, question); }
       else if (d.outcome === "point") NS.overlay.say("The element is gone. Ask again.", { stop: true });
       else if (d.outcome === "ask_which") {
         const els = (d.candidates || []).map((id) => map.get(id)).filter((e) => e && e.isConnected);
@@ -70,7 +94,7 @@
   // exactly one visible element has the same role and label as the one laya confirmed; otherwise refuse.
   function current(el, seen) {
     if (el && el.isConnected) return el;
-    if (!seen) return null;
+    if (!seen || (el && el.frame)) return null; // a vanished iframe cannot be re-found by the sync (top-only) compile
     const now = NS.compileOutline();
     const same = now.outline.elements.filter((e) => e.role === seen.role && e.label === seen.label);
     return same.length === 1 ? now.map.get(same[0].id) : null;
@@ -92,7 +116,7 @@
     recording = true;
     NS.overlay.clear();
     // Compile now, in parallel with the speech, so the outline is ready the moment we have text.
-    pending = NS.compileOutline();
+    pending = NS.compileOutlineAsync(); // a promise: frames get ~250 ms to answer while the user speaks
     NS.overlay.say("Listening… release to send");
     startP = send({ type: "rec-start" });
     const r = await startP;
@@ -120,7 +144,7 @@
     ask(text, compiled);
   }
 
-  addEventListener("keydown", (e) => {
+  async function onKeyDown(e) {
     if (e.altKey && e.code === "Space" && !e.shiftKey) {
       e.preventDefault(); e.stopPropagation();
       if (!e.repeat) startTalking();
@@ -130,7 +154,7 @@
     } else if (e.altKey && e.shiftKey && e.code === "KeyO") {
       e.preventDefault();
       if (inspecting) { inspecting = false; NS.overlay.clear(); }
-      else { inspecting = true; const c = NS.compileOutline(); NS.overlay.showOutline(c.outline, c.map, { dropped: c.dropped, ms: c.ms }); }
+      else { inspecting = true; const c = await NS.compileOutlineAsync(); NS.overlay.showOutline(c.outline, c.map, { dropped: c.dropped, ms: c.ms }); }
     } else if (e.altKey && e.shiftKey && e.code === "KeyD") {
       e.preventDefault();
       NS.overlay.toggleDebug({
@@ -143,9 +167,21 @@
         },
       });
     } else if (e.key === "Escape") NS.overlay.clear();
-  }, true);
+  }
+  addEventListener("keydown", onKeyDown, true);
 
   // Release of either key ends the recording; blur covers Option+Tab away mid-hold.
-  addEventListener("keyup", (e) => { if (e.code === "Space" || e.code.startsWith("Alt")) stopTalking(); }, true);
+  const onKeyUp = (e) => { if (e.code === "Space" || e.code.startsWith("Alt")) stopTalking(); };
+  addEventListener("keyup", onKeyUp, true);
   addEventListener("blur", () => stopTalking());
+
+  // Chords forwarded by child frames (see the top of this file). Only accepted from a direct child iframe.
+  const noop = () => {};
+  addEventListener("message", (e) => {
+    const d = e.data;
+    if (!d || d.ishara !== "key" || !NS.frames.isChild(e.source)) return;
+    if (d.type === "down") onKeyDown({ altKey: !!d.altKey, shiftKey: !!d.shiftKey, code: String(d.code), key: String(d.key), repeat: !!d.repeat, preventDefault: noop, stopPropagation: noop });
+    else if (d.type === "up") onKeyUp({ code: String(d.code) });
+    else if (d.type === "blur") stopTalking();
+  });
 })();
