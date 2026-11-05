@@ -61,6 +61,13 @@ async function handle(msg, sender) {
     case "feedback": return helper("/memory/feedback", json(msg.body), 5000); // memory: the user acted on the pointer
     case "proof": return helper("/proof/" + encodeURIComponent(msg.requestId));
     case "session-end": return helper("/session/end", json({ sessionId: msg.sessionId }), 60000);
+    // Frame relays. Only content scripts (sender.tab) of THIS extension can send these; a page's own scripts cannot.
+    case "chord": // a chord pressed inside an iframe -> the top frame, which owns the mic and the overlay
+      if (sender?.tab?.id != null && sender.frameId !== 0) chrome.tabs.sendMessage(sender.tab.id, { type: "chord", d: msg.d }, { frameId: 0 }).catch(() => {});
+      return {};
+    case "frame-reply": // an iframe's outline/locate answer -> every frame of the tab; only the asker holds the request id
+      if (sender?.tab?.id != null && sender.frameId !== 0) chrome.tabs.sendMessage(sender.tab.id, { type: "frame-reply", data: msg.data }).catch(() => {});
+      return {};
     case "open-setup": chrome.tabs.create({ url: chrome.runtime.getURL("setup.html") }); return {};
   }
   return { error: "unknown message " + msg.type };

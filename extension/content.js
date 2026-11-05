@@ -7,21 +7,21 @@
 (() => {
   const NS = globalThis.Ishara;
   // Content scripts run in every frame (all_frames). Only the TOP frame owns the overlay, the helper and the chords.
-  // Key events inside a focused iframe never reach the top window, so a child watches for the same chords and
-  // forwards them up, one level at a time, as a tiny message; the top then runs the usual handler.
+  // Key events inside a focused iframe never reach the top window, so a child watches for the same chords and sends
+  // them to the top frame through the service worker. Not by postMessage: any script in any frame (an ad) could post
+  // the same message and switch the microphone on. And only real key presses (isTrusted), never script-made events.
   if (window !== window.top) {
     const CHORD = (e) => e.altKey && (e.code === "Space" || (e.shiftKey && (e.code === "KeyO" || e.code === "KeyD")));
-    const up = (m) => parent.postMessage({ ishara: "key", ...m }, "*");
+    const up = (m) => { try { chrome.runtime.sendMessage({ type: "chord", d: m }).catch(() => {}); } catch { /* extension reloaded */ } };
     addEventListener("keydown", (e) => {
+      if (!e.isTrusted) return;
       if (CHORD(e) || e.key === "Escape") {
         if (CHORD(e)) { e.preventDefault(); e.stopPropagation(); }
         up({ type: "down", code: e.code, key: e.key, altKey: e.altKey, shiftKey: e.shiftKey, repeat: e.repeat });
       }
     }, true);
-    addEventListener("keyup", (e) => { if (e.code === "Space" || e.code.startsWith("Alt")) up({ type: "up", code: e.code }); }, true);
+    addEventListener("keyup", (e) => { if (e.isTrusted && (e.code === "Space" || e.code.startsWith("Alt"))) up({ type: "up", code: e.code }); }, true);
     addEventListener("blur", () => up({ type: "blur" })); // Option+Tab away mid-hold
-    // Relay from a grandchild: only from a direct child iframe of this document.
-    addEventListener("message", (e) => { const d = e.data; if (d && d.ishara === "key" && NS.frames.isChild(e.source)) up(d); });
     return;
   }
   // One id per page load: the helper keys its log and the 0G session root on it. A new one after "End session",
@@ -170,18 +170,20 @@
       });
     } else if (e.key === "Escape") NS.overlay.clear();
   }
-  addEventListener("keydown", onKeyDown, true);
+  // isTrusted: a page can dispatch a fake Alt+Space; it must never start the microphone or spend 0G calls.
+  addEventListener("keydown", (e) => { if (e.isTrusted) onKeyDown(e); }, true);
 
   // Release of either key ends the recording; blur covers Option+Tab away mid-hold.
   const onKeyUp = (e) => { if (e.code === "Space" || e.code.startsWith("Alt")) stopTalking(); };
-  addEventListener("keyup", onKeyUp, true);
+  addEventListener("keyup", (e) => { if (e.isTrusted) onKeyUp(e); }, true);
   addEventListener("blur", () => stopTalking());
 
-  // Chords forwarded by child frames (see the top of this file). Only accepted from a direct child iframe.
+  // Chords forwarded by child frames (see the top of this file), relayed by the service worker, so only our own
+  // content scripts can send them.
   const noop = () => {};
-  addEventListener("message", (e) => {
-    const d = e.data;
-    if (!d || d.ishara !== "key" || !NS.frames.isChild(e.source)) return;
+  chrome.runtime.onMessage.addListener((m) => {
+    const d = m && m.type === "chord" && m.d;
+    if (!d) return;
     if (d.type === "down") onKeyDown({ altKey: !!d.altKey, shiftKey: !!d.shiftKey, code: String(d.code), key: String(d.key), repeat: !!d.repeat, preventDefault: noop, stopPropagation: noop });
     else if (d.type === "up") onKeyUp({ code: String(d.code) });
     else if (d.type === "blur") stopTalking();

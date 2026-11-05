@@ -175,9 +175,11 @@
   // ---- iframes -------------------------------------------------------------------------------------------------
   // A content script runs in every frame (manifest all_frames). Cross-origin frames cannot be read from the parent,
   // so each frame compiles its OWN document and the parent asks over window.postMessage, which works across origins.
-  // Trust model: everything a frame sends back is untrusted data. The parent accepts a reply only if it carries the
-  // random request id the parent generated AND comes from the very window it asked; text is clipped and typed, then
-  // only ever shown or sent to the helper as a label, never executed. Known limit: postMessage is visible to the
+  // Trust model: everything a frame sends back is untrusted data. Requests go down by postMessage, but REPLIES come back
+  // through the extension's service worker (chrome.runtime), which a page's own scripts cannot use: a reply posted on
+  // the window could be forged by the child page itself (it sees the request id too), so an ad frame could offer fake
+  // controls. The worker broadcasts the reply to the tab's frames; only the frame holding that random request id uses
+  // it. Text is clipped and typed, then only ever shown or sent to the helper as a label, never executed. Known limit: postMessage is visible to the
   // pages involved, so a hostile PARENT page that embeds a victim frame could ask it for its control labels (never
   // field values). The fix would be to relay through the service worker; not done within this build.
   const pending = new Map(); // req -> { win, resolve }
@@ -201,6 +203,13 @@
     if (depth > 4) return;
     for (const host of root.querySelectorAll("*")) if (host.shadowRoot && !host.hasAttribute("data-ishara-root")) yield* iframesOf(host.shadowRoot, depth + 1);
   }
+  // Replies from our own content script in a child frame, relayed by background.js ("frame-reply").
+  const reply = (data) => { try { chrome.runtime.sendMessage({ type: "frame-reply", data }).catch(() => {}); } catch { /* extension reloaded */ } };
+  chrome.runtime.onMessage.addListener((m) => {
+    if (!m || m.type !== "frame-reply" || !m.data || typeof m.data.req !== "string") return;
+    const p = pending.get(m.data.req);
+    if (p) p.resolve(m.data);
+  });
   const isChild = (win) => !!win && [...iframesOf()].some((f) => f.contentWindow === win);
 
   // Where the frame's own viewport sits in THIS viewport: origin, plus a scale for CSS-transformed frames.
@@ -291,19 +300,14 @@
   addEventListener("message", async (e) => {
     const d = e.data;
     if (!d || typeof d !== "object" || typeof d.ishara !== "string") return;
-    if (d.ishara === "outline" || d.ishara === "located") {
-      const p = pending.get(d.req);
-      if (p && p.win === e.source) p.resolve(d);
-      return;
-    }
     if (window === window.top || e.source !== window.parent || typeof d.req !== "string") return;
     if (d.ishara === "outline?") {
       const c = await compileAsync(Number(d.budget) > 0 ? Math.min(Number(d.budget), 250) : 120);
       lastMap = c.map;
-      e.source.postMessage({
+      reply({
         ishara: "outline", req: d.req, size: { w: innerWidth, h: innerHeight },
         elements: c.outline.elements.map((x) => ({ ...x, _type: c.types.get(x.id) || "" })),
-      }, "*");
+      });
     } else if (d.ishara === "locate") {
       const entry = lastMap.get(d.id);
       let rect = null;
@@ -317,7 +321,7 @@
           const r = entry.getBoundingClientRect(); rect = { x: r.left, y: r.top, w: r.width, h: r.height };
         }
       }
-      e.source.postMessage({ ishara: "located", req: d.req, rect }, "*");
+      reply({ ishara: "located", req: d.req, rect });
     }
   });
 
