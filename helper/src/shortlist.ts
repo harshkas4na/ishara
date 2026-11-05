@@ -41,12 +41,12 @@ function sameStem(a: string, b: string): boolean {
 // Local, instant, and the only thing that decides what laya may choose from, so it must be dumb and predictable:
 // score = shared tokens (exact 2, same stem 1, synonym 1); ties keep outline order, controls before links.
 // Headings (role "text") are never candidates: a heading cannot be what the pointer lands on.
-export function shortlist(question: string, elements: OutlineElement[], n = 3): string[] {
+function scoreElements(question: string, elements: OutlineElement[]): Array<{ id: string; score: number; i: number }> {
   const q = tokens(question);
   const expanded = [...new Set(q.flatMap((t) => SYNONYMS[t] ?? []))].filter((s) => !q.includes(s));
   const wantsAction = q.some((t) => ACTION.has(t));
   const pool = elements.filter((e) => e.role !== "text");
-  const scored = (pool.length >= n ? pool : elements).map((el, i) => {
+  const scored = (pool.length >= 3 ? pool : elements).map((el, i) => {
     const lt = tokens(el.label);
     let score = 0;
     for (const t of q) {
@@ -59,5 +59,17 @@ export function shortlist(question: string, elements: OutlineElement[], n = 3): 
     return { id: el.id, score: score + prior, i };
   });
   scored.sort((a, b) => b.score - a.score || a.i - b.i);
-  return scored.slice(0, n).map((s) => s.id);
+  return scored;
+}
+
+export function shortlist(question: string, elements: OutlineElement[], n = 3): string[] {
+  return scoreElements(question, elements).slice(0, n).map((s) => s.id);
+}
+
+// The best match for the question OTHER than `excludeId`, only if it shares real words with the question (score >= 2,
+// i.e. at least one exact word). Used to ask "this one or that one?" when laya doubts 0GM's pick but another control
+// clearly fits too. With no real overlap (a vague "help") there is nothing honest to offer, so it returns null.
+export function secondCandidate(question: string, elements: OutlineElement[], excludeId: string, minScore = 2): string | null {
+  const next = scoreElements(question, elements).find((s) => s.id !== excludeId);
+  return next && next.score >= minScore ? next.id : null;
 }

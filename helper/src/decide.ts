@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { gate } from "./gate.ts";
+import { secondCandidate } from "./shortlist.ts";
 import { askBrain, askVerify, BRAIN_MODEL, LAYA_MODEL } from "./zg.ts";
 import { episodeLog, type CallRef } from "./episode-log.ts";
 import { memory, memoryUsed, hostOf } from "./memory.ts";
@@ -44,7 +45,14 @@ export async function decide(sessionId: string, question: string, outline: Outli
   if (brain.ok && brain.targetId && !el) brain = { ...brain, targetId: null };
   const verify = el ? await deps.verify(question, el) : null;
 
-  const g = gate(brain, verify);
+  let g = gate(brain, verify);
+  // laya doubted 0GM's pick (it answered, but below the bar). If ANOTHER control shares real words with the question,
+  // the honest move is to show both and let the person choose, instead of a bare "which step?". Never when laya was
+  // unreachable (no evidence either way) and never with no word overlap (a vague "help" has no second candidate).
+  if (g.outcome === "ask" && verify?.ok && brain.ok && brain.targetId) {
+    const other = secondCandidate(question, outline.elements, brain.targetId);
+    if (other) g = { ...g, outcome: "ask_which", candidates: [brain.targetId, other], say: "This one or that one?", reason: `${g.reason}; ${other} also matches the question` };
+  }
   if (g.outcome === "point" && brain.ok && brain.sentence) g.say = brain.sentence; // 0GM's own words next to the pointer
   saveOutline(outline);
   const decision: Decision = {

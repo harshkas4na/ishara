@@ -51,7 +51,8 @@ test("decide: proposal confirmed points and carries request ids", async () => {
 });
 test("decide: an unconfirmed proposal never points", async () => {
   const d = await decide("s", "contract address", outline, { brain: ok("b4"), verify: yes(0.05) });
-  assert.equal(d.outcome, "ask");
+  // Not a point. It is "ask_which" because b3 (Contract address) also matches the words, and never names a target.
+  assert.notEqual(d.outcome, "point"); assert.equal(d.targetId, undefined);
 });
 test("decide: an id that is not on the page counts as naming nothing, and laya is not called", async () => {
   let called = false;
@@ -88,4 +89,26 @@ test("guard: static paths stay inside their folder", () => {
   assert.equal(staticPath(dir, "a/../../x"), null);
   assert.equal(staticPath(dir, "%E0%A4%A"), null, "malformed escape is refused, not a 500");
   assert.equal(staticPath(dir, "a%00.html"), null);
+});
+
+// ---- ask_which: laya doubts 0GM's pick and another control shares real words with the question ----
+test("decide: laya doubts the pick and another control matches the words -> show both", async () => {
+  // 0GM wrongly proposes b2 (Search); "contract address" matches b3 by exact words.
+  const d = await decide("s", "where is the contract address", outline, { brain: ok("b2"), verify: yes(0.1) });
+  assert.equal(d.outcome, "ask_which");
+  assert.deepEqual(d.candidates, ["b2", "b3"]);
+  assert.equal(d.targetId, undefined); // never a pointer
+});
+test("decide: laya doubts the pick and nothing else matches (vague) -> plain ask, no invented candidate", async () => {
+  const d = await decide("s", "help", outline, { brain: ok("b1"), verify: yes(0.1) });
+  assert.equal(d.outcome, "ask");
+  assert.equal(d.candidates, undefined);
+});
+test("decide: laya unreachable -> plain ask, never ask_which (no evidence either way)", async () => {
+  const d = await decide("s", "where is the contract address", outline, { brain: ok("b2"), verify: async () => ({ ok: false, cause: "timeout" }) });
+  assert.equal(d.outcome, "ask");
+});
+test("decide: a confirmed pick is unaffected by the second-candidate logic", async () => {
+  const d = await decide("s", "where is the contract address", outline, { brain: ok("b3"), verify: yes(0.9) });
+  assert.equal(d.outcome, "point"); assert.equal(d.targetId, "b3");
 });
