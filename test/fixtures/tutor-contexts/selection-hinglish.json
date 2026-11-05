@@ -1,0 +1,75 @@
+{
+ "name": "selection-hinglish",
+ "description": "Hand made: article with selected text, asked in Hinglish",
+ "context": {
+  "source": "browser",
+  "url": "https://blog.example/rollups",
+  "title": "Rollups explained",
+  "viewport": {
+   "w": 1280,
+   "h": 800
+  },
+  "errors": [],
+  "blocks": [
+   {
+    "id": "t0",
+    "kind": "h",
+    "text": "Rollups explained",
+    "inView": true
+   },
+   {
+    "id": "t1",
+    "kind": "p",
+    "text": "A rollup executes transactions off chain and posts compressed data to Ethereum, so it inherits Ethereum security while fees are lower.",
+    "inView": true
+   },
+   {
+    "id": "t2",
+    "kind": "p",
+    "text": "Optimistic rollups assume transactions are valid and allow a challenge window of seven days. Zero-knowledge rollups post a validity proof with every batch.",
+    "inView": true
+   },
+   {
+    "id": "t3",
+    "kind": "p",
+    "text": "The sequencer orders transactions. Today most rollups run a single sequencer.",
+    "inView": false
+   }
+  ],
+  "controls": [
+   {
+    "id": "b0",
+    "label": "Subscribe",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   },
+   {
+    "id": "b1",
+    "label": "Share",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   }
+  ],
+  "selection": "allow a challenge window of seven days"
+ },
+ "questions": [
+  {
+   "q": "isko simple bhasha mein samjhao",
+   "kind": "explain"
+  },
+  {
+   "q": "zk rollup aur optimistic mein kya fark hai",
+   "kind": "explain"
+  }
+ ]
+}

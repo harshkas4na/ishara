@@ -1,0 +1,712 @@
+{
+ "name": "wiki-ethereum",
+ "description": "Real outline from the product audit plus page text fetched as text",
+ "context": {
+  "source": "browser",
+  "url": "https://en.wikipedia.org/wiki/Ethereum",
+  "title": "Ethereum - Wikipedia",
+  "viewport": {
+   "w": 1470,
+   "h": 835
+  },
+  "errors": [],
+  "blocks": [
+   {
+    "id": "t0",
+    "kind": "h",
+    "text": "Open-source blockchain computing platform",
+    "inView": true
+   },
+   {
+    "id": "t1",
+    "kind": "p",
+    "text": "[[Gavin Wood]]\"},\"developer\":{\"wt\":\"\"},\"released\":{\"wt\":\"{{Start date and age|2015|07|30|df=yes}}\"},\"discontinued\":{\"wt\":\"&lt;!-- Set to yes if software is discontinued, otherwise omit. -->\"},\"latest release version\":{\"wt\":\"Fusaka\"},\"latest release date\":{\"wt\":\"{{Start date and age|2025|12|03|df=yes}}&lt;ref>{{cite web |last1=Beiko |first1=Tim |title=EIP-7607: Hardfork Meta - F",
+    "inView": true
+   },
+   {
+    "id": "t2",
+    "kind": "p",
+    "text": "usaka |url=https://eips.ethereum.org/EIPS/eip-7607 |website=Ethereum Improvement Proposals |publisher=Ethereum.org |access-date=14 December 2025}}&lt;/ref>\"},\"frequently updated\":{\"wt\":\"Yes\"},\"latest preview version\":{\"wt\":\"\"},\"latest preview date\":{\"wt\":\"\"},\"status\":{\"wt\":\"Active\"},\"goal\":{\"wt\":\"\"},\"software\":{\"wt\":\"EVM 1 [[Bytecode]]\"},\"funding\":{\"wt\":\"\"},\"programming languag",
+    "inView": true
+   },
+   {
+    "id": "t3",
+    "kind": "p",
+    "text": "e\":{\"wt\":\"[[Go (programming language)|Go]], [[Rust (programming language)|Rust]], [[C Sharp (programming language)|C#]], [[C++]], [[Java (programming language)|Java]], [[Python (programming language)|Python]], [[Nim (programming language)|Nim]], [[TypeScript]]\"},\"operating system\":{\"wt\":\"[[Cross-platform software|Cross-platform]]\"},\"platform\":{\"wt\":\"[[x86-64]], [[ARM architectu",
+    "inView": true
+   },
+   {
+    "id": "t4",
+    "kind": "p",
+    "text": "re|ARM]]\"},\"language\":{\"wt\":\"Multilingual, but primarily English\"},\"genre\":{\"wt\":\"[[Distributed computing]]\"},\"license\":{\"wt\":\"[[Open-source license]]s\"},\"website\":{\"wt\":\"{{URL|ethereum.org}}\"},\"standard\":{\"wt\":\"\"},\"as of\":{\"wt\":\"\"},\"performance\":{\"wt\":\"\"},\"active users\":{\"wt\":\"\"},\"total users\":{\"wt\":\"\"},\"active hosts\":{\"wt\":\"~8,600 nodes (6 June 2023)&lt;ref>{{cite web |date=6",
+    "inView": true
+   },
+   {
+    "id": "t5",
+    "kind": "p",
+    "text": " June 2023 |title=Clients |url=https://ethernodes.org/ |access-date=6 June 2023 |website=Ethernodes |archive-date=11 June 2023 |archive-url=https://web.archive.org/web/20230611010141/https://ethernodes.org/ |url-status=live }}&lt;/ref>\"},\"total hosts\":{\"wt\":\"\"}},\"i\":0}}]}'> Ethereum",
+    "inView": true
+   },
+   {
+    "id": "t6",
+    "kind": "h",
+    "text": "Original author(s) Vitalik Buterin Gavin Wood",
+    "inView": true
+   },
+   {
+    "id": "t7",
+    "kind": "h",
+    "text": "Initial release 30 July 2015 ; 11 years ago ( 2015-07-30 )",
+    "inView": true
+   },
+   {
+    "id": "t8",
+    "kind": "h",
+    "text": "Stable release Fusaka / 3 December 2025 ; 11 months ago ( 2025-12-03 ) [ 1 ]",
+    "inView": true
+   },
+   {
+    "id": "t9",
+    "kind": "h",
+    "text": "Development status Active",
+    "inView": true
+   },
+   {
+    "id": "t10",
+    "kind": "h",
+    "text": "Software used EVM 1 Bytecode",
+    "inView": true
+   },
+   {
+    "id": "t11",
+    "kind": "h",
+    "text": "Written in Go , Rust , C# , C++ , Java , Python , Nim , TypeScript",
+    "inView": true
+   },
+   {
+    "id": "t12",
+    "kind": "h",
+    "text": "Operating system Cross-platform",
+    "inView": true
+   },
+   {
+    "id": "t13",
+    "kind": "h",
+    "text": "Available in Multilingual, but primarily English",
+    "inView": true
+   },
+   {
+    "id": "t14",
+    "kind": "h",
+    "text": "Type Distributed computing",
+    "inView": false
+   },
+   {
+    "id": "t15",
+    "kind": "h",
+    "text": "License Open-source licenses",
+    "inView": false
+   },
+   {
+    "id": "t16",
+    "kind": "h",
+    "text": "Active hosts ~8,600 nodes (6 June 2023) [ 2 ]",
+    "inView": false
+   },
+   {
+    "id": "t17",
+    "kind": "h",
+    "text": "Monthly Ether price in USD",
+    "inView": false
+   },
+   {
+    "id": "t18",
+    "kind": "p",
+    "text": "Ethereum is a decentralized blockchain with smart contract functionality. Ether ( abbreviation : ETH ) [ a ] is the native cryptocurrency of the platform. Among cryptocurrencies, ether is second only to bitcoin in market capitalization . [ 3 ] [ 4 ] It is open-source software .",
+    "inView": false
+   },
+   {
+    "id": "t19",
+    "kind": "p",
+    "text": "Ethereum was conceived in 2013 by programmer Vitalik Buterin . [ 5 ] Other founders include Gavin Wood , Charles Hoskinson , Anthony Di Iorio , and Joseph Lubin . [ 6 ] In 2014, development work began and was crowdfunded , and the network went live on 30 July 2015. [ 7 ] Ethereum allows anyone to deploy decentralized applications onto it, which anyone can then use. [ 8 ] Decent",
+    "inView": false
+   },
+   {
+    "id": "t20",
+    "kind": "p",
+    "text": "ralized finance (DeFi) applications provide financial instruments that do not directly rely on financial intermediaries like brokerages , exchanges , or banks . This facilitates borrowing against cryptocurrency holdings or lending them out for interest . [ 9 ] [ 10 ] Ethereum allows users to create fungible (e.g. ERC-20) and non-fungible tokens (NFTs) with a variety of properti",
+    "inView": false
+   },
+   {
+    "id": "t21",
+    "kind": "p",
+    "text": "es, and to create smart contracts that can receive, hold and send those assets in accordance with the contract's immutable code and a transaction's input data.",
+    "inView": false
+   },
+   {
+    "id": "t22",
+    "kind": "p",
+    "text": "On 15 September 2022, Ethereum transitioned its consensus mechanism from proof-of-work (PoW) to proof-of-stake (PoS) in an update known as \"The Merge\", which cut the blockchain's energy usage by over 99%. [ 11 ] [ 12 ]",
+    "inView": false
+   },
+   {
+    "id": "t23",
+    "kind": "h",
+    "text": "Ethereum co-founder Vitalik Buterin in 2015",
+    "inView": false
+   },
+   {
+    "id": "t24",
+    "kind": "p",
+    "text": "Ethereum was initially described in late 2013 in a white paper by Vitalik Buterin , [ 5 ] [ 13 ] a programmer and co-founder of Bitcoin Magazine , that described a way to build decentralized applications. [ 14 ] [ 15 ] Buterin argued to the Bitcoin Core developers that blockchain technology could benefit from other applications besides money and that it needed a more robust lan",
+    "inView": false
+   },
+   {
+    "id": "t25",
+    "kind": "p",
+    "text": "guage for application development [ 16 ] : 88 that could lead to attaching [ clarification needed ] real-world assets , such as stocks and property, to the blockchain. [ 17 ] In 2013, Buterin briefly worked with eToro CEO Yoni Assia on the Colored Coins project and drafted its white paper outlining additional use cases for blockchain technology. [ 18 ] However, after failing to",
+    "inView": false
+   },
+   {
+    "id": "t26",
+    "kind": "p",
+    "text": " gain agreement on how the project should proceed, he proposed the development of a new platform with a more robust scripting language—a Turing-complete programming language [ 19 ] —that would eventually become Ethereum. [ 16 ]",
+    "inView": false
+   },
+   {
+    "id": "t27",
+    "kind": "p",
+    "text": "Ethereum was announced at the North American Bitcoin Conference in Miami, in January 2014. [ 20 ] During the conference, Gavin Wood , Charles Hoskinson , and Anthony Di Iorio (who financed the project) rented a house in Miami with Buterin at which they could develop a fuller sense of what Ethereum might become. [ 20 ] Di Iorio invited friend Joseph Lubin , who invited reporter ",
+    "inView": false
+   },
+   {
+    "id": "t28",
+    "kind": "p",
+    "text": "Morgen Peck, to bear witness. [ 20 ] Peck subsequently wrote about the experience in Wired . [ 21 ] Six months later the founders met again in Zug , Switzerland, where Buterin told the founders that the project would proceed as a non-profit. Hoskinson left the project at that time and soon after founded IOHK, a blockchain company responsible for Cardano . [ 20 ]",
+    "inView": false
+   },
+   {
+    "id": "t29",
+    "kind": "p",
+    "text": "Ethereum has an unusually long list of founders. [ 22 ] Anthony Di Iorio wrote: \"Ethereum was founded by Vitalik Buterin, Myself, Charles Hoskinson, Mihai Alisie & Amir Chetrit (the initial 5) in December 2013. Joseph Lubin, Gavin Wood, & Jeffrey Wilcke were added in early 2014 as founders.\" Buterin chose the name Ethereum after browsing a list of elements from science fiction ",
+    "inView": false
+   },
+   {
+    "id": "t30",
+    "kind": "p",
+    "text": "on Wikipedia . He stated, \"I immediately realized that I liked it better than all of the other alternatives that I had seen; I suppose it was that [it] sounded nice and it had the word ' ether ', referring to the hypothetical invisible medium that permeates the universe and allows light to travel.\" [ 20 ] Buterin wanted his platform to be the underlying and imperceptible medium",
+    "inView": false
+   },
+   {
+    "id": "t31",
+    "kind": "p",
+    "text": " for the applications running on top of it. [ 23 ]",
+    "inView": false
+   },
+   {
+    "id": "t32",
+    "kind": "p",
+    "text": "Formal development of the software underlying Ethereum began in early 2014 through a Swiss company, Ethereum Switzerland GmbH ( EthSuisse ). [ 24 ] The idea of putting executable smart contracts in the blockchain needed to be specified before it could be implemented in software. This work was done by Gavin Wood, then the chief technology officer , in the Ethereum Yellow Paper t",
+    "inView": false
+   },
+   {
+    "id": "t33",
+    "kind": "p",
+    "text": "hat specified the Ethereum Virtual Machine. [ 25 ] [ 26 ] Subsequently, a Swiss non-profit foundation, the Ethereum Foundation ( Stiftung Ethereum ), was founded. Development was funded by an online public crowd sale from July to August 2014, in which participants bought the Ethereum value token (ether) with another digital currency, bitcoin . While there was early praise for t",
+    "inView": false
+   },
+   {
+    "id": "t34",
+    "kind": "p",
+    "text": "he technical innovations of Ethereum, questions were also raised about its security and scalability. [ 14 ]",
+    "inView": false
+   },
+   {
+    "id": "t35",
+    "kind": "p",
+    "text": "The Foundation funded multiple teams in different cities building three separate implementations of the protocol: Geth ( Go ), Pyethereum ( Python ), a C++ implementation, and also Swarm ( decentralized file storage ), Mist Browser (A wallet, browser and a user interface for smart contracts, now defunct) among other projects. The intended purpose of the three distinct implement",
+    "inView": false
+   },
+   {
+    "id": "t36",
+    "kind": "p",
+    "text": "ations would be so that if one of them had a bug, the other two could be used as a comparison.",
+    "inView": false
+   },
+   {
+    "id": "t37",
+    "kind": "h",
+    "text": "Launch and the DAO event (2014–2016)",
+    "inView": false
+   },
+   {
+    "id": "t38",
+    "kind": "p",
+    "text": "Several codenamed prototypes of Ethereum were developed over 18 months in 2014 and 2015 by the Ethereum Foundation as part of their proof-of-concept series. [ 5 ] \"Olympic\" was the last prototype and public beta pre-release. The Olympic network gave users a bug bounty of 25,000 ether for stress-testing the Ethereum blockchain. On 30 July 2015, \"Frontier\" marked the official lau",
+    "inView": false
+   },
+   {
+    "id": "t39",
+    "kind": "p",
+    "text": "nch of the Ethereum platform, and Ethereum created its \"genesis block\". [ 5 ] [ 27 ] The genesis block contained 8,893 transactions allocating various amounts of ether to different addresses, and a block reward of 5 ETH. [ citation needed ]",
+    "inView": false
+   }
+  ],
+  "controls": [
+   {
+    "id": "b0",
+    "label": "Search Wikipedia",
+    "role": "input",
+    "rect": {
+     "x": 266,
+     "y": -235,
+     "w": 404,
+     "h": 32
+    }
+   },
+   {
+    "id": "b1",
+    "label": "Search",
+    "role": "button",
+    "rect": {
+     "x": 669,
+     "y": -235,
+     "w": 71,
+     "h": 32
+    }
+   },
+   {
+    "id": "b2",
+    "label": "Donate",
+    "role": "link",
+    "rect": {
+     "x": 1228,
+     "y": -227,
+     "w": 45,
+     "h": 16
+    }
+   },
+   {
+    "id": "b3",
+    "label": "Create account",
+    "role": "link",
+    "rect": {
+     "x": 1281,
+     "y": -227,
+     "w": 95,
+     "h": 16
+    }
+   },
+   {
+    "id": "b4",
+    "label": "Log in",
+    "role": "link",
+    "rect": {
+     "x": 1384,
+     "y": -227,
+     "w": 38,
+     "h": 16
+    }
+   },
+   {
+    "id": "b6",
+    "label": "Hide Contents",
+    "role": "button",
+    "rect": {
+     "x": 133,
+     "y": 25,
+     "w": 39,
+     "h": 22
+    }
+   },
+   {
+    "id": "b7",
+    "label": "(Top)",
+    "role": "link",
+    "rect": {
+     "x": 60,
+     "y": 61,
+     "w": 164,
+     "h": 28
+    }
+   },
+   {
+    "id": "b8",
+    "label": "History",
+    "role": "link",
+    "rect": {
+     "x": 60,
+     "y": 89,
+     "w": 164,
+     "h": 28
+    }
+   },
+   {
+    "id": "b9",
+    "label": "Toggle History subsection",
+    "role": "button",
+    "rect": {
+     "x": 37,
+     "y": 90,
+     "w": 22,
+     "h": 22
+    }
+   },
+   {
+    "id": "b10",
+    "label": "Design",
+    "role": "link",
+    "rect": {
+     "x": 60,
+     "y": 117,
+     "w": 164,
+     "h": 28
+    }
+   },
+   {
+    "id": "b11",
+    "label": "Toggle Design subsection",
+    "role": "button",
+    "rect": {
+     "x": 37,
+     "y": 118,
+     "w": 22,
+     "h": 22
+    }
+   },
+   {
+    "id": "b12",
+    "label": "Applications",
+    "role": "link",
+    "rect": {
+     "x": 60,
+     "y": 145,
+     "w": 164,
+     "h": 28
+    }
+   },
+   {
+    "id": "b13",
+    "label": "Toggle Applications subsection",
+    "role": "button",
+    "rect": {
+     "x": 37,
+     "y": 146,
+     "w": 22,
+     "h": 22
+    }
+   },
+   {
+    "id": "b14",
+    "label": "Legal status and regulation",
+    "role": "link",
+    "rect": {
+     "x": 60,
+     "y": 173,
+     "w": 164,
+     "h": 44
+    }
+   },
+   {
+    "id": "b15",
+    "label": "Notes",
+    "role": "link",
+    "rect": {
+     "x": 60,
+     "y": 217,
+     "w": 164,
+     "h": 28
+    }
+   },
+   {
+    "id": "b16",
+    "label": "References",
+    "role": "link",
+    "rect": {
+     "x": 60,
+     "y": 245,
+     "w": 164,
+     "h": 28
+    }
+   },
+   {
+    "id": "b17",
+    "label": "External links",
+    "role": "link",
+    "rect": {
+     "x": 60,
+     "y": 273,
+     "w": 164,
+     "h": 28
+    }
+   },
+   {
+    "id": "b19",
+    "label": "Article",
+    "role": "link",
+    "rect": {
+     "x": 264,
+     "y": -123,
+     "w": 39,
+     "h": 32
+    }
+   },
+   {
+    "id": "b20",
+    "label": "Talk",
+    "role": "link",
+    "rect": {
+     "x": 319,
+     "y": -123,
+     "w": 25,
+     "h": 32
+    }
+   },
+   {
+    "id": "b21",
+    "label": "Read",
+    "role": "link",
+    "rect": {
+     "x": 925,
+     "y": -123,
+     "w": 33,
+     "h": 32
+    }
+   },
+   {
+    "id": "b22",
+    "label": "View source",
+    "role": "link",
+    "rect": {
+     "x": 975,
+     "y": -123,
+     "w": 76,
+     "h": 32
+    }
+   },
+   {
+    "id": "b23",
+    "label": "View history",
+    "role": "link",
+    "rect": {
+     "x": 1067,
+     "y": -123,
+     "w": 75,
+     "h": 32
+    }
+   },
+   {
+    "id": "b24",
+    "label": "Save",
+    "role": "link",
+    "rect": {
+     "x": 1150,
+     "y": -123,
+     "w": 32,
+     "h": 32
+    }
+   },
+   {
+    "id": "b25",
+    "label": "Hide Appearance",
+    "role": "button",
+    "rect": {
+     "x": 1338,
+     "y": 25,
+     "w": 39,
+     "h": 22
+    }
+   },
+   {
+    "id": "b26",
+    "label": "This article is semi-protected.",
+    "role": "link",
+    "rect": {
+     "x": 1186,
+     "y": -79,
+     "w": 20,
+     "h": 16
+    }
+   },
+   {
+    "id": "b27",
+    "label": "Original author(s)",
+    "role": "link",
+    "rect": {
+     "x": 904,
+     "y": 241,
+     "w": 118,
+     "h": 16
+    }
+   },
+   {
+    "id": "b28",
+    "label": "Vitalik Buterin",
+    "role": "link",
+    "rect": {
+     "x": 1043,
+     "y": 241,
+     "w": 86,
+     "h": 16
+    }
+   },
+   {
+    "id": "b29",
+    "label": "Gavin Wood",
+    "role": "link",
+    "rect": {
+     "x": 1043,
+     "y": 262,
+     "w": 77,
+     "h": 16
+    }
+   },
+   {
+    "id": "b30",
+    "label": "Stable release",
+    "role": "link",
+    "rect": {
+     "x": 904,
+     "y": 336,
+     "w": 95,
+     "h": 16
+    }
+   },
+   {
+    "id": "b31",
+    "label": "[1]",
+    "role": "link",
+    "rect": {
+     "x": 1174,
+     "y": 355,
+     "w": 13,
+     "h": 13
+    }
+   },
+   {
+    "id": "b32",
+    "label": "Bytecode",
+    "role": "link",
+    "rect": {
+     "x": 1089,
+     "y": 409,
+     "w": 59,
+     "h": 16
+    }
+   },
+   {
+    "id": "b33",
+    "label": "Written in",
+    "role": "link",
+    "rect": {
+     "x": 904,
+     "y": 435,
+     "w": 65,
+     "h": 16
+    }
+   },
+   {
+    "id": "b34",
+    "label": "Go",
+    "role": "link",
+    "rect": {
+     "x": 1043,
+     "y": 435,
+     "w": 19,
+     "h": 16
+    }
+   },
+   {
+    "id": "b35",
+    "label": "Rust",
+    "role": "link",
+    "rect": {
+     "x": 1069,
+     "y": 435,
+     "w": 29,
+     "h": 16
+    }
+   },
+   {
+    "id": "b36",
+    "label": "C#",
+    "role": "link",
+    "rect": {
+     "x": 1106,
+     "y": 435,
+     "w": 18,
+     "h": 16
+    }
+   },
+   {
+    "id": "b37",
+    "label": "C++",
+    "role": "link",
+    "rect": {
+     "x": 1132,
+     "y": 435,
+     "w": 27,
+     "h": 16
+    }
+   },
+   {
+    "id": "b38",
+    "label": "Java",
+    "role": "link",
+    "rect": {
+     "x": 1043,
+     "y": 456,
+     "w": 30,
+     "h": 16
+    }
+   },
+   {
+    "id": "b39",
+    "label": "Python",
+    "role": "link",
+    "rect": {
+     "x": 1080,
+     "y": 456,
+     "w": 44,
+     "h": 16
+    }
+   },
+   {
+    "id": "b40",
+    "label": "Nim",
+    "role": "link",
+    "rect": {
+     "x": 1132,
+     "y": 456,
+     "w": 25,
+     "h": 16
+    }
+   },
+   {
+    "id": "b41",
+    "label": "TypeScript",
+    "role": "link",
+    "rect": {
+     "x": 1043,
+     "y": 477,
+     "w": 67,
+     "h": 16
+    }
+   }
+  ]
+ },
+ "questions": [
+  {
+   "q": "what does proof of stake mean here and what changed in 2022",
+   "kind": "explain"
+  },
+  {
+   "q": "summarize the first section",
+   "kind": "explain"
+  },
+  {
+   "q": "ye page kis baare mein hai",
+   "kind": "explain"
+  }
+ ]
+}

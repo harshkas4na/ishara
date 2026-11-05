@@ -1,0 +1,708 @@
+{
+ "name": "github-readme",
+ "description": "Real outline from the product audit plus page text fetched as text",
+ "context": {
+  "source": "browser",
+  "url": "https://github.com/harshkas4na/ishara",
+  "title": "harshkas4na/ishara",
+  "viewport": {
+   "w": 1470,
+   "h": 835
+  },
+  "errors": [],
+  "blocks": [
+   {
+    "id": "t0",
+    "kind": "p",
+    "text": "A screen tutor you can verify. Hold a key, ask a question out loud, and a pointer moves to the right",
+    "inView": true
+   },
+   {
+    "id": "t1",
+    "kind": "p",
+    "text": "control on the page, with a one-line answer. Every decision is made by sealed models on 0G, each answer",
+    "inView": true
+   },
+   {
+    "id": "t2",
+    "kind": "p",
+    "text": "has a receipt you can check, and if 0G cannot be reached the tutor says so instead of guessing.",
+    "inView": true
+   },
+   {
+    "id": "t3",
+    "kind": "p",
+    "text": "Built solo at ETHGlobal Mumbai, 5-7 Nov 2026. Tracks: 0G Physical AI (Agents with a Body), Build with 0G PC,",
+    "inView": true
+   },
+   {
+    "id": "t4",
+    "kind": "p",
+    "text": "Ethereum Foundation Best CROPS App.",
+    "inView": true
+   },
+   {
+    "id": "t5",
+    "kind": "p",
+    "text": "Status: the Core works end to end (question in, sealed decision, pointer). The proof pages and the",
+    "inView": true
+   },
+   {
+    "id": "t6",
+    "kind": "p",
+    "text": "replay are in. See \"Known limits\" for what is not done or not proven.",
+    "inView": true
+   },
+   {
+    "id": "t7",
+    "kind": "p",
+    "text": "1. You hold Option+Space and ask (\"where do I put the contract address?\"), or press Option+Shift+Space and type.",
+    "inView": true
+   },
+   {
+    "id": "t8",
+    "kind": "p",
+    "text": "2. Your voice is turned into text on your laptop (whisper.cpp). The page is turned into a short text",
+    "inView": true
+   },
+   {
+    "id": "t9",
+    "kind": "p",
+    "text": "outline (one line per control). Only those two texts leave your machine. No audio, no screenshot.",
+    "inView": true
+   },
+   {
+    "id": "t10",
+    "kind": "p",
+    "text": "3. 0GM-1.0 (sealed, end-to-end encrypted) reads the outline and proposes one control, with one sentence.",
+    "inView": true
+   },
+   {
+    "id": "t11",
+    "kind": "p",
+    "text": "4. laya (a second sealed 0G model) is asked a yes/no: \"is this control what the user asked for?\"",
+    "inView": true
+   },
+   {
+    "id": "t12",
+    "kind": "p",
+    "text": "5. A small gate (helper/src/gate.ts) moves the pointer only if laya says yes with probability at least 0.4.",
+    "inView": true
+   },
+   {
+    "id": "t13",
+    "kind": "p",
+    "text": "If not, it asks you. If 0GM is unreachable, it safe-stops: no pointer, a plain message, no guess.",
+    "inView": true
+   },
+   {
+    "id": "t14",
+    "kind": "p",
+    "text": "6. After each answer the provider's signature is fetched and checked against the signer registered on-chain.",
+    "inView": false
+   },
+   {
+    "id": "t15",
+    "kind": "p",
+    "text": "At the end of a session the log is encrypted, stored on 0G Storage, and its root is written to a contract.",
+    "inView": false
+   },
+   {
+    "id": "t16",
+    "kind": "h",
+    "text": "0G piece What it does here Without 0G",
+    "inView": false
+   },
+   {
+    "id": "t17",
+    "kind": "p",
+    "text": "Private Computer Router, trust mode private Every model call goes only to sealed providers and returns a request id. Never a non-private fallback. A normal model API: nothing sealed, no id or signature to check.",
+    "inView": false
+   },
+   {
+    "id": "t18",
+    "kind": "p",
+    "text": "0GM-1.0 Reads the page outline and proposes the control and the answer sentence. No sealed model for the decision.",
+    "inView": false
+   },
+   {
+    "id": "t19",
+    "kind": "p",
+    "text": "laya Confirms or rejects 0GM's proposal with a probability. The gate has no independent second opinion.",
+    "inView": false
+   },
+   {
+    "id": "t20",
+    "kind": "p",
+    "text": "0G Storage (Turbo, Galileo) Holds each session's encrypted log. A log on one laptop that nobody else can fetch.",
+    "inView": false
+   },
+   {
+    "id": "t21",
+    "kind": "p",
+    "text": "SessionRoot contract on Galileo Records the root of each session's log. Address: 0x40F8A6CB2c16e0bA04005f527B6F3893963464ac (chain 16602). A replayed log has nothing to be checked against.",
+    "inView": false
+   },
+   {
+    "id": "t22",
+    "kind": "p",
+    "text": "What breaks if 0G is removed: the decision loses its sealed models and its receipts, which is the whole",
+    "inView": false
+   },
+   {
+    "id": "t23",
+    "kind": "p",
+    "text": "point of the project. There is no non-0G fallback by design.",
+    "inView": false
+   },
+   {
+    "id": "t24",
+    "kind": "p",
+    "text": "The request id for each decision is shown in the debug panel and stored in the log. The \"How do I know?\" page",
+    "inView": false
+   },
+   {
+    "id": "t25",
+    "kind": "p",
+    "text": "(/app/proof.html) shows the check for one answer, and the replay page (/app/replay.html) reads a whole",
+    "inView": false
+   },
+   {
+    "id": "t26",
+    "kind": "p",
+    "text": "session back from 0G Storage and verifies it.",
+    "inView": false
+   },
+   {
+    "id": "t27",
+    "kind": "p",
+    "text": "- Censorship resistant: no account, server or key of ours sits between you and 0G, and the tutor never",
+    "inView": false
+   },
+   {
+    "id": "t28",
+    "kind": "p",
+    "text": "substitutes a different model when 0G is unreachable. The honest limit: the Router is a single path to 0G.",
+    "inView": false
+   },
+   {
+    "id": "t29",
+    "kind": "p",
+    "text": "- Open source: MIT, public repository, the plan and the AI use are in the repository (SPEC.md, AI_USE.md).",
+    "inView": false
+   },
+   {
+    "id": "t30",
+    "kind": "p",
+    "text": "- Private: audio stays on your laptop, no screenshot is ever sent, only the question and a text outline",
+    "inView": false
+   },
+   {
+    "id": "t31",
+    "kind": "p",
+    "text": "leave it, and only to sealed providers. 0GM-1.0 is end-to-end encrypted; laya and storage are sealed",
+    "inView": false
+   },
+   {
+    "id": "t32",
+    "kind": "p",
+    "text": "hardware but not end-to-end encrypted, and we say so.",
+    "inView": false
+   },
+   {
+    "id": "t33",
+    "kind": "p",
+    "text": "- Secure: the 0G key lives only in the local helper (~/.config/0g/key), never in the extension. Answers",
+    "inView": false
+   },
+   {
+    "id": "t34",
+    "kind": "p",
+    "text": "have a signature checked against the on-chain signer. Logs are AES-256-GCM encrypted before upload, with the",
+    "inView": false
+   },
+   {
+    "id": "t35",
+    "kind": "p",
+    "text": "plaintext hash stored so a wrong key cannot pass silently. The extension has no third-party scripts or analytics.",
+    "inView": false
+   },
+   {
+    "id": "t36",
+    "kind": "p",
+    "text": "Replayed through the real 0G path on a mock \"verify contract\" page (scripts/eval.ts; first run 5 Nov, re-run unchanged on 6 Nov after the outage):",
+    "inView": false
+   },
+   {
+    "id": "t37",
+    "kind": "p",
+    "text": "12 clear questions 11 pointed at the right control, 0 wrong points; 1 asked instead (laya p=0.29, below the 0.4 line)",
+    "inView": false
+   },
+   {
+    "id": "t38",
+    "kind": "h",
+    "text": "6 vague questions (\"help\", \"I am stuck\", ...) 6 of 6 asked instead of pointing",
+    "inView": false
+   },
+   {
+    "id": "t39",
+    "kind": "h",
+    "text": "Time per question 2.6-2.9 s warm, up to 6 s on a cold first call",
+    "inView": false
+   }
+  ],
+  "controls": [
+   {
+    "id": "b0",
+    "label": "Homepage",
+    "role": "link",
+    "rect": {
+     "x": 16,
+     "y": 18,
+     "w": 32,
+     "h": 32
+    }
+   },
+   {
+    "id": "b1",
+    "label": "Products",
+    "role": "button",
+    "rect": {
+     "x": 64,
+     "y": 20,
+     "w": 96,
+     "h": 28
+    }
+   },
+   {
+    "id": "b2",
+    "label": "Developers",
+    "role": "button",
+    "rect": {
+     "x": 160,
+     "y": 20,
+     "w": 111,
+     "h": 28
+    }
+   },
+   {
+    "id": "b3",
+    "label": "Businesses",
+    "role": "button",
+    "rect": {
+     "x": 271,
+     "y": 20,
+     "w": 111,
+     "h": 28
+    }
+   },
+   {
+    "id": "b4",
+    "label": "Resources",
+    "role": "button",
+    "rect": {
+     "x": 382,
+     "y": 20,
+     "w": 106,
+     "h": 28
+    }
+   },
+   {
+    "id": "b5",
+    "label": "Pricing",
+    "role": "link",
+    "rect": {
+     "x": 488,
+     "y": 20,
+     "w": 61,
+     "h": 28
+    }
+   },
+   {
+    "id": "b6",
+    "label": "Search or jump to, type / to search",
+    "role": "button",
+    "rect": {
+     "x": 1049,
+     "y": 16,
+     "w": 200,
+     "h": 36
+    }
+   },
+   {
+    "id": "b7",
+    "label": "Sign in",
+    "role": "link",
+    "rect": {
+     "x": 1257,
+     "y": 18,
+     "w": 72,
+     "h": 32
+    }
+   },
+   {
+    "id": "b8",
+    "label": "Sign up",
+    "role": "link",
+    "rect": {
+     "x": 1337,
+     "y": 18,
+     "w": 77,
+     "h": 32
+    }
+   },
+   {
+    "id": "b9",
+    "label": "Appearance settings",
+    "role": "button",
+    "rect": {
+     "x": 1422,
+     "y": 18,
+     "w": 32,
+     "h": 32
+    }
+   },
+   {
+    "id": "b10",
+    "label": "harshkas4na",
+    "role": "link",
+    "rect": {
+     "x": 16,
+     "y": 84,
+     "w": 94,
+     "h": 32
+    }
+   },
+   {
+    "id": "b11",
+    "label": "ishara",
+    "role": "link",
+    "rect": {
+     "x": 125,
+     "y": 84,
+     "w": 53,
+     "h": 32
+    }
+   },
+   {
+    "id": "b12",
+    "label": "Code",
+    "role": "link",
+    "rect": {
+     "x": 16,
+     "y": 128,
+     "w": 75,
+     "h": 32
+    }
+   },
+   {
+    "id": "b13",
+    "label": "Issues",
+    "role": "link",
+    "rect": {
+     "x": 99,
+     "y": 128,
+     "w": 83,
+     "h": 32
+    }
+   },
+   {
+    "id": "b14",
+    "label": "Pull requests",
+    "role": "link",
+    "rect": {
+     "x": 191,
+     "y": 128,
+     "w": 128,
+     "h": 32
+    }
+   },
+   {
+    "id": "b15",
+    "label": "Actions",
+    "role": "link",
+    "rect": {
+     "x": 327,
+     "y": 128,
+     "w": 91,
+     "h": 32
+    }
+   },
+   {
+    "id": "b16",
+    "label": "Projects",
+    "role": "link",
+    "rect": {
+     "x": 426,
+     "y": 128,
+     "w": 96,
+     "h": 32
+    }
+   },
+   {
+    "id": "b17",
+    "label": "Security and quality",
+    "role": "link",
+    "rect": {
+     "x": 529,
+     "y": 128,
+     "w": 175,
+     "h": 32
+    }
+   },
+   {
+    "id": "b18",
+    "label": "Insights",
+    "role": "link",
+    "rect": {
+     "x": 712,
+     "y": 128,
+     "w": 94,
+     "h": 32
+    }
+   },
+   {
+    "id": "b19",
+    "label": "ishara",
+    "role": "link",
+    "rect": {
+     "x": 159,
+     "y": 190,
+     "w": 56,
+     "h": 24
+    }
+   },
+   {
+    "id": "b20",
+    "label": "You must be signed in to change notification settings",
+    "role": "link",
+    "rect": {
+     "x": 1038,
+     "y": 188,
+     "w": 112,
+     "h": 28
+    }
+   },
+   {
+    "id": "b21",
+    "label": "You must be signed in to fork a repository",
+    "role": "link",
+    "rect": {
+     "x": 1157,
+     "y": 188,
+     "w": 90,
+     "h": 28
+    }
+   },
+   {
+    "id": "b22",
+    "label": "Star0 (0)",
+    "role": "link",
+    "rect": {
+     "x": 1255,
+     "y": 188,
+     "w": 88,
+     "h": 28
+    }
+   },
+   {
+    "id": "b23",
+    "label": "main branch",
+    "role": "button",
+    "rect": {
+     "x": 127,
+     "y": 261,
+     "w": 106,
+     "h": 32
+    }
+   },
+   {
+    "id": "b24",
+    "label": "1 Branch",
+    "role": "link",
+    "rect": {
+     "x": 241,
+     "y": 261,
+     "w": 91,
+     "h": 32
+    }
+   },
+   {
+    "id": "b25",
+    "label": "0 Tags",
+    "role": "link",
+    "rect": {
+     "x": 332,
+     "y": 261,
+     "w": 78,
+     "h": 32
+    }
+   },
+   {
+    "id": "b26",
+    "label": "Go to file",
+    "role": "select",
+    "rect": {
+     "x": 741,
+     "y": 262,
+     "w": 156,
+     "h": 30
+    }
+   },
+   {
+    "id": "b27",
+    "label": "Code",
+    "role": "button",
+    "rect": {
+     "x": 922,
+     "y": 261,
+     "w": 109,
+     "h": 32
+    }
+   },
+   {
+    "id": "b28",
+    "label": "harshkas4na",
+    "role": "link",
+    "rect": {
+     "x": 140,
+     "y": 325,
+     "w": 20,
+     "h": 21
+    }
+   },
+   {
+    "id": "b29",
+    "label": "commits by harshkas4na",
+    "role": "link",
+    "rect": {
+     "x": 160,
+     "y": 326,
+     "w": 87,
+     "h": 21
+    }
+   },
+   {
+    "id": "b30",
+    "label": "Keep fake-router answers out of memory and mark them on the home page…",
+    "role": "link",
+    "rect": {
+     "x": 255,
+     "y": 328,
+     "w": 496,
+     "h": 17
+    }
+   },
+   {
+    "id": "b31",
+    "label": "Open commit details",
+    "role": "button",
+    "rect": {
+     "x": 719,
+     "y": 322,
+     "w": 28,
+     "h": 28
+    }
+   },
+   {
+    "id": "b32",
+    "label": "Commit 1756b47",
+    "role": "link",
+    "rect": {
+     "x": 755,
+     "y": 327,
+     "w": 49,
+     "h": 18
+    }
+   },
+   {
+    "id": "b33",
+    "label": "59 Commits",
+    "role": "link",
+    "rect": {
+     "x": 910,
+     "y": 322,
+     "w": 108,
+     "h": 28
+    }
+   },
+   {
+    "id": "b34",
+    "label": "contracts, (Directory)",
+    "role": "link",
+    "rect": {
+     "x": 170,
+     "y": 375,
+     "w": 61,
+     "h": 17
+    }
+   },
+   {
+    "id": "b35",
+    "label": "Add the episode log: per-answer proofs, encrypted log on 0G Storage, …",
+    "role": "link",
+    "rect": {
+     "x": 505,
+     "y": 375,
+     "w": 469,
+     "h": 17
+    }
+   },
+   {
+    "id": "b36",
+    "label": "desktop, (Directory)",
+    "role": "link",
+    "rect": {
+     "x": 170,
+     "y": 416,
+     "w": 52,
+     "h": 17
+    }
+   },
+   {
+    "id": "b37",
+    "label": "Desktop push-to-talk: no keylogging in debug, no orphan key tap, no e…",
+    "role": "link",
+    "rect": {
+     "x": 505,
+     "y": 416,
+     "w": 467,
+     "h": 17
+    }
+   },
+   {
+    "id": "b38",
+    "label": "docs, (Directory)",
+    "role": "link",
+    "rect": {
+     "x": 170,
+     "y": 457,
+     "w": 31,
+     "h": 17
+    }
+   },
+   {
+    "id": "b39",
+    "label": "iframe demo: distinct labels in second frame; testing notes",
+    "role": "link",
+    "rect": {
+     "x": 505,
+     "y": 457,
+     "w": 378,
+     "h": 17
+    }
+   }
+  ]
+ },
+ "questions": [
+  {
+   "q": "what does this project do",
+   "kind": "explain"
+  },
+  {
+   "q": "is this project safe to run on my laptop",
+   "kind": "judgement"
+  }
+ ]
+}

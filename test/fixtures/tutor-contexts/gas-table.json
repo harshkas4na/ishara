@@ -1,0 +1,104 @@
+{
+ "name": "gas-table",
+ "description": "Hand made: a table of gas prices",
+ "context": {
+  "source": "browser",
+  "url": "https://gas.example/tracker",
+  "title": "Gas Tracker",
+  "viewport": {
+   "w": 1280,
+   "h": 800
+  },
+  "errors": [],
+  "blocks": [
+   {
+    "id": "t0",
+    "kind": "h",
+    "text": "Ethereum gas tracker",
+    "inView": true
+   },
+   {
+    "id": "t1",
+    "kind": "cell",
+    "text": "Slow: 12 gwei, about 5 minutes",
+    "inView": true
+   },
+   {
+    "id": "t2",
+    "kind": "cell",
+    "text": "Standard: 18 gwei, about 1 minute",
+    "inView": true
+   },
+   {
+    "id": "t3",
+    "kind": "cell",
+    "text": "Fast: 27 gwei, about 15 seconds",
+    "inView": true
+   },
+   {
+    "id": "t4",
+    "kind": "p",
+    "text": "Base fee is burned. The priority fee goes to the validator. Prices update every 12 seconds.",
+    "inView": true
+   },
+   {
+    "id": "t5",
+    "kind": "caption",
+    "text": "Last updated 14 seconds ago",
+    "inView": true
+   }
+  ],
+  "controls": [
+   {
+    "id": "b0",
+    "label": "Refresh",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   },
+   {
+    "id": "b1",
+    "label": "Network",
+    "role": "select",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    },
+    "state": {
+     "selectedOption": "Ethereum"
+    }
+   },
+   {
+    "id": "b2",
+    "label": "Set gas alert",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   }
+  ]
+ },
+ "questions": [
+  {
+   "q": "which of these should I pick if I am in a hurry",
+   "kind": "judgement"
+  },
+  {
+   "q": "what is the base fee",
+   "kind": "explain"
+  },
+  {
+   "q": "and the priority fee?",
+   "kind": "follow-up"
+  }
+ ]
+}

@@ -1,0 +1,123 @@
+{
+ "name": "wallet-connect",
+ "description": "Hand made: wallet connect modal on a dapp",
+ "context": {
+  "source": "browser",
+  "url": "https://app.swapex.example/swap",
+  "title": "SwapEx | Swap",
+  "viewport": {
+   "w": 1280,
+   "h": 800
+  },
+  "errors": [],
+  "blocks": [
+   {
+    "id": "t0",
+    "kind": "h",
+    "text": "Connect a wallet",
+    "inView": true
+   },
+   {
+    "id": "t1",
+    "kind": "p",
+    "text": "Connect a wallet to start swapping. We never take custody of your funds.",
+    "inView": true
+   },
+   {
+    "id": "t2",
+    "kind": "p",
+    "text": "By connecting, you agree to the Terms of Service and acknowledge the Privacy Policy.",
+    "inView": true
+   },
+   {
+    "id": "t3",
+    "kind": "p",
+    "text": "New to wallets? A wallet is an app that holds your tokens and signs transactions for you.",
+    "inView": true
+   },
+   {
+    "id": "t4",
+    "kind": "h",
+    "text": "Recent swaps",
+    "inView": false
+   },
+   {
+    "id": "t5",
+    "kind": "p",
+    "text": "No swaps yet. Connect a wallet to see your history.",
+    "inView": false
+   }
+  ],
+  "controls": [
+   {
+    "id": "b0",
+    "label": "MetaMask",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   },
+   {
+    "id": "b1",
+    "label": "WalletConnect",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   },
+   {
+    "id": "b2",
+    "label": "Coinbase Wallet",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   },
+   {
+    "id": "b3",
+    "label": "Close",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   },
+   {
+    "id": "b4",
+    "label": "What is a wallet?",
+    "role": "link",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   }
+  ]
+ },
+ "questions": [
+  {
+   "q": "what is a wallet and which one should I choose",
+   "kind": "judgement"
+  },
+  {
+   "q": "is it safe to connect",
+   "kind": "judgement"
+  },
+  {
+   "q": "kaunsa button dabana hai",
+   "kind": "point"
+  }
+ ]
+}

@@ -1,0 +1,135 @@
+{
+ "name": "form-errors",
+ "description": "Hand made: signup form after a failed submit",
+ "context": {
+  "source": "browser",
+  "url": "https://app.example/signup",
+  "title": "Create account",
+  "viewport": {
+   "w": 1280,
+   "h": 800
+  },
+  "errors": [
+   "t1",
+   "t2",
+   "t3",
+   "t4"
+  ],
+  "blocks": [
+   {
+    "id": "t0",
+    "kind": "h",
+    "text": "Create your account",
+    "inView": true
+   },
+   {
+    "id": "t1",
+    "kind": "error",
+    "text": "Please fix the 3 problems below.",
+    "inView": true
+   },
+   {
+    "id": "t2",
+    "kind": "error",
+    "text": "Email address is not valid.",
+    "inView": true
+   },
+   {
+    "id": "t3",
+    "kind": "error",
+    "text": "Password must be at least 12 characters.",
+    "inView": true
+   },
+   {
+    "id": "t4",
+    "kind": "error",
+    "text": "You must accept the terms to continue.",
+    "inView": true
+   },
+   {
+    "id": "t5",
+    "kind": "p",
+    "text": "Passwords are checked locally and never shown.",
+    "inView": true
+   }
+  ],
+  "controls": [
+   {
+    "id": "b0",
+    "label": "Email address",
+    "role": "input",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    },
+    "state": {
+     "filledChars": 12,
+     "invalid": true,
+     "required": true
+    },
+    "errorText": "Email address is not valid."
+   },
+   {
+    "id": "b1",
+    "label": "Password",
+    "role": "input",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    },
+    "state": {
+     "filledChars": 8,
+     "invalid": true,
+     "required": true
+    },
+    "errorText": "Password must be at least 12 characters."
+   },
+   {
+    "id": "b2",
+    "label": "I accept the terms",
+    "role": "checkbox",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    },
+    "state": {
+     "checked": false,
+     "invalid": true,
+     "required": true
+    }
+   },
+   {
+    "id": "b3",
+    "label": "Create account",
+    "role": "button",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 100,
+     "h": 30
+    }
+   }
+  ],
+  "focused": "b1"
+ },
+ "questions": [
+  {
+   "q": "why can I not create my account",
+   "kind": "explain"
+  },
+  {
+   "q": "what do I do next",
+   "kind": "guide"
+  },
+  {
+   "q": "why is there an error about the payment method",
+   "kind": "absent"
+  }
+ ]
+}

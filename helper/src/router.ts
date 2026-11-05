@@ -20,7 +20,7 @@ export function parseWalkCommand(question: string): WalkCmd | null {
 }
 
 const GUIDE = /(walk me through|step by step|step-by-step|guide me|what do i do next|what should i do next|what s next|how do i (fill|complete|set up|do|submit|verify|get started)|help me (fill|complete|set)|kaise karu|kaise karun|kaise bhar|kaise kare|kaise karte|kya karu|kya karun|aage kya|samjhate hue|step by step batao|ek ek karke)/;
-const POINT = /(^|\s)(where|kahan|kaha|show me|dikhao|dikha do|find|locate|point|which (button|field|link|one|input|box|option))(\s|$)|where s |where is |kidhar/;
+const POINT = /(^|\s)(where|kahan|kaha|show me|dikhao|dikha do|find|locate|point|which (button|field|link|one|input|box|option))(\s|$)|where s |where is |kidhar|kaun ?sa|kon ?sa|konsa|konsi|kaun ?si/;
 
 export type Route = { kind: "walk"; cmd: WalkCmd } | { kind: "ask"; mode: TutorMode };
 
