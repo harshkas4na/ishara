@@ -1,12 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { extname, join, normalize } from "node:path";
+import { extname } from "node:path";
 import { HELPER_PORT } from "./config.ts";
 import { decide, recordsFor } from "./decide.ts";
 import { hasKey, warm } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
-import { startWhisper, transcribe, whisperStatus } from "./whisper.ts";
+import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
+import { allowedOrigin, refuse, staticPath } from "./http-guard.ts";
 
 const TEST_DIR = fileURLToPath(new URL("../../test-pages/", import.meta.url));
 const EXT_DIR = fileURLToPath(new URL("../../extension/", import.meta.url));
@@ -15,8 +16,7 @@ const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javasc
 
 function cors(req: IncomingMessage, res: ServerResponse) {
   const o = req.headers.origin;
-  // Only the extension and our own pages may call the helper; it holds the 0G key.
-  if (o && (o.startsWith("chrome-extension://") || o.startsWith("http://127.0.0.1:7777"))) {
+  if (o && allowedOrigin(o)) {
     res.setHeader("access-control-allow-origin", o);
     res.setHeader("vary", "origin");
     res.setHeader("access-control-allow-headers", "content-type, x-prompt");
@@ -33,6 +33,17 @@ async function readBody(req: IncomingMessage, limit = 25_000_000): Promise<Buffe
   return Buffer.concat(chunks);
 }
 
+// Read the file first, then write headers: writing 200 before a failed read made the 404 throw (headers already
+// sent), which escaped the handler as an unhandled rejection and stopped the helper.
+async function serveStatic(res: ServerResponse, dir: string, rest: string, only?: string[]) {
+  const file = staticPath(dir, rest);
+  if (!file || (only && !only.includes(extname(file)))) return send(res, 403, { error: "forbidden" });
+  let data: Buffer;
+  try { data = await readFile(file); } catch { return send(res, 404, { error: "not found" }); }
+  res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
+  res.end(data);
+}
+
 // Proof/session routes belong to another module set; loaded lazily so this server runs before they exist.
 async function optional(file: string): Promise<any | null> {
   try { return await import(file); } catch { return null; }
@@ -45,6 +56,7 @@ const server = createServer(async (req, res) => {
   const path = url.pathname;
   res.on("finish", () => console.log(`${req.method} ${path} ${res.statusCode} ${Date.now() - t0}ms`)); // no bodies, no headers
   try {
+    if (refuse(req.headers.host, req.headers.origin)) return send(res, 403, { error: "forbidden origin" });
     if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
 
     if (req.method === "GET" && path === "/health") {
@@ -63,38 +75,11 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { error: "need { sessionId, question, outline{elements,text} }" });
       return send(res, 200, await decide(String(b.sessionId ?? "default"), b.question, b.outline));
     }
-    if (req.method === "GET" && path.startsWith("/app/")) {
-      // The proof sheet and the replay page (web/). Same traversal guard as /test/.
-      const rel = normalize(decodeURIComponent(path.slice(5))).replace(/^(\.\.[/\\])+/, "");
-      const file = join(WEB_DIR, rel && rel !== "." ? rel : "index.html") // "." is what a bare /app/ normalizes to;
-      if (!file.startsWith(WEB_DIR)) return send(res, 403, { error: "forbidden" });
-      try {
-        const data = await readFile(file);
-        res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
-        return res.end(data);
-      } catch { return send(res, 404, { error: "not found" }); }
-    }
-    if (req.method === "GET" && path.startsWith("/ext/")) {
-      // Dev only: lets test-pages/panel-preview.html load the overlay code to preview the panel without reloading the
-      // extension. Plain scripts and styles only; same traversal guard as the other static routes.
-      const rel = normalize(decodeURIComponent(path.slice(5))).replace(/^(\.\.[/\\])+/, "");
-      const file = join(EXT_DIR, rel);
-      if (!file.startsWith(EXT_DIR) || ![".js", ".css"].includes(extname(file))) return send(res, 403, { error: "forbidden" });
-      try {
-        res.writeHead(200, { "content-type": MIME[extname(file)] });
-        return res.end(await readFile(file));
-      } catch { return send(res, 404, { error: "not found" }); }
-    }
-    if (req.method === "GET" && path.startsWith("/test/")) {
-      const rel = normalize(decodeURIComponent(path.slice(6))).replace(/^(\.\.[/\\])+/, "");
-      const file = join(TEST_DIR, rel && rel !== "." ? rel : "index.html");
-      if (!file.startsWith(TEST_DIR)) return send(res, 403, { error: "forbidden" });
-      try {
-        const data = await readFile(file);
-        res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
-        return res.end(data);
-      } catch { return send(res, 404, { error: "not found" }); }
-    }
+    // Static pages: web/ at /app (proof sheet, replay), test-pages/ at /test, and /ext for the dev panel preview
+    // (test-pages/panel-preview.html loads the overlay code from it; scripts and styles only).
+    if (req.method === "GET" && path.startsWith("/app/")) return serveStatic(res, WEB_DIR, path.slice(5));
+    if (req.method === "GET" && path.startsWith("/test/")) return serveStatic(res, TEST_DIR, path.slice(6));
+    if (req.method === "GET" && path.startsWith("/ext/")) return serveStatic(res, EXT_DIR, path.slice(5), [".js", ".css"]);
 
     // Receipts (episode-log.ts): the proof for one answer, the session log, ending a session, and the replay.
     let m: RegExpMatchArray | null;
@@ -108,7 +93,8 @@ const server = createServer(async (req, res) => {
     }
     return send(res, 404, { error: "no such route" });
   } catch (e: any) {
-    return send(res, 500, { error: String(e?.message ?? e) });
+    if (res.headersSent) return void res.destroy(); // a second writeHead would throw out of this handler and kill the helper
+    return send(res, e instanceof SyntaxError ? 400 : 500, { error: String(e?.message ?? e) });
   }
 });
 
@@ -117,3 +103,6 @@ server.listen(HELPER_PORT, "127.0.0.1", () => {
   startWhisper().then(() => console.log("whisper:", JSON.stringify(whisperStatus())));
   warm();
 });
+// Ctrl-C does not fire "exit", so whisper-server outlived every helper restart (10 orphans found on 5 Nov, each
+// holding the model). Stop it on the signals too.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { stopWhisper(); process.exit(0); });

@@ -15,6 +15,9 @@ export function whisperStatus(): { ok: boolean; error?: string } {
   return ready ? { ok: true } : { ok: false, error: lastError ?? "not started yet" };
 }
 
+export function stopWhisper(): void { proc?.kill(); }
+process.on("exit", stopWhisper); // once, not once per restart
+
 // Keep one server warm: loading the model costs seconds, a request on a warm one ~0.5 s (measured in the lab).
 export function startWhisper(): Promise<void> {
   if (ready) return Promise.resolve();
@@ -25,7 +28,6 @@ export function startWhisper(): Promise<void> {
     proc = spawn(BIN, ["-m", MODEL, "-l", "en", "--host", "127.0.0.1", "--port", String(PORT), "-nt"], { stdio: ["ignore", "ignore", "ignore"] });
     proc.on("exit", (code) => { ready = false; starting = null; lastError = `whisper-server exited (${code})`; proc = null; });
     proc.on("error", (e) => { lastError = `cannot spawn: ${e.message}`; });
-    process.on("exit", () => proc?.kill());
     // The server has no health route we rely on; any HTTP answer on the port means the model is loaded.
     for (let i = 0; i < 100 && proc; i++) {
       try { await fetch(`http://127.0.0.1:${PORT}/`, { signal: AbortSignal.timeout(500) }); ready = true; lastError = null; return; }

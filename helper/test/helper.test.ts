@@ -65,3 +65,25 @@ test("decide: laya failing means ask, not point", async () => {
   const d = await decide("s", "q", outline, { brain: ok("b3"), verify: async () => ({ ok: false, cause: "timeout" }) });
   assert.equal(d.outcome, "ask");
 });
+
+import { refuse, staticPath } from "../src/http-guard.ts";
+test("guard: only our own host, and only the extension or our pages as origin", () => {
+  assert.equal(refuse("127.0.0.1:7777", undefined), false);
+  assert.equal(refuse("localhost:7777", "chrome-extension://abcdef"), false);
+  assert.equal(refuse("127.0.0.1:7777", "http://127.0.0.1:7777"), false);
+  assert.equal(refuse("127.0.0.1:7777", "https://evil.example"), true, "cross-site POST must not reach /decide");
+  assert.equal(refuse("127.0.0.1:7777", "http://127.0.0.1:77770"), true);
+  assert.equal(refuse("evil.example:7777", undefined), true, "DNS rebinding: foreign Host");
+  assert.equal(refuse(undefined, undefined), true);
+});
+test("guard: static paths stay inside their folder", () => {
+  const dir = "/srv/web/";
+  assert.equal(staticPath(dir, ""), "/srv/web/index.html");
+  assert.equal(staticPath(dir, "proof.html"), "/srv/web/proof.html");
+  assert.equal(staticPath(dir, "test-fixtures/a.json"), "/srv/web/test-fixtures/a.json");
+  assert.equal(staticPath(dir, "../secret"), null);
+  assert.equal(staticPath(dir, "%2e%2e/%2e%2e/etc/passwd"), null);
+  assert.equal(staticPath(dir, "a/../../x"), null);
+  assert.equal(staticPath(dir, "%E0%A4%A"), null, "malformed escape is refused, not a 500");
+  assert.equal(staticPath(dir, "a%00.html"), null);
+});
