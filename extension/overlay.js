@@ -238,7 +238,10 @@
       Object.assign(d.style, { display: "block", left: r.x - 4 + "px", top: r.y - 4 + "px", width: r.w + 8 + "px", height: r.h + 8 + "px" });
     });
     follow();
-    say(text, { near: rectOf(els[0]) });
+    // Put the bubble below BOTH candidates (their union), so it never covers one of the things being offered.
+    const rs = els.map(rectOf), x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y));
+    const x1 = Math.max(...rs.map((r) => r.x + r.w)), y1 = Math.max(...rs.map((r) => r.y + r.h));
+    say(text, { near: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } });
   }
 
   // Shows what Ishara sees on this page: a numbered box on every control the outline compiler kept. Anything the
