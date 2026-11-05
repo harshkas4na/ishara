@@ -37,7 +37,13 @@
         const els = (d.candidates || []).map((id) => map.get(id)).filter((e) => e && e.isConnected);
         els.length ? NS.overlay.ringBoth(els, d.say) : NS.overlay.say(d.say);
       } else if (d.outcome === "safe_stop") {
-        NS.overlay.say("I can't decide right now", { stop: true, sub: d.safeStopCause ? "Cause: " + d.safeStopCause : d.reason });
+        // Say what is wrong in plain words. The refusal is the product working, so it must read as deliberate.
+        const WHY = {
+          unavailable: "0G's private model is not reachable right now.",
+          timeout: "0G took too long to answer.",
+          offline: "There is no connection to 0G.",
+        };
+        NS.overlay.say("I can't decide right now", { stop: true, sub: (WHY[d.safeStopCause] || d.reason) + " I won't guess, so nothing moved." });
       } else NS.overlay.say(d.say); // "ask": words only, never a pointer
     } finally { busy = false; }
   }
