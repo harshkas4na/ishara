@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ishara</title><link rel="stylesheet" href="shared.css"></head>
+<body><div class="wrap" id="root"></div>
+<script src="shared.js"></script>
+<script>
+// Landing page: what Ishara is, and the saved sessions (GET /sessions) with a link to each replay.
+const root = $("#root");
+root.append(header("a screen tutor you can check"));
+root.append(el("h1", { text: "A tutor that shows its receipts" }));
+root.append(el("p", { text: "Ishara answers questions about the page you are looking at. Every answer comes from sealed models on the 0G network, and each one leaves a receipt you can check yourself." }));
+root.append(explainer(
+  "You ask a question. One sealed model proposes which element on the page to point at, and a second sealed model confirms the choice. “Sealed” means the model runs in a protected environment, so the operator cannot read or change what it sees.",
+  "For each answer we keep a receipt: the request id, which provider answered, and the provider’s digital signature. The signature is checked against the signer key that provider registered on-chain.",
+  "At the end of a session the whole log is encrypted, stored on 0G Storage, and its fingerprint (a root hash) is written to a contract on the Galileo chain. Replay fetches it back and re-checks all of that.",
+  "A receipt proves that a sealed provider answered a given request. It does not prove the exact words. Each page says so again where it matters."));
+root.append(el("h2", { text: "Saved sessions" }));
+const list = el("ul", { class: "sessions" }); const box = el("div", { class: "card" }, list); root.append(box);
+(async () => {
+  try {
+    const data = await getJson("/sessions", "sessions");
+    const ss = (data.sessions || []).slice().sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
+    if (!ss.length) { list.append(el("li", { class: "muted", text: "No sessions yet. Ask Ishara a question, then end the session." })); return; }
+    for (const s of ss) {
+      const stored = !!s.root;
+      list.append(el("li", {},
+        el("div", {}, el("b", { text: s.sessionId }), el("div", { class: "muted", text: `${fmtTime(s.startedAt)} · ${s.decisions} decision${s.decisions === 1 ? "" : "s"}` }),
+          stored ? el("div", {}, el("span", { class: "muted", text: "stored on 0G, root " }), hashView(s.root)) : el("div", { class: "muted", text: "not stored on 0G yet (local copy only)" })),
+        el("a", { class: "btnlink", href: "replay.html?session=" + encodeURIComponent(s.sessionId), text: stored ? "Replay" : "View local log" })));
+    }
+  } catch (e) {
+    box.replaceChildren(el("div", { class: "verdict bad", text: "Cannot reach the Ishara helper." }, el("small", { text: "Start it with `npm run helper`, then reload. (" + e.message + ")" })));
+  }
+})();
+</script></body></html>
