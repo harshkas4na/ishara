@@ -115,6 +115,12 @@ function requestId(r: Raw): string | undefined {
 export function chatId(headers: Headers): string | undefined {
   return headers.get("zg-res-key") ?? undefined; // the id the provider signature is fetched by
 }
+// Everything the proof needs later, taken from the response headers: which provider answered, under which chat id.
+function callMeta(headers: Headers): { chatId?: string; provider?: string } {
+  const provider = headers.get("x-provider") ?? undefined;
+  const id = chatId(headers);
+  return { ...(id ? { chatId: id } : {}), ...(provider ? { provider } : {}) };
+}
 
 // Lenient: "[POINT:b17]", "[b17]", "b17". Takes the last match, as the model may reason before the tag.
 export function parsePoint(text: string): string | null {
@@ -149,7 +155,7 @@ export async function askBrain(question: string, outlineText: string, o: ZgOpts 
     const id = parsePoint(r.text);
     // The sentence is what the user reads next to the pointer, so it must be 0GM's own words, not a canned "Here.".
     const sentence = r.text.replace(/\[\s*POINT\s*:[^\]]*\]?/gi, "").replace(/\s+/g, " ").trim().slice(0, 160);
-    return { ok: true, targetId: id === "none" || id === null ? null : id, sentence: sentence || undefined, requestId: requestId(r), ms: r.ms };
+    return { ok: true, targetId: id === "none" || id === null ? null : id, sentence: sentence || undefined, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms };
   } catch (e) { return { ok: false, cause: failCause(e, "brain") }; }
 }
 
@@ -167,7 +173,7 @@ export async function askVerify(question: string, el: OutlineElement, o: ZgOpts 
     if (r.status !== 200) { console.error(`[zg] laya HTTP ${r.status}`, JSON.stringify(r.json)?.slice(0, 300)); return { ok: false, cause: "unavailable" }; }
     const p = r.json?.answers?.right?.noul;
     if (typeof p !== "number") return { ok: false, cause: "unavailable" };
-    return { ok: true, p, requestId: requestId(r), ms: r.ms };
+    return { ok: true, p, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms };
   } catch (e) { return { ok: false, cause: failCause(e, "laya") }; }
 }
 

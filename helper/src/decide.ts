@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { gate } from "./gate.ts";
-import { askBrain, askVerify } from "./zg.ts";
+import { askBrain, askVerify, BRAIN_MODEL, LAYA_MODEL } from "./zg.ts";
+import { episodeLog, type CallRef } from "./episode-log.ts";
 import type { BrainResult, VerifyResult, Decision, Outline, OutlineElement } from "./types.ts";
 
 export type Deps = {
@@ -55,5 +56,13 @@ export async function decide(sessionId: string, question: string, outline: Outli
   // One line per decision so a wrong answer can be traced without a debugger (no secrets in it).
   console.log(`[decide] "${question}" brain=${brain.ok ? brain.targetId : "FAIL:" + brain.cause} laya=${verify === null ? "-" : verify.ok ? verify.p.toFixed(2) : "FAIL:" + verify.cause} -> ${decision.outcome} (${decision.reason})`);
   records.push({ at: new Date().toISOString(), sessionId, question, decision });
+  // Receipts: remember which provider answered under which chat id, and start fetching the signatures now
+  // (they expire after ~20 minutes). Never allowed to break or delay the answer.
+  try {
+    const calls: CallRef[] = [];
+    if (brain.ok) calls.push({ role: "brain", model: BRAIN_MODEL, requestId: brain.requestId, chatId: brain.chatId, provider: brain.provider });
+    if (verify?.ok) calls.push({ role: "laya", model: LAYA_MODEL, requestId: verify.requestId, chatId: verify.chatId, provider: verify.provider });
+    if (calls.length) episodeLog.record(sessionId, { question, outcome: decision.outcome, targetId: decision.targetId, say: decision.say, reason: decision.reason, calls });
+  } catch (e) { console.error("[episode-log] record failed:", (e as Error).message); }
   return decision;
 }

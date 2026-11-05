@@ -9,12 +9,12 @@ import { VERIFY_MIN_P } from "./config.ts";
 export type Cause = "timeout" | "unavailable" | "offline";
 
 export type BrainResult =
-  | { ok: true; targetId: string | null; sentence?: string; requestId?: string; ms: number } // null: 0GM named nothing usable; sentence is its one-line answer
+  | { ok: true; targetId: string | null; sentence?: string; requestId?: string; chatId?: string; provider?: string; ms: number } // null: 0GM named nothing usable; sentence is its one-line answer
   | { ok: false; cause: Cause };
 
 // laya's P(yes) that the proposed element is what the user asked for. null when there was nothing to check.
 export type VerifyResult =
-  | { ok: true; p: number; requestId?: string; ms: number }
+  | { ok: true; p: number; requestId?: string; chatId?: string; provider?: string; ms: number }
   | { ok: false; cause: Cause };
 
 export type GateDecision = {

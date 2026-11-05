@@ -5,6 +5,7 @@ import { extname, join, normalize } from "node:path";
 import { HELPER_PORT } from "./config.ts";
 import { decide, recordsFor } from "./decide.ts";
 import { hasKey, warm } from "./zg.ts";
+import { episodeLog } from "./episode-log.ts";
 import { startWhisper, transcribe, whisperStatus } from "./whisper.ts";
 
 const TEST_DIR = fileURLToPath(new URL("../../test-pages/", import.meta.url));
@@ -71,20 +72,15 @@ const server = createServer(async (req, res) => {
       } catch { return send(res, 404, { error: "not found" }); }
     }
 
-    // proof.ts / storage.ts are owned elsewhere. Contract assumed: default or named handler exports; 501 until they exist.
-    const m = path.match(/^\/(proof|session\/end|log)(?:\/(.+))?$/);
-    if (m) {
-      const proof = await optional("./proof.ts");
-      const store = await optional("./storage.ts");
-      const mod = m[1] === "proof" ? proof : store;
-      const fn = mod && (m[1] === "proof" ? mod.getProof : m[1] === "log" ? mod.getLog : mod.endSession);
-      if (typeof fn !== "function") return send(res, 501, { error: "not built yet" });
-      if (m[1] === "proof" && req.method === "GET") return send(res, 200, await fn(decodeURIComponent(m[2] ?? "")));
-      if (m[1] === "log" && req.method === "GET") return send(res, 200, await fn(decodeURIComponent(m[2] ?? ""), recordsFor(m[2] ?? "")));
-      if (m[1] === "session/end" && req.method === "POST") {
-        const b = JSON.parse((await readBody(req)).toString("utf8"));
-        return send(res, 200, await fn(String(b.sessionId), recordsFor(String(b.sessionId))));
-      }
+    // Receipts (episode-log.ts): the proof for one answer, the session log, ending a session, and the replay.
+    let m: RegExpMatchArray | null;
+    if (req.method === "GET" && (m = path.match(/^\/proof\/(.+)$/))) return send(res, 200, await episodeLog.getProof(decodeURIComponent(m[1])));
+    if (req.method === "GET" && (m = path.match(/^\/log\/(.+)$/))) return send(res, 200, episodeLog.getLog(decodeURIComponent(m[1])));
+    if (req.method === "GET" && path === "/sessions") return send(res, 200, { sessions: episodeLog.list() });
+    if (req.method === "GET" && (m = path.match(/^\/replay\/(.+)$/))) return send(res, 200, await episodeLog.replay(decodeURIComponent(m[1])));
+    if (req.method === "POST" && path === "/session/end") {
+      const b = JSON.parse((await readBody(req)).toString("utf8"));
+      return send(res, 200, await episodeLog.endSession(String(b.sessionId)));
     }
     return send(res, 404, { error: "no such route" });
   } catch (e: any) {

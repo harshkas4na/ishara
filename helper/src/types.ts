@@ -13,10 +13,10 @@ export type Outline = {
 };
 export type Cause = "timeout" | "unavailable" | "offline";
 export type BrainResult =
-  | { ok: true; targetId: string | null; sentence?: string; requestId?: string; ms: number }
+  | { ok: true; targetId: string | null; sentence?: string; requestId?: string; chatId?: string; provider?: string; ms: number }
   | { ok: false; cause: Cause };
 export type VerifyResult =
-  | { ok: true; p: number; requestId?: string; ms: number } // laya's P(yes): "is this control what the user asked for?"
+  | { ok: true; p: number; requestId?: string; chatId?: string; provider?: string; ms: number } // laya's P(yes): "is this control what the user asked for?"
   | { ok: false; cause: Cause };
 export type Decision = {
   outcome: "point" | "ask" | "ask_which" | "safe_stop";
