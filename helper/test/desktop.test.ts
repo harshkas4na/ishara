@@ -15,7 +15,7 @@ const outline: Outline = {
 const dec = (o: Partial<Decision>): Decision => ({ outcome: "ask", say: "hi", reason: "", requestIds: {}, ms: { total: 1 }, ...o });
 
 test("point goes to the centre of the element rect", () => {
-  assert.deepEqual(decisionToOverlay(dec({ outcome: "point", targetId: "b0", say: "Here." }), outline), { cmd: "point", x: 130, y: 210, text: "Here." });
+  assert.deepEqual(decisionToOverlay(dec({ outcome: "point", targetId: "b0", say: "Here." }), outline), { cmd: "point", x: 130, y: 210, text: "Here.", rect: { x: 100, y: 200, w: 60, h: 20 } });
 });
 test("never points at an id that is not in the outline", () => {
   assert.equal(decisionToOverlay(dec({ outcome: "point", targetId: "b99" }), outline).cmd, "ask");
@@ -65,6 +65,18 @@ test("desktopAsk wires outline -> decide -> overlay and reports timings", async 
     assert.equal(q, "where is save"); assert.equal(o, outline);
     return dec({ outcome: "point", targetId: "b0", say: "Save is here." });
   }, { outline: async () => outline, send: (c) => sent.push(c) });
-  assert.deepEqual(sent, [{ cmd: "point", x: 130, y: 210, text: "Save is here." }]);
+  // The think command goes out first, before the outline is even read.
+  assert.deepEqual(sent, [
+    { cmd: "think", text: "Thinking…" },
+    { cmd: "point", x: 130, y: 210, text: "Save is here.", rect: { x: 100, y: 200, w: 60, h: 20 } },
+  ]);
   assert.ok(r.ms.total >= 0);
+});
+test("desktopAsk sends think before the outline is read", async () => {
+  const order: string[] = [];
+  await desktopAsk("q", async () => dec({ outcome: "ask", say: "Which?" }), {
+    outline: async () => { order.push("outline"); return outline; },
+    send: (c) => order.push(c.cmd),
+  });
+  assert.deepEqual(order, ["think", "outline", "ask"]);
 });

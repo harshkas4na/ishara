@@ -50,12 +50,12 @@ let saffron = rgb(0xf59e0b)
 // Reduce Motion is read per command so flipping the setting takes effect without restarting the overlay.
 var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
-// Why a "stage" layer: the flipped NSView's backing layer is y-down for its direct sublayers only. One stage with
-// isGeometryFlipped makes every nested layer (and every path below) y-down too, matching the SVG numbers copied
-// from extension/overlay.js. All drawing lives under it; the bubble NSView sits above it.
+// Why a "stage" layer: one container for all drawing, under the bubble NSView. Measured on screen: the flipped
+// view's backing layer is already geometry-flipped and nested layers inherit it, so everything below is y-down
+// (top-left origin) with no extra flip, matching the SVG numbers copied from extension/overlay.js. Adding a
+// second isGeometryFlipped here put the cursor upside down and the marker at the mirrored screen height.
 let stage = CALayer()
 stage.frame = CGRect(origin: .zero, size: union.size)
-stage.isGeometryFlipped = true
 canvas.layer!.addSublayer(stage)
 
 // ---- cursor: host (glides; position = the tip) > fx (dance x) > fy (dance y / bob) > needle ----
@@ -293,8 +293,8 @@ func showBubble(_ text: String, sub: String?, stop: Bool, near: CGPoint?, rect: 
     var x = union.width / 2 - bw / 2, y: CGFloat = 40
     if let p = near {
         x = min(max(8, p.x - bw / 2), union.width - bw - 8)
-        let below = rect.map { $0.maxY + 24 } ?? p.y + 40
-        let above = rect.map { $0.minY - 24 - bh } ?? p.y - 40 - bh
+        let below = rect.map { $0.maxY + 36 } ?? p.y + 40
+        let above = rect.map { $0.minY - 36 - bh } ?? p.y - 40 - bh
         // Below unless there is no room, same flip rule as placeBubble() in the browser overlay.
         y = below + bh < union.height ? below : max(8, above)
     }

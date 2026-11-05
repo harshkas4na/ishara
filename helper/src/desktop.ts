@@ -13,7 +13,9 @@ const AX_TIMEOUT_MS = 6000;
 
 export type DecideFn = (sessionId: string, question: string, outline: Outline) => Promise<Decision>;
 export type OverlayCmd =
-  | { cmd: "point"; x: number; y: number; text: string }
+  // rect (screen points, top-left origin) lets the overlay draw the marker loop/underline; x,y is its centre.
+  | { cmd: "point"; x: number; y: number; text: string; rect?: { x: number; y: number; w: number; h: number } }
+  | { cmd: "think"; text: string }
   | { cmd: "ask"; text: string }
   | { cmd: "stop"; text: string; sub?: string }
   | { cmd: "clear" };
@@ -83,7 +85,10 @@ const STOP_TEXT = {
 export function decisionToOverlay(d: Decision, outline: Outline): OverlayCmd {
   if (d.outcome === "point") {
     const el = d.targetId ? outline.elements.find((e) => e.id === d.targetId) : undefined;
-    if (el) return { cmd: "point", x: Math.round(el.rect.x + el.rect.w / 2), y: Math.round(el.rect.y + el.rect.h / 2), text: d.say };
+    if (el) {
+      const { x, y, w, h } = el.rect;
+      return { cmd: "point", x: Math.round(x + w / 2), y: Math.round(y + h / 2), text: d.say, rect: { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) } };
+    }
     return { cmd: "ask", text: "I could not find that control on screen. Can you say more about what you want?" };
   }
   if (d.outcome === "safe_stop") {
@@ -159,11 +164,14 @@ export async function desktopAsk(
   deps: { outline?: () => Promise<Outline>; send?: (c: OverlayCmd) => void; sessionId?: string } = {},
 ): Promise<DesktopResult> {
   const t0 = Date.now();
+  const send = deps.send ?? ((c) => overlay.send(c));
+  // Think FIRST: the cursor dances through the outline read and both sealed model calls, which is most of the wait.
+  send({ cmd: "think", text: "Thinking…" });
   const outline = await (deps.outline ?? desktopOutline)();
   const t1 = Date.now();
   const decision = await decideFn(deps.sessionId ?? "desktop", question, outline);
   const t2 = Date.now();
   const cmd = decisionToOverlay(decision, outline);
-  (deps.send ?? ((c) => overlay.send(c)))(cmd);
+  send(cmd);
   return { decision, overlay: cmd, outline, ms: { outline: t1 - t0, decide: t2 - t1, total: t2 - t0 } };
 }
