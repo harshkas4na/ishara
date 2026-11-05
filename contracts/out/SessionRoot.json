@@ -1,0 +1,67 @@
+{
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "sessionId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "root",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recorder",
+          "type": "address"
+        }
+      ],
+      "name": "SessionRecorded",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "sessionId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "root",
+          "type": "bytes32"
+        }
+      ],
+      "name": "record",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "sessionId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "rootOf",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x6080604052348015600e575f80fd5b506101c28061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610034575f3560e01c80636d6f398e14610038578063cda1c3b914610069575b5f80fd5b610057610046366004610155565b5f9081526020819052604090205490565b60405190815260200160405180910390f35b61007c61007736600461016c565b61007e565b005b806100bd5760405162461bcd60e51b815260206004820152600a602482015269195b5c1d1e481c9bdbdd60b21b60448201526064015b60405180910390fd5b5f828152602081905260409020541561010b5760405162461bcd60e51b815260206004820152601060248201526f185b1c9958591e481c9958dbdc99195960821b60448201526064016100b4565b5f82815260208181526040918290208390559051828152339184917fdffacfe7338e134ccbd25170dad09790529749fbf20155275f10f3b84ca7b0b6910160405180910390a35050565b5f60208284031215610165575f80fd5b5035919050565b5f806040838503121561017d575f80fd5b5050803592602090910135915056fea2646970667358221220c1f4b2c0caba82e3e5a09262460fb2458133ef3f73ef70024a541ce599fc86ff64736f6c634300081a0033"
+}

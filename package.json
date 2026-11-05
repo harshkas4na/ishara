@@ -10,5 +10,12 @@
     "check": "node scripts/smoke.ts",
     "test": "node --test helper/test/"
   },
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@0gfoundation/0g-storage-ts-sdk": "1.2.13",
+    "ethers": "6.13.1",
+    "solc": "0.8.26"
+  }
 }
