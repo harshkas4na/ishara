@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { desktopAsk, overlay, type OverlayCmd } from "./desktop.ts";
 import { decide } from "./decide.ts";
 import { transcribe } from "./whisper.ts";
+import { interrupt } from "./speech.ts";
 
 export const PTT_BIN = fileURLToPath(new URL("../../desktop/ishara-ptt", import.meta.url));
 
@@ -80,7 +81,7 @@ export function createPtt(d: PttDeps) {
     try { ev = JSON.parse(line); } catch { return; } // the daemon only prints JSON; anything else is ignorable noise
     switch (ev?.ev) {
       case "ready": ready = true; chord = ev.chord; lastError = undefined; break;
-      case "down": lastMeterAt = -Infinity; lastMeterText = ""; d.send({ cmd: "think", text: "Listening… release to send" }); break;
+      case "down": interrupt(); /* silence the voice before the mic is live: no echo into the recording */ lastMeterAt = -Infinity; lastMeterText = ""; d.send({ cmd: "think", text: "Listening… release to send" }); break;
       case "level": {
         const t = d.now(), text = meter(Number(ev.rms) || 0);
         // Throttle, and skip repeats: an unchanged bar needs no redraw.
