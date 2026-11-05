@@ -21,33 +21,47 @@ test("parsePoint is lenient", () => {
 });
 test("parsePoint takes the last tag", () => assert.equal(parsePoint("maybe [b1] but really [POINT:b3]"), "b3"));
 
-test("shortlist ranks label matches, ties by order", () => {
-  assert.deepEqual(shortlist("where do I enter the contract address", els), ["b3", "b1", "b2"]);
+test("shortlist ranks label matches, then controls before links", () => {
+  // No other element shares a word, so after the match the controls (b2, b4) beat the link (b1).
+  assert.deepEqual(shortlist("where do I enter the contract address", els), ["b3", "b2", "b4"]);
   assert.equal(shortlist("which compiler", els)[0], "b4");
   assert.equal(shortlist("agree terms", els)[0], "b5");
   assert.equal(shortlist("", els).length, 3);
 });
 
-const ok = (id: string | null) => async () => ({ ok: true as const, targetId: id, requestId: "r-b", ms: 5 });
-const lay = (c: string, p: number) => async () => ({ ok: true as const, choice: c, p, requestId: "r-l", ms: 4 });
+test("shortlist: action words and synonyms reach the right button, headings are never candidates", () => {
+  const page = [
+    ["b0", "link", "verification guide"], ["b1", "text", "Verify and publish source"],
+    ["b2", "input", "Contract address"], ["b3", "button", "Verify and Publish"], ["b4", "button", "Reset"],
+  ].map(([id, role, label]) => ({ id, role, label, rect: { x: 0, y: 0, w: 1, h: 1 } }));
+  assert.equal(shortlist("how do I submit this for verification", page)[0], "b3"); // not the guide link, not the heading
+  assert.equal(shortlist("how do I clear the form", page)[0], "b4");
+  assert.ok(!shortlist("verify", page).includes("b1"));
+});
 
-test("decide: agreement points and carries request ids", async () => {
-  const d = await decide("s", "enter the contract address", outline, { brain: ok("b3"), laya: lay("b3", 0.9) });
+const ok = (id: string | null) => async () => ({ ok: true as const, targetId: id, requestId: "r-b", ms: 5 });
+const yes = (p: number) => async () => ({ ok: true as const, p, requestId: "r-l", ms: 4 });
+
+test("decide: proposal confirmed points and carries request ids", async () => {
+  const d = await decide("s", "enter the contract address", outline, { brain: ok("b3"), verify: yes(0.9) });
   assert.equal(d.outcome, "point"); assert.equal(d.targetId, "b3");
   assert.deepEqual(d.requestIds, { brain: "r-b", laya: "r-l" });
   assert.equal(d.ms.brain, 5);
 });
-test("decide: disagreement never points", async () => {
-  const d = await decide("s", "contract address", outline, { brain: ok("b4"), laya: lay("b3", 0.9) });
-  assert.notEqual(d.outcome, "point");
+test("decide: an unconfirmed proposal never points", async () => {
+  const d = await decide("s", "contract address", outline, { brain: ok("b4"), verify: yes(0.05) });
+  assert.equal(d.outcome, "ask");
+});
+test("decide: an id that is not on the page counts as naming nothing, and laya is not called", async () => {
+  let called = false;
+  const d = await decide("s", "q", outline, { brain: ok("b99"), verify: async () => { called = true; return { ok: true, p: 1, ms: 1 }; } });
+  assert.equal(d.outcome, "ask"); assert.equal(called, false);
 });
 test("decide: failure becomes safe_stop with its cause", async () => {
-  const d = await decide("s", "q", outline, { brain: async () => ({ ok: false, cause: "timeout" }), laya: lay("b3", 0.9) });
+  const d = await decide("s", "q", outline, { brain: async () => ({ ok: false, cause: "timeout" }), verify: yes(0.9) });
   assert.equal(d.outcome, "safe_stop"); assert.equal(d.safeStopCause, "timeout");
 });
-test("decide: runs both calls in parallel", async () => {
-  const slow = (v: any) => async () => { await new Promise((r) => setTimeout(r, 150)); return v; };
-  const t = Date.now();
-  await decide("s", "q", outline, { brain: slow({ ok: true, targetId: "b3", ms: 150 }), laya: slow({ ok: true, choice: "b3", p: 0.9, ms: 150 }) });
-  assert.ok(Date.now() - t < 280);
+test("decide: laya failing means ask, not point", async () => {
+  const d = await decide("s", "q", outline, { brain: ok("b3"), verify: async () => ({ ok: false, cause: "timeout" }) });
+  assert.equal(d.outcome, "ask");
 });

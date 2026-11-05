@@ -22,7 +22,8 @@
     if (busy) return;
     busy = true;
     try {
-      NS.overlay.thinking("Thinking…");
+      // Show what we understood so a wrong transcript is visible at once (voice errors look like wrong answers otherwise).
+      NS.overlay.thinking(`I heard: “${question}” …thinking`);
       const { outline, map, ms } = compiled || NS.compileOutline();
       const r = await send({ type: "decide", body: { sessionId, question, outline } });
       if (r.error) return showError("Ishara helper problem: " + r.error, question);

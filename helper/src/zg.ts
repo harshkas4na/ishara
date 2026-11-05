@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { LAYA_TIMEOUT_MS, BRAIN_TIMEOUT_MS } from "./config.ts";
-import type { BrainResult, LayaResult, Cause, OutlineElement } from "./types.ts";
+import type { BrainResult, VerifyResult, Cause, OutlineElement } from "./types.ts";
 
 // Mainnet Private Computer router. Never a non-private path: every call carries trust mode "private",
 // and if no private provider exists the router answers 503 and we report "unavailable" instead of guessing.
@@ -125,7 +125,9 @@ export function parsePoint(text: string): string | null {
   return null;
 }
 
-function failCause(e: any, status?: number): Cause {
+// Say WHY a call failed in the helper log (never the key). A bare "unavailable" hid real bugs during testing.
+function failCause(e: any, who = "0G call"): Cause {
+  console.error(`[zg] ${who} failed:`, e?.cause ?? e?.message ?? e);
   if (e?.cause) return e.cause;
   return "unavailable";
 }
@@ -143,37 +145,30 @@ export async function askBrain(question: string, outlineText: string, o: ZgOpts 
         { role: "user", content: `Page outline:\n${outlineText}\n\nQuestion: ${question}` },
       ],
     }, o.baseUrl ?? DEFAULT_BASE, o.timeoutMs ?? BRAIN_TIMEOUT_MS);
-    if (r.status !== 200) return { ok: false, cause: "unavailable" };
+    if (r.status !== 200) { console.error(`[zg] brain HTTP ${r.status}`); return { ok: false, cause: "unavailable" }; }
     const id = parsePoint(r.text);
-    return { ok: true, targetId: id === "none" || id === null ? null : id, requestId: requestId(r), ms: r.ms };
-  } catch (e) { return { ok: false, cause: failCause(e) }; }
+    // The sentence is what the user reads next to the pointer, so it must be 0GM's own words, not a canned "Here.".
+    const sentence = r.text.replace(/\[\s*POINT\s*:[^\]]*\]?/gi, "").replace(/\s+/g, " ").trim().slice(0, 160);
+    return { ok: true, targetId: id === "none" || id === null ? null : id, sentence: sentence || undefined, requestId: requestId(r), ms: r.ms };
+  } catch (e) { return { ok: false, cause: failCause(e, "brain") }; }
 }
 
-export async function askLaya(question: string, shortlistIds: string[], elements: OutlineElement[], o: ZgOpts = {}): Promise<LayaResult> {
-  const byId = new Map(elements.map((e) => [e.id, e]));
-  const criteria: Record<string, string> = {};
-  const lines: string[] = [];
-  for (const id of shortlistIds) {
-    const el = byId.get(id);
-    if (!el) continue;
-    criteria[id] = `${el.role} "${el.label}"`;
-    lines.push(`[${id}] ${el.role} "${el.label}"`);
-  }
-  // Explicit none option: measured to separate clear from vague requests (9/10 each) at p >= 0.45.
-  criteria["none"] = "No listed element does what the user asked";
+// laya as a checker, not a chooser. Measured on the mock verify page: asking laya to CHOOSE among shortlisted
+// elements was fooled whenever the distractors were plausible (correct picks got p=0.31-0.35 and were vetoed,
+// 4 of 12), while asking it a yes/no about the ONE element 0GM proposed separated right from wrong (0.29-0.87
+// versus 0.00-0.25). So 0GM proposes, laya confirms. It costs ~1 s more than running them in parallel.
+export async function askVerify(question: string, el: OutlineElement, o: ZgOpts = {}): Promise<VerifyResult> {
   try {
     const r = await post("/decisions", {
       model: LAYA_MODEL,
-      state: `User asked: ${question}\nCandidate elements:\n${lines.join("\n")}`,
-      questions: { target: { type: "choice", instructions: "Which element should the user use for what they asked?", criteria } },
+      state: `The user asked: "${question}"\nProposed control: ${el.role} "${el.label}"`,
+      questions: { right: { type: "noul", instructions: "Is the proposed control exactly what the user is asking for?" } },
     }, o.baseUrl ?? DEFAULT_BASE, o.timeoutMs ?? LAYA_TIMEOUT_MS);
-    if (r.status !== 200) return { ok: false, cause: "unavailable" };
-    const a = r.json?.answers?.target;
-    const choice = a?.choice;
-    if (typeof choice !== "string") return { ok: false, cause: "unavailable" };
-    const p = a?.probabilities?.[choice];
-    return { ok: true, choice, p: typeof p === "number" ? p : (typeof a?.confidence === "number" ? a.confidence : 0), requestId: requestId(r), ms: r.ms };
-  } catch (e) { return { ok: false, cause: failCause(e) }; }
+    if (r.status !== 200) { console.error(`[zg] laya HTTP ${r.status}`, JSON.stringify(r.json)?.slice(0, 300)); return { ok: false, cause: "unavailable" }; }
+    const p = r.json?.answers?.right?.noul;
+    if (typeof p !== "number") return { ok: false, cause: "unavailable" };
+    return { ok: true, p, requestId: requestId(r), ms: r.ms };
+  } catch (e) { return { ok: false, cause: failCause(e, "laya") }; }
 }
 
 // Opens the TLS connection early (measured: first request on a new connection costs ~3.6 s on mobile data).

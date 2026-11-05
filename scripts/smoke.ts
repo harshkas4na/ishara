@@ -1,6 +1,6 @@
 // npm run check: one REAL round trip to 0G (micro-dollars), then the offline path against a dead URL.
 import { decide, realDeps } from "../helper/src/decide.ts";
-import { askBrain, askLaya } from "../helper/src/zg.ts";
+import { askBrain, askVerify } from "../helper/src/zg.ts";
 import type { Outline } from "../helper/src/types.ts";
 
 const els = [
@@ -21,7 +21,7 @@ console.log("      requestIds:", JSON.stringify(d.requestIds), "ms:", JSON.strin
 const dead = { baseUrl: "http://127.0.0.1:9/v1" };
 const off = await decide("smoke-off", q, outline, {
   brain: (qq, t) => askBrain(qq, t, dead),
-  laya: (qq, ids, e) => askLaya(qq, ids, e, dead),
+  verify: (qq, el) => askVerify(qq, el, dead),
 });
 console.log("OFFLINE outcome:", off.outcome, "cause:", off.safeStopCause);
 if (d.outcome === "point" ? d.targetId !== "b3" : false) { console.error("FAIL: wrong target"); process.exit(1); }
