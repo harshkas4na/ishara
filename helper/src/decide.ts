@@ -164,5 +164,8 @@ function logTurn(req: any, said: string[], pointed: { id: string; kind: string }
 /** /tutor/walk: next, back, repeat, stop, where. No 0G call, so nothing to log or prove. */
 export async function* tutorWalk(req: any, o: { run?: (req: any, deps: any) => AsyncGenerator<any> } = {}): AsyncGenerator<TEvent> {
   const run = o.run ?? (await import("./tutor.ts")).runWalkCommand;
-  yield* run(req, {});
+  for await (const ev of run(req, {})) {
+    if ((ev.event ?? ev.type) === "done" && ev.data && "calls" in ev.data) { const { calls: _c, ...wire } = ev.data; yield { ...ev, data: wire }; } // internal list, not for the client
+    else yield ev;
+  }
 }
