@@ -72,12 +72,12 @@ export function verifyMaterial(m: SignatureMaterial, onChainSigner: string, now 
  * Fetch and verify the proof for one answer. `chatId` is the ZG-Res-Key header (or data.id), NOT x_0g_trace.request_id.
  * Call it right after the answer, off the decision path; the signature is gone after ~20 minutes.
  */
-export async function fetchProof(opts: { chatId: string; provider: string; rpcUrl?: string; timeoutMs?: number; fetchImpl?: typeof fetch }): Promise<ProofResult> {
+export async function fetchProof(opts: { chatId: string; provider: string; rpcUrl?: string; timeoutMs?: number; fetchImpl?: typeof fetch; lookup?: (provider: string, rpcUrl?: string) => Promise<ServiceRecord> }): Promise<ProofResult> {
   const { chatId, provider } = opts;
   const f = opts.fetchImpl ?? fetch;
   const t0 = Date.now();
   let svc: ServiceRecord;
-  try { svc = await getServiceRecord(provider, opts.rpcUrl); }
+  try { svc = await (opts.lookup ?? getServiceRecord)(provider, opts.rpcUrl); } // lookup is a test seam; the product never sets it
   catch (e) { return { status: "error", requestId: chatId, cause: "service_lookup", detail: String((e as Error).message) }; }
 
   let res: Response;

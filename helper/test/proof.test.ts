@@ -33,9 +33,11 @@ test("TargetSeparated picks TargetTeeAddress (capitalised keys)", () => {
 });
 
 test("404 is an explicit expired result", async () => {
-  // Real on-chain lookup (free read) for the lab's laya provider, fake provider HTTP.
+  // Fake lookup and fake provider HTTP: this test must not depend on a live provider still being registered
+  // (on 2026-11-06 the laya provider's on-chain record reverted).
   const r = await fetchProof({
     chatId: "gone", provider: "0x743cD1F17903cF6cC94ff4792b51929876f51023",
+    lookup: async () => ({ url: "https://provider.invalid", model: "laya", signer: "0x0000000000000000000000000000000000000001" }),
     fetchImpl: async () => new Response('{"error":"chat_id_not_found"}', { status: 404 }),
   });
   assert.equal(r.status, "expired");
