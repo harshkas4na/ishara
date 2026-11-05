@@ -10,6 +10,7 @@ import { desktopAsk, warmDesktop } from "./desktop.ts";
 import { readdirSync, statSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
+import { pttStatus, startPtt, stopPtt } from "./desktop-ptt.ts";
 import { memory, memoryRoute } from "./memory.ts";
 import { allowedOrigin, refuse, staticPath } from "./http-guard.ts";
 
@@ -119,6 +120,8 @@ const server = createServer(async (req, res) => {
         return send(res, 200, { decision: r.decision, ms: r.ms, elements: r.outline.elements.length });
       } catch (e: any) { return send(res, 503, { error: String(e?.message ?? e) }); } // e.g. the Accessibility permission message
     }
+    // Push-to-talk daemon state (desktop-ptt.ts): running, the chord, and the last error (e.g. a missing permission).
+    if (req.method === "GET" && path === "/desktop/ptt") return send(res, 200, pttStatus());
     return send(res, 404, { error: "no such route" });
   } catch (e: any) {
     if (res.headersSent) return void res.destroy(); // a second writeHead would throw out of this handler and kill the helper
@@ -131,8 +134,14 @@ server.listen(HELPER_PORT, "127.0.0.1", () => {
   startWhisper().then(() => console.log("whisper:", JSON.stringify(whisperStatus())));
   warm();
   // Vision loads its OCR model on first use (measured up to 56 s). Opt-in, because warming it reads the screen once.
-  if (process.env.ISHARA_DESKTOP === "1") warmDesktop();
+  if (process.env.ISHARA_DESKTOP === "1") {
+    warmDesktop();
+    // Global push-to-talk. Same opt-in: starting it is what makes macOS ask for Input Monitoring and Microphone.
+    // startPtt() is a no-op when desktop/ishara-ptt is not built.
+    if (!startPtt()) console.log("push-to-talk: desktop/ishara-ptt is not built (npm run desktop:build)");
+  }
 });
 // Ctrl-C does not fire "exit", so whisper-server outlived every helper restart (10 orphans found on 5 Nov, each
 // holding the model). Stop it on the signals too.
-for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { stopWhisper(); process.exit(0); });
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { stopWhisper(); stopPtt(); process.exit(0); });
+process.on("exit", stopPtt); // the daemon holds the microphone; never leave it running

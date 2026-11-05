@@ -13,7 +13,9 @@ the pixels are dropped; only the recognised text goes into the outline.
 ```
 swiftc -O -swift-version 5 desktop/ishara-ax.swift -o desktop/ishara-ax
 swiftc -O -swift-version 5 desktop/ishara-overlay.swift -o desktop/ishara-overlay
+swiftc -O -swift-version 5 desktop/ishara-ptt.swift -o desktop/ishara-ptt
 ```
+(`npm run desktop:build` does all three.)
 No dependencies. The binaries are gitignored. `helper/src/desktop.ts` exports `desktopOutline()`,
 `overlay.send(cmd)`, `desktopAsk(question, decideFn)` (pass the same `decide` the browser route uses) and
 `warmDesktop()`.
@@ -23,7 +25,31 @@ No dependencies. The binaries are gitignored. `helper/src/desktop.ts` exports `d
   exits 2 and prints which permission and where; `desktopOutline()` throws that as a readable message.
 - **Screen & System Audio Recording**: only for the OCR fallback. Without it OCR is skipped with a warning and
   the outline is AX only.
+- **Input Monitoring** (Privacy & Security > Input Monitoring): required for push-to-talk, so the key tap can see
+  the chord. The tap is listen-only; it can not change or swallow a key.
+- **Microphone** (Privacy & Security > Microphone): required for push-to-talk. Without either, `ishara-ptt` prints
+  `{"ev":"error","code":"input-monitoring"|"microphone",...}` naming the permission, the overlay shows it once, and it
+  is not restarted. Grant it to the app that launched node, then restart the helper.
 The overlay needs no permission.
+
+## Push-to-talk (any app)
+Hold **Control+Option+Space**, speak, release. The overlay shows "Listening…" with a level meter while you hold,
+then "Transcribing…", then "I heard: “…” …thinking", then the answer (cursor, marker, or bubble). The browser
+extension keeps Option+Space, so the two never collide. Change the chord with `ISHARA_PTT_KEY=ctrl+opt+k`
+(modifiers ctrl/opt/cmd/shift plus one key; at least one modifier is required).
+```
+npm run desktop:build
+npm run helper:desktop        # ISHARA_DESKTOP=1 ISHARA_DEV=1; starts the key daemon only in this mode
+curl 127.0.0.1:7777/desktop/ptt   # {"running":true,"chord":"ctrl+opt+space"} or lastError
+```
+Same refusals as the browser: under 0.25 s is "too short", a take quieter than RMS 0.006 is "I could not hear any
+sound", and Whisper's stock noise phrases (you, thanks, ok, dots, under 3 characters) are shown, not sent to 0G.
+Audio lives in memory only, goes to the local Whisper server, and is never written to disk. `ISHARA_PTT_DEBUG=1`
+logs every key event to stderr.
+
+Limits: the tap can not swallow keys, so the focused app still sees Control+Option+Space (most apps ignore it; a
+few may insert a space). Releasing a modifier first ends the take. A second question while one is running is not
+queued. Built-in mics pick up room noise: speak close, and expect a speaker-to-mic test to transcribe poorly.
 
 ## Try it
 ```
