@@ -24,6 +24,7 @@
   async function ask(question, compiled) {
     if (busy) return;
     busy = true; inspecting = false; // any answer replaces the inspector boxes
+    if (stopWatch) stopWatch(); // a new question ends the previous pointer's accept-watch
     try {
       // Show what we understood so a wrong transcript is visible at once (voice errors look like wrong answers otherwise).
       NS.overlay.thinking(`I heard: “${question}” …thinking`);
@@ -35,7 +36,7 @@
       NS.overlay.setDebug({ question, decision: d, outlineMs: ms, proposedLabel: labelOf(d.proposedId), targetLabel: labelOf(d.targetId) });
       // The element may have been removed since compile; refuse to point rather than guess.
       const el = d.targetId && current(map.get(d.targetId), outline.elements.find((e) => e.id === d.targetId));
-      if (d.outcome === "point" && el) await NS.overlay.point(el, d.say, d.requestIds && d.requestIds.brain);
+      if (d.outcome === "point" && el) { await NS.overlay.point(el, d.say, d.requestIds && d.requestIds.brain); watchAccepted(el, question); }
       else if (d.outcome === "point") NS.overlay.say("The element is gone. Ask again.", { stop: true });
       else if (d.outcome === "ask_which") {
         const els = (d.candidates || []).map((id) => map.get(id)).filter((e) => e && e.isConnected);
@@ -50,6 +51,19 @@
         NS.overlay.say("I can't decide right now", { stop: true, sub: (WHY[d.safeStopCause] || d.reason) + " I won't guess, so nothing moved." });
       } else NS.overlay.say(d.say); // "ask": words only, never a pointer
     } finally { busy = false; }
+  }
+
+  // Personal memory signal (helper/src/memory.ts): did the user act on the element we pointed at? A click or focus on it
+  // within 20 s counts as "accepted". Only the question text and the site's hostname go to the helper, never anything
+  // typed into the page. The listeners are removed on the first hit, after 20 s, or when the next answer arrives.
+  let stopWatch = null;
+  function watchAccepted(el, question) {
+    if (stopWatch) stopWatch();
+    const off = () => { clearTimeout(timer); el.removeEventListener("click", hit, true); el.removeEventListener("focusin", hit, true); stopWatch = null; };
+    const hit = () => { off(); send({ type: "feedback", body: { sessionId, question, host: location.hostname, kind: "accepted" } }); };
+    const timer = setTimeout(off, 20000);
+    el.addEventListener("click", hit, true); el.addEventListener("focusin", hit, true);
+    stopWatch = off;
   }
 
   // Pages that re-render (React, GitHub) swap the node between the outline and the answer. Find it again only if

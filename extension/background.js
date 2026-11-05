@@ -58,6 +58,7 @@ async function handle(msg, sender) {
       });
     }
     case "decide": return helper("/decide", json(msg.body), 20000);
+    case "feedback": return helper("/memory/feedback", json(msg.body), 5000); // memory: the user acted on the pointer
     case "proof": return helper("/proof/" + encodeURIComponent(msg.requestId));
     case "session-end": return helper("/session/end", json({ sessionId: msg.sessionId }), 60000);
     case "open-setup": chrome.tabs.create({ url: chrome.runtime.getURL("setup.html") }); return {};
