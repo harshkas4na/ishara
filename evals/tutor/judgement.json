@@ -1,0 +1,104 @@
+[
+ {
+  "context": "mock-verify",
+  "question": "which compiler version should I pick",
+  "checks": {
+   "must_any": [
+    "match",
+    "same version",
+    "exact",
+    "compiled",
+    "the one you"
+   ],
+   "label_any": true,
+   "max_words": 90
+  },
+  "id": "judgement-01",
+  "class": "judgement"
+ },
+ {
+  "context": "solidity-docs",
+  "question": "what should I read first as a beginner",
+  "checks": {
+   "must_any": [
+    "Introduction to Smart Contracts",
+    "Solidity by Example"
+   ],
+   "label_any": true,
+   "max_words": 90
+  },
+  "id": "judgement-02",
+  "class": "judgement"
+ },
+ {
+  "context": "wallet-connect",
+  "question": "which wallet should I use",
+  "checks": {
+   "must_any": [
+    "browser",
+    "mobile",
+    "extension",
+    "depends",
+    "prefer",
+    "QR"
+   ],
+   "label_any": true,
+   "max_words": 90
+  },
+  "id": "judgement-03",
+  "class": "judgement"
+ },
+ {
+  "context": "mock-verify",
+  "question": "should I turn optimization on",
+  "checks": {
+   "must_any": [
+    "deploy",
+    "gas",
+    "runs",
+    "depends",
+    "match"
+   ],
+   "label_any": true,
+   "max_words": 90
+  },
+  "id": "judgement-04",
+  "class": "judgement"
+ },
+ {
+  "context": "table-demo",
+  "question": "should I worry about ARB dropping",
+  "checks": {
+   "must_any": [
+    "4.2",
+    "24h",
+    "24-hour",
+    "volatile",
+    "depends",
+    "not financial advice",
+    "advice"
+   ],
+   "label_any": true,
+   "max_words": 90
+  },
+  "id": "judgement-05",
+  "class": "judgement"
+ },
+ {
+  "context": "error-page",
+  "question": "should I raise the slippage tolerance",
+  "checks": {
+   "must_any": [
+    "slippage",
+    "price",
+    "risk",
+    "higher",
+    "tolerance"
+   ],
+   "label_any": true,
+   "max_words": 90
+  },
+  "id": "judgement-06",
+  "class": "judgement"
+ }
+]

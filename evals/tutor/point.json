@@ -1,0 +1,94 @@
+[
+ {
+  "context": "mock-verify",
+  "question": "where do I put the contract address",
+  "checks": {
+   "point": {
+    "target": "b6"
+   },
+   "max_words": 40
+  },
+  "id": "point-01",
+  "class": "point"
+ },
+ {
+  "context": "mock-verify",
+  "question": "how do I choose the compiler version",
+  "checks": {
+   "point": {
+    "target": "b8"
+   },
+   "max_words": 40
+  },
+  "id": "point-02",
+  "class": "point"
+ },
+ {
+  "context": "mock-verify",
+  "question": "where do I paste my solidity source code",
+  "checks": {
+   "point": {
+    "target": "b11"
+   },
+   "max_words": 40
+  },
+  "id": "point-03",
+  "class": "point"
+ },
+ {
+  "context": "mock-verify",
+  "question": "where do I accept the terms of service",
+  "checks": {
+   "point": {
+    "target": "b10"
+   },
+   "max_words": 40
+  },
+  "id": "point-04",
+  "class": "point"
+ },
+ {
+  "context": "mock-verify",
+  "question": "how do I submit this for verification",
+  "checks": {
+   "point": {
+    "target": "b17"
+   },
+   "max_words": 40
+  },
+  "id": "point-05",
+  "class": "point"
+ },
+ {
+  "context": "mock-verify",
+  "question": "where is the optimizer runs setting",
+  "checks": {
+   "point": {
+    "target": "b13"
+   },
+   "max_words": 40
+  },
+  "id": "point-06",
+  "class": "point"
+ },
+ {
+  "context": "mock-verify",
+  "question": "help",
+  "checks": {
+   "point": "ask",
+   "max_words": 40
+  },
+  "id": "point-07",
+  "class": "point"
+ },
+ {
+  "context": "mock-verify",
+  "question": "I am stuck",
+  "checks": {
+   "point": "ask",
+   "max_words": 40
+  },
+  "id": "point-08",
+  "class": "point"
+ }
+]

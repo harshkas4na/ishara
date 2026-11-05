@@ -1,0 +1,235 @@
+[
+ {
+  "context": "mock-verify",
+  "question": "what does the optimizer runs setting mean",
+  "checks": {
+   "must_any": [
+    "200",
+    "execut",
+    "times",
+    "deploy"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-01",
+  "class": "explain"
+ },
+ {
+  "context": "mock-verify",
+  "question": "what is this page about",
+  "checks": {
+   "must_any": [
+    "verif",
+    "source code",
+    "contract"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-02",
+  "class": "explain"
+ },
+ {
+  "context": "wikipedia-ethereum",
+  "question": "what is this page about",
+  "checks": {
+   "must_any": [
+    "Ethereum",
+    "blockchain"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-03",
+  "class": "explain"
+ },
+ {
+  "context": "wikipedia-ethereum",
+  "question": "what does proof of stake mean",
+  "checks": {
+   "must_any": [
+    "proof-of-stake",
+    "validator",
+    "stak",
+    "Merge",
+    "32 ETH"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-04",
+  "class": "explain"
+ },
+ {
+  "context": "wikipedia-ethereum",
+  "question": "summarize the history part",
+  "checks": {
+   "must_any": [
+    "Buterin",
+    "2013",
+    "DAO"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-05",
+  "class": "explain"
+ },
+ {
+  "context": "github-ishara",
+  "question": "what is this project and what does it do",
+  "checks": {
+   "must_any": [
+    "tutor",
+    "point",
+    "ring",
+    "0G",
+    "sealed"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-06",
+  "class": "explain"
+ },
+ {
+  "context": "github-ishara",
+  "question": "why does it refuse to answer when the network is down",
+  "checks": {
+   "must_any": [
+    "unreachable",
+    "local model",
+    "never",
+    "stops"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-07",
+  "class": "explain"
+ },
+ {
+  "context": "solidity-docs",
+  "question": "what is this page telling me",
+  "checks": {
+   "must_any": [
+    "Solidity",
+    "smart contract"
+   ],
+   "must_not": [
+    "Getting Started",
+    "Tutorial",
+    "Hello World"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-08",
+  "class": "explain"
+ },
+ {
+  "context": "solidity-docs",
+  "question": "which languages influenced it",
+  "checks": {
+   "must_any": [
+    "C++",
+    "Python",
+    "JavaScript"
+   ],
+   "must_not": [
+    "Getting Started",
+    "Rust",
+    "Java "
+   ],
+   "max_words": 70
+  },
+  "id": "explain-09",
+  "class": "explain"
+ },
+ {
+  "context": "table-demo",
+  "question": "which asset dropped the most",
+  "checks": {
+   "must_any": [
+    "ARB",
+    "4.2"
+   ],
+   "must_not": [
+    "Bitcoin",
+    "BTC",
+    "SOL"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-10",
+  "class": "explain"
+ },
+ {
+  "context": "table-demo",
+  "question": "how much LINK do I hold",
+  "checks": {
+   "must_any": [
+    "85"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-11",
+  "class": "explain"
+ },
+ {
+  "context": "long-article",
+  "question": "what is a rollup",
+  "checks": {
+   "must_any": [
+    "off the main chain",
+    "compressed",
+    "executes",
+    "off-chain",
+    "batch",
+    "posts"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-12",
+  "class": "explain"
+ },
+ {
+  "context": "long-article",
+  "question": "summarise this article",
+  "checks": {
+   "must_any": [
+    "layer 2",
+    "rollup",
+    "fees"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-13",
+  "class": "explain"
+ },
+ {
+  "context": "chart-demo",
+  "question": "what does this chart show",
+  "checks": {
+   "must_any": [
+    "gas",
+    "gwei",
+    "42",
+    "7 days",
+    "week"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-14",
+  "class": "explain"
+ },
+ {
+  "context": "error-page",
+  "question": "what happened to my swap",
+  "checks": {
+   "must_any": [
+    "slippage",
+    "reverted",
+    "Too little received",
+    "price moved",
+    "price"
+   ],
+   "max_words": 70
+  },
+  "id": "explain-15",
+  "class": "explain"
+ }
+]

@@ -1,0 +1,124 @@
+[
+ {
+  "context": "mock-verify",
+  "question": "walk me through filling this form",
+  "checks": {
+   "steps": {
+    "min": 3,
+    "max": 6,
+    "ascending": true,
+    "first_confirmed": true
+   }
+  },
+  "id": "guide-01",
+  "class": "guide"
+ },
+ {
+  "context": "mock-verify",
+  "question": "how do I verify my contract, step by step",
+  "checks": {
+   "steps": {
+    "min": 3,
+    "max": 6,
+    "ascending": true,
+    "first_confirmed": true
+   }
+  },
+  "id": "guide-02",
+  "class": "guide"
+ },
+ {
+  "context": "mock-verify",
+  "question": "guide me",
+  "checks": {
+   "steps": {
+    "min": 3,
+    "max": 6,
+    "ascending": true,
+    "first_confirmed": true
+   }
+  },
+  "id": "guide-03",
+  "class": "guide"
+ },
+ {
+  "context": "github-ishara",
+  "question": "how do I run this",
+  "checks": {
+   "steps": {
+    "min": 3,
+    "max": 6,
+    "ascending": true,
+    "first_confirmed": false
+   }
+  },
+  "id": "guide-04",
+  "class": "guide"
+ },
+ {
+  "context": "wallet-connect",
+  "question": "how do I connect my wallet",
+  "checks": {
+   "steps": {
+    "min": 3,
+    "max": 6,
+    "first_confirmed": true,
+    "first_in": [
+     "b0",
+     "b1",
+     "b2"
+    ]
+   }
+  },
+  "id": "guide-05",
+  "class": "guide"
+ },
+ {
+  "context": "validation-form",
+  "question": "help me fix this form",
+  "checks": {
+   "steps": {
+    "min": 3,
+    "max": 6,
+    "ascending": true,
+    "first_confirmed": true,
+    "first_in": [
+     "b0",
+     "t2"
+    ]
+   }
+  },
+  "id": "guide-06",
+  "class": "guide"
+ },
+ {
+  "context": "error-page",
+  "question": "what do I do to try again",
+  "checks": {
+   "steps": {
+    "min": 3,
+    "max": 6,
+    "first_confirmed": true,
+    "order": [
+     "b0",
+     "b1"
+    ]
+   }
+  },
+  "id": "guide-07",
+  "class": "guide"
+ },
+ {
+  "context": "solidity-docs",
+  "question": "walk me through where to start learning",
+  "checks": {
+   "steps": {
+    "min": 3,
+    "max": 6,
+    "first_confirmed": true
+   }
+  },
+  "id": "guide-08",
+  "class": "guide"
+ }
+]

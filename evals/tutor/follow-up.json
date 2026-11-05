@@ -1,0 +1,189 @@
+[
+ {
+  "context": "mock-verify",
+  "question": "why?",
+  "history": [
+   {
+    "q": "what does the optimizer runs setting mean",
+    "a": "Runs is how many times you expect the contract code to execute over its life. A high number makes each call cheaper but makes deployment bigger, and 200 is the usual default.",
+    "pointedLabel": "Runs (Optimizer)"
+   }
+  ],
+  "checks": {
+   "must_any": [
+    "execut",
+    "deploy",
+    "gas",
+    "cheaper",
+    "default",
+    "runs",
+    "times"
+   ],
+   "not_refusal": true,
+   "point": "none",
+   "max_words": 70
+  },
+  "id": "follow-up-01",
+  "class": "follow-up"
+ },
+ {
+  "context": "mock-verify",
+  "question": "and then?",
+  "history": [
+   {
+    "q": "walk me through filling this form",
+    "a": "First paste the contract address you want to verify into the first box.",
+    "pointedLabel": "Please enter the Contract Address you would like to verify"
+   }
+  ],
+  "checks": {
+   "must_any": [
+    "compiler",
+    "type",
+    "version"
+   ],
+   "not_refusal": true,
+   "max_words": 70
+  },
+  "id": "follow-up-02",
+  "class": "follow-up"
+ },
+ {
+  "context": "wikipedia-ethereum",
+  "question": "and what was it before that?",
+  "history": [
+   {
+    "q": "what changed in 2022",
+    "a": "Ethereum moved from proof-of-work to proof-of-stake in an update called the Merge, which cut its energy use by about 99 percent.",
+    "pointedLabel": null
+   }
+  ],
+  "checks": {
+   "must_any": [
+    "proof-of-work",
+    "PoW",
+    "mining",
+    "work"
+   ],
+   "not_refusal": true,
+   "point": "none",
+   "max_words": 70
+  },
+  "id": "follow-up-03",
+  "class": "follow-up"
+ },
+ {
+  "context": "wikipedia-ethereum",
+  "question": "who came up with it?",
+  "history": [
+   {
+    "q": "what is this page about",
+    "a": "It is about Ethereum, a decentralized blockchain with smart contracts, whose native currency is ether.",
+    "pointedLabel": null
+   }
+  ],
+  "checks": {
+   "must_any": [
+    "Buterin",
+    "Vitalik"
+   ],
+   "not_refusal": true,
+   "point": "none",
+   "max_words": 70
+  },
+  "id": "follow-up-04",
+  "class": "follow-up"
+ },
+ {
+  "context": "solidity-docs",
+  "question": "what about the next one",
+  "history": [
+   {
+    "q": "what should I read first",
+    "a": "Start with Introduction to Smart Contracts, which is the first link in the sidebar.",
+    "pointedLabel": "Introduction to Smart Contracts"
+   }
+  ],
+  "checks": {
+   "must_any": [
+    "Solidity by Example",
+    "Installing",
+    "Compiler"
+   ],
+   "not_refusal": true,
+   "point": "none",
+   "max_words": 70
+  },
+  "id": "follow-up-05",
+  "class": "follow-up"
+ },
+ {
+  "context": "github-ishara",
+  "question": "and after that?",
+  "history": [
+   {
+    "q": "how do I run it",
+    "a": "Run npm install, then npm run helper to start the helper on your laptop.",
+    "pointedLabel": null
+   }
+  ],
+  "checks": {
+   "must_any": [
+    "extension",
+    "chrome://extensions",
+    "chord",
+    "popup",
+    "Developer mode"
+   ],
+   "not_refusal": true,
+   "max_words": 70
+  },
+  "id": "follow-up-06",
+  "class": "follow-up"
+ },
+ {
+  "context": "table-demo",
+  "question": "and the others?",
+  "history": [
+   {
+    "q": "which asset dropped the most",
+    "a": "ARB, down 4.2 percent in the last 24 hours.",
+    "pointedLabel": null
+   }
+  ],
+  "checks": {
+   "must_any": [
+    "ETH",
+    "LINK",
+    "USDC"
+   ],
+   "not_refusal": true,
+   "point": "none",
+   "max_words": 70
+  },
+  "id": "follow-up-07",
+  "class": "follow-up"
+ },
+ {
+  "context": "error-page",
+  "question": "why did that happen?",
+  "history": [
+   {
+    "q": "what does this error mean",
+    "a": "Your swap reverted with Too little received, so nothing was sent and you paid no gas.",
+    "pointedLabel": null
+   }
+  ],
+  "checks": {
+   "must_any": [
+    "slippage",
+    "price"
+   ],
+   "not_refusal": true,
+   "point": "none",
+   "max_words": 70
+  },
+  "id": "follow-up-08",
+  "class": "follow-up"
+ }
+]

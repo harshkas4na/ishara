@@ -1,0 +1,95 @@
+[
+ {
+  "context": "mock-verify",
+  "question": "contract address kahan daalna hai",
+  "checks": {
+   "point": {
+    "target": "b6"
+   },
+   "lang_mix": true,
+   "max_words": 40
+  },
+  "id": "hinglish-01",
+  "class": "hinglish"
+ },
+ {
+  "context": "mock-verify",
+  "question": "yeh optimizer runs kya hota hai",
+  "checks": {
+   "must_any": [
+    "200",
+    "runs",
+    "execut",
+    "deploy",
+    "times"
+   ],
+   "lang_mix": true,
+   "max_words": 70
+  },
+  "id": "hinglish-02",
+  "class": "hinglish"
+ },
+ {
+  "context": "error-page",
+  "question": "yeh error ka matlab kya hai",
+  "checks": {
+   "must_any": [
+    "slippage",
+    "price",
+    "revert",
+    "Too little",
+    "gas"
+   ],
+   "lang_mix": true,
+   "max_words": 70
+  },
+  "id": "hinglish-03",
+  "class": "hinglish"
+ },
+ {
+  "context": "table-demo",
+  "question": "sabse zyada kaunsa asset gira",
+  "checks": {
+   "must_any": [
+    "ARB",
+    "4.2"
+   ],
+   "lang_mix": true,
+   "max_words": 70
+  },
+  "id": "hinglish-04",
+  "class": "hinglish"
+ },
+ {
+  "context": "wallet-connect",
+  "question": "kaunsa wallet use karu",
+  "checks": {
+   "must_any": [
+    "MetaMask",
+    "WalletConnect",
+    "Coinbase"
+   ],
+   "lang_mix": true,
+   "max_words": 70
+  },
+  "id": "hinglish-05",
+  "class": "hinglish"
+ },
+ {
+  "context": "validation-form",
+  "question": "form mein kya galat hai",
+  "checks": {
+   "must_any": [
+    "email",
+    "username",
+    "Username",
+    "password",
+    "3"
+   ],
+   "lang_mix": true,
+   "max_words": 70
+  },
+  "id": "hinglish-06",
+  "class": "hinglish"
+ }
+]

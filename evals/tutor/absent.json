@@ -1,0 +1,127 @@
+[
+ {
+  "context": "mock-verify",
+  "question": "what does this error mean",
+  "checks": {
+   "must_any": [
+    "not visible",
+    "don't see",
+    "do not see",
+    "can't see",
+    "cannot see",
+    "no error",
+    "not on",
+    "isn't",
+    "is not",
+    "doesn't",
+    "does not",
+    "not shown",
+    "no "
+   ],
+   "point": "none",
+   "max_words": 50
+  },
+  "id": "absent-01",
+  "class": "absent"
+ },
+ {
+  "context": "wikipedia-ethereum",
+  "question": "what does the error on this page say",
+  "checks": {
+   "must_any": [
+    "not visible",
+    "don't see",
+    "do not see",
+    "can't see",
+    "cannot see",
+    "no error",
+    "not on",
+    "isn't",
+    "is not",
+    "doesn't",
+    "does not",
+    "not shown",
+    "no "
+   ],
+   "point": "none",
+   "max_words": 50
+  },
+  "id": "absent-02",
+  "class": "absent"
+ },
+ {
+  "context": "solidity-docs",
+  "question": "where is the pricing section",
+  "checks": {
+   "must_any": [
+    "not visible",
+    "don't see",
+    "do not see",
+    "can't see",
+    "cannot see",
+    "no error",
+    "not on",
+    "isn't",
+    "is not",
+    "doesn't",
+    "does not",
+    "not shown",
+    "no "
+   ],
+   "point": "none",
+   "max_words": 50
+  },
+  "id": "absent-03",
+  "class": "absent"
+ },
+ {
+  "context": "table-demo",
+  "question": "why is there a red warning banner",
+  "checks": {
+   "must_any": [
+    "not visible",
+    "don't see",
+    "do not see",
+    "can't see",
+    "cannot see",
+    "no error",
+    "not on",
+    "isn't",
+    "is not",
+    "doesn't",
+    "does not",
+    "not shown",
+    "no "
+   ],
+   "point": "none",
+   "max_words": 50
+  },
+  "id": "absent-04",
+  "class": "absent"
+ },
+ {
+  "context": "wallet-connect",
+  "question": "where is the Solana option",
+  "checks": {
+   "must_any": [
+    "not visible",
+    "don't see",
+    "do not see",
+    "can't see",
+    "cannot see",
+    "no error",
+    "not on",
+    "isn't",
+    "is not",
+    "doesn't",
+    "does not",
+    "not shown",
+    "no "
+   ],
+   "point": "none",
+   "max_words": 50
+  },
+  "id": "absent-05",
+  "class": "absent"
+ }
+]
