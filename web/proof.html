@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How do I know? - Ishara</title><link rel="stylesheet" href="shared.css"></head>
+<body><div class="wrap" id="root"></div>
+<script src="shared.js"></script>
+<script>
+// "How do I know?" for one answer. Rule of this page: never imply success unless status is ok AND the two
+// addresses match. Every other state says what happened, using the helper's own `detail` text.
+const root = $("#root");
+const id = new URLSearchParams(location.search).get("id");
+root.append(header("How do I know?"));
+root.append(el("h1", { text: "How do I know a sealed model answered?" }));
+root.append(explainer(
+  "When a sealed 0G provider answers, it signs a short message that includes the id of your request. We keep that signature.",
+  "From the signature alone, anyone can work out which key signed it (the recovered signer). Separately, each provider registered its signer key on a public blockchain (the on-chain signer).",
+  "If the two keys are the same, the answer really came from that registered provider, not from someone pretending to be it.",
+  "Providers only keep the signature for about 20 minutes, so Ishara fetches it right after each answer and stores it in the session log."));
+const out = el("div"); root.append(out);
+
+function verdict(p) {
+  if (p.status === "ok" && p.match) return ["good", "A sealed 0G provider answered this request, and its signature matches the key registered on-chain.", null];
+  if (p.status === "ok") return ["bad", "Signature does NOT match.", "The key recovered from the signature is different from the key registered on-chain for this provider. Do not trust this answer as coming from that provider."];
+  if (p.status === "expired") return ["warn", "The provider only keeps its signature for about 20 minutes; this one has expired.", p.detail];
+  if (p.status === "pending") return ["neutral", "The signature has not been fetched yet.", p.detail || "Reload in a few seconds."];
+  if (p.status === "unavailable") return ["warn", "No proof is available for this answer.", p.detail];
+  if (p.status === "unknown") return ["warn", "This helper has no record of that request id.", p.detail];
+  return ["bad", "The proof could not be checked.", p.detail || "The helper reported an error."];
+}
+function step(n, title, why, ...body) {
+  return el("div", { class: "card step" }, el("div", { class: "n", text: n }), el("div", {}, el("h3", { text: title }), el("p", { class: "why", text: why }), body));
+}
+const kv = (k, v) => el("div", { class: "kv" }, el("span", { class: "k", text: k }), v);
+
+function render(p) {
+  const [kind, text, sub] = verdict(p);
+  out.replaceChildren(el("div", { class: "verdict " + kind, role: "status" }, text, sub ? el("small", { text: sub }) : null));
+  const have = p.status === "ok";
+  out.append(el("h2", { text: "The check, step by step" }));
+  out.append(step("1", "The answer being checked", "This is the request the signature is about.",
+    kv("Request id", hashView(p.requestId || id, { full: true })), kv("Provider that answered", hashView(p.provider))));
+  out.append(step("2", "Who signed it", "Worked out from the signature itself, with no trust in anyone’s say-so.",
+    have ? kv("Signer recovered from the signature", hashView(p.recoveredSigner)) : el("p", { class: "muted", text: "Not available: no signature was obtained." })));
+  const eq = have && p.match;
+  out.append(step("3", "Who is registered on-chain", "The provider’s signer key, read from the public blockchain. The two should be identical.",
+    have ? el("div", { class: "sidebyside" },
+      el("div", {}, el("div", { class: "k muted", text: "Recovered" }), hashView(p.recoveredSigner)),
+      el("div", { class: "mark " + (eq ? "eq" : "ne"), "aria-label": eq ? "equal" : "not equal", text: eq ? "= equal" : "≠ NOT equal" }),
+      el("div", {}, el("div", { class: "k muted", text: "On-chain" }), hashView(p.onChainSigner)))
+      : el("p", { class: "muted", text: "Not available: nothing to compare." }),
+    have && p.fetchedAt ? el("p", { class: "muted", text: "Checked " + fmtTime(p.fetchedAt) }) : null));
+  if (p.note) out.append(el("div", { class: "limit" }, el("h3", { text: "What this does NOT prove" }), el("p", { text: p.note })));
+  out.append(el("p", { class: "muted", style: "margin-top:20px" }, el("a", { href: "./", text: "All sessions" })));
+}
+(async () => {
+  if (!id && !new URLSearchParams(location.search).get("fixture")) { out.append(el("div", { class: "verdict warn", text: "No request id given.", }, el("small", { text: "Open this page from a replay, as proof.html?id=<request id>." }))); return; }
+  try { render(await getJson("/proof/" + encodeURIComponent(id), "proof")); }
+  catch (e) { out.replaceChildren(el("div", { class: "verdict bad", text: "Cannot reach the Ishara helper." }, el("small", { text: "Start it with `npm run helper` and reload. (" + e.message + ")" }))); }
+})();
+</script></body></html>
