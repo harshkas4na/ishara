@@ -109,7 +109,7 @@ test("buildBlocks from a static fixture", () => {
   assert.ok(!texts.includes(HEX64) && !texts.includes(PHRASE12), "secrets redacted");
   assert.ok(texts.includes(ADDR), "public address kept");
   assert.ok(!/\[POINT:|\[WAIT\]/.test(texts), "markers neutralized");
-  assert.deepEqual(blocks.filter((b: any) => b.kind === "h").map((b: any) => b.text), ["Wallet setup guide", "Fees", "Sign in"]);
+  assert.deepEqual([...blocks.filter((b: any) => b.kind === "h").map((b: any) => b.text)], ["Wallet setup guide", "Fees", "Sign in"]);
   assert.ok(blocks.some((b: any) => b.kind === "cell" && b.text === "row: Network | Fee"));
   assert.ok(blocks.some((b: any) => b.kind === "cell" && b.text === "row: Base | $0.01"));
   assert.ok(blocks.some((b: any) => b.kind === "code" && b.text.includes("const a = 1;")));
@@ -137,7 +137,7 @@ test("trim: keeps every heading, errors and in-view first, nav last, within budg
   assert.equal(dropped, blocks.length - kept.length);
   // reading order preserved
   const idx = kept.map((b: any) => blocks.indexOf(b));
-  assert.deepEqual(idx, [...idx].sort((a, b) => a - b));
+  assert.deepEqual([...idx], [...idx].sort((a, b) => a - b));
   const nums = B.number(kept);
   assert.equal(nums[0].id, "t0");
 });
