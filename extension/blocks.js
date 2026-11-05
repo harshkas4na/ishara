@@ -150,6 +150,10 @@
         const p = n.parentElement;
         if (!p || !vis(p)) continue;
         if (p.closest("button,[role=button],[role=tab],[role=menuitem],[contenteditable=true],[aria-hidden=true],[hidden]")) continue;
+        // A label that belongs to a control is already the control's label in the outline: reading it again as page text
+        // only glues "Email Password Recovery phrase ..." into one useless block.
+        const lab = p.closest("label");
+        if (lab && lab.control) continue;
         const c = p.closest(BLOCK_SEL) || p.closest(FALLBACK_SEL) || p;
         if (c !== p && !vis(c)) continue;
         const b = box(c);
