@@ -33,7 +33,9 @@
   // If the extension was reloaded or updated while this page was open, this page's script is orphaned: sendMessage
   // throws "Extension context invalidated" or never answers. Say so plainly instead of leaving "thinking" on screen.
   const send = (msg) => new Promise((res) => {
-    const timer = setTimeout(() => res({ error: "Ishara did not answer. If it was just updated, reload this page." }), 25000);
+    // Saving a session waits for proofs (up to 15 s) and then uploads (about 15 s), so it gets a much longer limit.
+    const limit = msg.type === "session-end" ? 100000 : 25000;
+    const timer = setTimeout(() => res({ error: "Ishara did not answer. If it was just updated, reload this page." }), limit);
     try {
       chrome.runtime.sendMessage(msg, (r) => { clearTimeout(timer); res(chrome.runtime.lastError ? { error: chrome.runtime.lastError.message } : (r ?? { error: "Ishara did not answer. If it was just updated, reload this page." })); });
     } catch { clearTimeout(timer); res({ error: "Ishara was updated or reloaded. Reload this page to continue." }); }

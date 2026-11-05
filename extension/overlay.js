@@ -355,7 +355,7 @@
     const end = el("button", "", "Save to 0G Storage", btns2);
     const res = el("div", "res", "", panel);
     end.onclick = async () => {
-      res.textContent = "Encrypting and uploading, about 15 s…";
+      res.textContent = "Collecting receipts, encrypting and uploading. This can take up to 40 s…";
       const r = await NS._dbgHandlers.endSession();
       res.textContent = "";
       const data = r.data;
