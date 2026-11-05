@@ -1,0 +1,86 @@
+// Input handling and the ask flow. Chords (event.code, because Option+key types a different
+// character on macOS):
+//   hold Alt+Space        push-to-talk
+//   Alt+Shift+Space       type-instead box
+//   Alt+Shift+D           debug panel
+(() => {
+  const NS = globalThis.Ishara;
+  // One id per page load: the helper keys its log and the 0G session root on it.
+  const sessionId = crypto.randomUUID();
+  let recording = false, busy = false, pending = null; // pending: outline compiled at key-down
+
+  const send = (msg) => new Promise((res) => chrome.runtime.sendMessage(msg, (r) => {
+    res(chrome.runtime.lastError ? { error: chrome.runtime.lastError.message } : r);
+  }));
+
+  function showError(text, question) {
+    NS.overlay.say(text, { stop: true });
+    NS.overlay.setDebug({ question, error: text });
+  }
+
+  async function ask(question, compiled) {
+    if (busy) return;
+    busy = true;
+    try {
+      NS.overlay.thinking("Thinking…");
+      const { outline, map, ms } = compiled || NS.compileOutline();
+      const r = await send({ type: "decide", body: { sessionId, question, outline } });
+      if (r.error) return showError("Ishara helper problem: " + r.error, question);
+      const d = r.data;
+      NS.overlay.setDebug({ question, decision: d, outlineMs: ms });
+      // The element may have been removed since compile; refuse to point rather than guess.
+      const el = d.targetId && map.get(d.targetId);
+      if (d.outcome === "point" && el && el.isConnected) await NS.overlay.point(el, d.say);
+      else if (d.outcome === "point") NS.overlay.say("The element is gone. Ask again.", { stop: true });
+      else if (d.outcome === "ask_which") {
+        const els = (d.candidates || []).map((id) => map.get(id)).filter((e) => e && e.isConnected);
+        els.length ? NS.overlay.ringBoth(els, d.say) : NS.overlay.say(d.say);
+      } else if (d.outcome === "safe_stop") {
+        NS.overlay.say("I can't decide right now", { stop: true, sub: d.safeStopCause ? "Cause: " + d.safeStopCause : d.reason });
+      } else NS.overlay.say(d.say); // "ask": words only, never a pointer
+    } finally { busy = false; }
+  }
+
+  async function startTalking() {
+    if (recording || busy) return;
+    recording = true;
+    NS.overlay.clear();
+    // Compile now, in parallel with the speech, so the outline is ready the moment we have text.
+    pending = NS.compileOutline();
+    NS.overlay.say("Listening… release to send");
+    const r = await send({ type: "rec-start" });
+    if (r && r.error) { recording = false; showError(r.error); if (/microphone/.test(r.error)) send({ type: "open-setup" }); }
+  }
+
+  async function stopTalking() {
+    if (!recording) return;
+    recording = false;
+    NS.overlay.say("Transcribing…");
+    const compiled = pending; pending = null;
+    const t = await send({ type: "rec-stop" });
+    if (t.error) return showError(t.error);
+    const text = (t.data?.text || "").trim();
+    if (!text) return showError("I heard nothing. Try again.");
+    ask(text, compiled);
+  }
+
+  addEventListener("keydown", (e) => {
+    if (e.altKey && e.code === "Space" && !e.shiftKey) {
+      e.preventDefault(); e.stopPropagation();
+      if (!e.repeat) startTalking();
+    } else if (e.altKey && e.shiftKey && e.code === "Space") {
+      e.preventDefault(); e.stopPropagation();
+      NS.overlay.openTypeBox((q) => ask(q));
+    } else if (e.altKey && e.shiftKey && e.code === "KeyD") {
+      e.preventDefault();
+      NS.overlay.toggleDebug({
+        proof: (id) => send({ type: "proof", requestId: id }),
+        endSession: () => send({ type: "session-end", sessionId }),
+      });
+    } else if (e.key === "Escape") NS.overlay.clear();
+  }, true);
+
+  // Release of either key ends the recording; blur covers Option+Tab away mid-hold.
+  addEventListener("keyup", (e) => { if (e.code === "Space" || e.code.startsWith("Alt")) stopTalking(); }, true);
+  addEventListener("blur", () => stopTalking());
+})();

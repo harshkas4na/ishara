@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Ishara",
+  "version": "0.1.0",
+  "description": "A sealed screen tutor: hold a key, ask where something is, and a pointer shows you.",
+  "permissions": ["activeTab", "storage", "offscreen"],
+  "host_permissions": ["http://127.0.0.1:7777/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["outline.js", "overlay.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": { "default_title": "Ishara mic setup" }
+}

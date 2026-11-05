@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Verify &amp; Publish Contract Source Code | Mock Explorer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+ body{margin:0;font:14px/1.5 system-ui,sans-serif;color:#212529;background:#f8f9fa}
+ header{background:#21325b;color:#fff;padding:12px 24px;display:flex;gap:24px;align-items:center}
+ header a{color:#cfd8ee;text-decoration:none}header strong{font-size:18px;color:#fff}
+ main{max-width:760px;margin:24px auto;background:#fff;border:1px solid #e7eaf3;border-radius:8px;padding:24px}
+ h1{font-size:20px;margin:0 0 4px}p.sub{color:#6c757d;margin:0 0 20px}
+ label{display:block;font-weight:600;margin:14px 0 4px}
+ input[type=text],select,textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ced4da;border-radius:6px;font:inherit}
+ textarea{min-height:160px;font-family:ui-monospace,monospace}
+ .row{display:flex;gap:16px}.row>div{flex:1}
+ .check{display:flex;gap:8px;align-items:flex-start;margin:16px 0}.check label{margin:0;font-weight:400}
+ .actions{display:flex;gap:12px;margin-top:20px}
+ button{padding:9px 18px;border-radius:6px;border:1px solid #0784c3;font:inherit;cursor:pointer}
+ .primary{background:#0784c3;color:#fff}.secondary{background:#fff;color:#0784c3}
+ .hint{font-size:12px;color:#6c757d}
+</style></head>
+<body>
+<header><strong>Mock Explorer</strong><a href="#">Home</a><a href="#">Blockchain</a><a href="#">Tokens</a><a href="#">Developers</a><a href="#">Sign In</a></header>
+<main>
+ <h1>Verify &amp; Publish Contract Source Code</h1>
+ <p class="sub">Source code verification provides transparency for users interacting with smart contracts.</p>
+ <form onsubmit="return false">
+  <label for="addr">Please enter the Contract Address you would like to verify</label>
+  <input type="text" id="addr" placeholder="0x...">
+  <div class="row">
+   <div><label for="ctype">Please select Compiler Type</label>
+    <select id="ctype"><option>[Please select]</option><option>Solidity (Single file)</option><option>Solidity (Multi-Part files)</option><option>Solidity (Standard-Json-Input)</option><option>Vyper (Contract)</option></select></div>
+   <div><label for="cver">Please select Compiler Version</label>
+    <select id="cver"><option>[Please select]</option><option>v0.8.26+commit.8a97fa7a</option><option>v0.8.24+commit.e11b9ed9</option><option>v0.8.20+commit.a1b79de6</option></select></div>
+  </div>
+  <label for="lic">Open Source License Type</label>
+  <select id="lic"><option>No License (None)</option><option>The Unlicense (None)</option><option>MIT License (MIT)</option><option>GNU GPLv3 (GPL-3.0)</option><option>Apache 2.0 (Apache-2.0)</option></select>
+  <div class="check"><input type="checkbox" id="terms"><label for="terms">I agree to the terms of service</label></div>
+  <label for="src">Enter the Solidity Contract Code below</label>
+  <textarea id="src" placeholder="// SPDX-License-Identifier: MIT"></textarea>
+  <div class="row">
+   <div><label for="opt">Optimization</label><select id="opt"><option>No</option><option>Yes</option></select></div>
+   <div><label for="runs">Runs (Optimizer)</label><input type="text" id="runs" value="200"></div>
+  </div>
+  <label for="ctor">Constructor Arguments (ABI-encoded, optional)</label>
+  <textarea id="ctor" style="min-height:70px" placeholder="Leave blank if none"></textarea>
+  <label for="lib">Contract Library Name 1 (optional)</label>
+  <input type="text" id="lib" placeholder="Library name">
+  <p class="hint">Need help? See the <a href="#">verification guide</a>.</p>
+  <div class="actions"><button class="primary" type="submit">Verify and Publish</button><button class="secondary" type="reset">Reset</button><button class="secondary" type="button">Return to Main</button></div>
+ </form>
+</main>
+</body></html>
