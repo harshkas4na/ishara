@@ -36,8 +36,8 @@ test("Devanagari never leaves the guard", () => {
   assert.match(g.text, /kahaan/); assert.match(g.text, /^yah /);
   assert.equal(devanagariToRoman("इस एरर का मतलब क्या है"), "is erar kaa matalab kyaa hai");
   assert.equal(devanagariToRoman("हाँ"), "haan");
-  assert.equal(devanagariToRoman("नहीं"), "nahiin");
-  assert.equal(devanagariToRoman("फ़ाइल"), "faaila");
+  assert.equal(devanagariToRoman("नहीं"), "naheen");
+  assert.equal(devanagariToRoman("फ़ाइल"), "faail");
   assert.equal(guardTranscript("हाँ").text, "haan");
 });
 

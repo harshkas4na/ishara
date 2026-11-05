@@ -214,8 +214,8 @@
     NS.overlay.say("Listening… release to send\n" + "▮".repeat(n) + "▯".repeat(10 - n));
   });
 
-  // Whisper turns noise into stock phrases. If that is all we got, say so instead of asking 0G about it.
-  const NOISE = /^(you|thank you|thanks|thanks for watching|bye|okay|ok|the|uh|um|hmm|\.+)\W*$/i;
+  // Noise, blank and non-Latin garbage are rejected by the helper (transcript-guard.ts), which returns text "". Not here:
+  // the old regex and length<3 rule dropped valid short answers like "ok" and "ye".
 
   async function startTalking() {
     if (recording || busy || transcribing) return;
@@ -248,7 +248,6 @@
     if (t.error) return showError(t.error);
     const text = (t.data?.text || "").trim();
     if (!text) return showError("I heard nothing. Try again.");
-    if (text.length < 3 || NOISE.test(text)) return showError(`I heard “${text}”, which is probably noise. Try again.`);
     ask(text, compiled, true);
   }
 
