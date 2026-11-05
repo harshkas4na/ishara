@@ -47,3 +47,12 @@ compares the root with the chain.
 - **Streaming speech back (local Kokoro-82M).** Parked until the core is audited.
 - **Desktop adapter** (accessibility tree + local OCR into the same outline format). Planned as a stretch.
 - **Wallet, payments, raw model coordinates, a chat UI.** Out of scope.
+
+## 8. The test router (development only, not a fallback)
+While the real sealed models were down for every team at the event, `test/fake-router/server.ts` stands in for the
+0G Router so the whole chain (extension, helper, gate, pointer, memory, episode log) can be exercised. It picks by
+word overlap, so it tests mechanics only and says nothing about 0G's accuracy. The helper uses it only when
+`ISHARA_ROUTER_URL` is set to a 127.0.0.1 or localhost address (anything else is ignored with a warning), never sends
+the real key to it, and marks every result `testRouter: true`: an amber banner and "(test router)" in the extension,
+a TEST ROUTER chip in the replay, `/health`, and a banner in `scripts/eval.ts`. Eval numbers may be quoted only from
+a run against the real router; a test-router run writes to `helper/.data/eval-test-router.json`, not the results file.

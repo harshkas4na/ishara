@@ -49,7 +49,9 @@ function timeline(entries) {
     return el("li", {},
       el("div", { class: "when", text: fmtTime(e.at) }),
       el("div", { class: "q", text: e.question }),
-      el("div", {}, el("span", { class: "chip " + oc, text: String(e.outcome || "unknown").replace("_", " ") }), e.targetId ? el("span", { class: "muted", text: "  target " + e.targetId }) : null),
+      el("div", {}, el("span", { class: "chip " + oc, text: String(e.outcome || "unknown").replace("_", " ") }), e.targetId ? el("span", { class: "muted", text: "  target " + e.targetId }) : null,
+        // DEV ONLY: this entry was answered by the local fake router, not by 0G.
+        e.testRouter ? el("span", { class: "chip", style: "margin-left:8px;background:#f59e0b;color:#1c1100;border-color:#b45309", text: "TEST ROUTER" }) : null),
       el("div", { class: "say", text: e.say }),
       el("div", { class: "reason", text: e.reason }),
       e.calls?.length ? el("div", { class: "calls" }, e.calls.map((c) => {

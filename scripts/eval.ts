@@ -7,12 +7,17 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decide } from "../helper/src/decide.ts";
+import { testRouterActive } from "../helper/src/zg.ts";
 import { Memory, hostOf } from "../helper/src/memory.ts";
 import type { Outline } from "../helper/src/types.ts";
 
 // Memory: the eval ALWAYS uses a throwaway memory dir (never the user's real one). `--memory` seeds it with plausible
 // history for the page's host and turns on ISHARA_MEMORY=1, so the same table can be compared with the plain run.
 // The env must be set before the first decide() call: the shared memory instance is created lazily.
+// A run against the local fake router tests mechanics only. Say so loudly, tag the json, and write to a different
+// file, so nothing from it can ever be mistaken for (or overwrite) numbers measured on the real 0G router.
+const testRouter = testRouterActive();
+if (testRouter) console.log("*** TEST ROUTER (not real 0G): mechanics only, these numbers say nothing about 0G accuracy; never quote them ***\n");
 const useMemory = process.argv.includes("--memory");
 const memDir = mkdtempSync(join(tmpdir(), "ishara-eval-mem-"));
 process.env.ISHARA_MEMORY_DIR = memDir;
@@ -78,4 +83,7 @@ const vague = rows.filter((r) => r.expect === "ask");
 console.log(`\nclear: ${clear.filter((r) => r.ok).length}/${clear.length} pointed correctly, ${clear.filter((r) => r.wrongPoint).length} wrong points`);
 console.log(`vague: ${vague.filter((r) => r.ok).length}/${vague.length} asked instead of pointing`);
 mkdirSync("helper/.data", { recursive: true });
-writeFileSync(useMemory ? "helper/.data/eval-latest-memory.json" : "helper/.data/eval-latest.json", JSON.stringify(rows, null, 2));
+if (testRouter) {
+  writeFileSync("helper/.data/eval-test-router.json", JSON.stringify({ testRouter: true, warning: "TEST ROUTER (not real 0G): do not quote", rows }, null, 2));
+  console.log("\nTEST ROUTER (not real 0G): not saved as an eval result; see helper/.data/eval-test-router.json");
+} else writeFileSync(useMemory ? "helper/.data/eval-latest-memory.json" : "helper/.data/eval-latest.json", JSON.stringify(rows, null, 2));

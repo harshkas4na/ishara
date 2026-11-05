@@ -68,3 +68,10 @@ Hold Option+Space, say "where do I paste my source code", release. Debug panel s
 ## What was not verified when this was written
 Written without a browser: only `node --check` on every file and a node check of the WAV encoder. Loading
 in Chrome, mic capture, outline token size and timing, and the overlay were not run.
+
+## Testing without 0G (test router)
+If the real models are down, run `npm run fake-router` and, in another terminal, `npm run helper:fake` (stop any other
+helper first, both use port 7777). Answers then come from a word-overlap stand-in: the debug panel shows an amber
+"TEST ROUTER: not a real 0G answer" banner and the bubble ends with "(test router)". This checks mechanics only.
+Rehearse failures with `FAKE_ROUTER_MODE=down|slow|flaky npm run fake-router`. Never quote accuracy or eval numbers
+from this mode; they must come from the real router.

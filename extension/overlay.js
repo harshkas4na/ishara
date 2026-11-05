@@ -102,7 +102,8 @@
     // A refusal or a question means the cursor has nothing to point at: stop the thinking dance and hide it.
     if (opts.stop || opts.hidePointer) { clearTimeout(arriveTimer); pointer.className = "ptr"; pointer.style.display = "none"; }
     bubble.className = "bub" + (opts.stop ? " stop" : "");
-    bubble.textContent = text;
+    // DEV ONLY: the helper marks decisions that came from the local fake router; never let one read as a real 0G answer.
+    bubble.textContent = last && last.decision && last.decision.testRouter ? text + " (test router)" : text;
     if (opts.sub) { const s = document.createElement("small"); s.textContent = opts.sub; bubble.append(s); }
     // The receipt is the product, so it is one click from the answer: opens the proof page for this request.
     if (opts.receipt) {
@@ -286,6 +287,10 @@
     const el = (tag, cls, text, parent = panel) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; parent.append(n); return n; };
     const hd = el("div", "hd"); el("b", "", "Ishara", hd); el("span", "", "Alt+Shift+D hides this", hd);
     if (!last) { el("div", "sec", "Nothing asked yet"); return; }
+    if (last.decision && last.decision.testRouter) {
+      const tb = el("div", "", "TEST ROUTER: not a real 0G answer");
+      tb.style.cssText = "margin:10px 14px 0;padding:8px 12px;border-radius:8px;background:#f59e0b;color:#1c1100;font-weight:700;font-size:13px;letter-spacing:.02em";
+    }
     const { decision: d, question, error, proposedLabel, targetLabel, outlineMs } = last;
 
     // 1. The verdict, in one look.
