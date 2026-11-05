@@ -145,6 +145,7 @@
   }
 
   function say(text, opts = {}) {
+    build(); // a chord can say something before any answer has built the overlay (Option+Shift+P / M)
     // A refusal or a question means the cursor has nothing to point at: stop the thinking dance and hide it.
     if (opts.stop || opts.hidePointer) { clearTimeout(arriveTimer); pointer.className = "ptr"; pointer.style.display = "none"; }
     bubble.className = "bub" + (opts.stop ? " stop" : "");
