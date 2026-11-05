@@ -75,3 +75,20 @@ helper first, both use port 7777). Answers then come from a word-overlap stand-i
 "TEST ROUTER: not a real 0G answer" banner and the bubble ends with "(test router)". This checks mechanics only.
 Rehearse failures with `FAKE_ROUTER_MODE=down|slow|flaky npm run fake-router`. Never quote accuracy or eval numbers
 from this mode; they must come from the real router.
+
+## Iframes
+Open `http://127.0.0.1:7777/test/iframe-demo.html`, press **Alt+Shift+O**: a numbered box should sit on the controls
+inside both embedded forms (one same-origin, one at `localhost:7777`, a different origin). Then ask about a field
+inside one ("where do I put my work email") and the pointer lands inside the frame.
+
+How it works: the content script runs in every frame. Only the top frame draws and listens; each child compiles its
+own outline, and the top asks it over `postMessage` (250 ms budget, a silent frame is skipped) and translates the
+rects. Chords typed while focus is inside a frame are forwarded to the top.
+
+Works: same-origin and cross-origin iframes the extension can inject into (nested ones too), iframes in open shadow
+roots, `about:blank` / `srcdoc` frames.
+Does not: sandboxed frames without `allow-scripts` (the page's script rules apply to our injection), frames that
+block extension injection, closed shadow roots, `chrome://` and Web Store pages, and controls scrolled out of the
+frame's own viewport (the frame has to show them). Pointing at a frame control does not record the "accepted" signal.
+Privacy note: the messages are visible to the pages involved, so a hostile parent page could ask an embedded frame for
+its control labels (never typed values).

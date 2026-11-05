@@ -15,4 +15,7 @@
   <label for="e">Email address</label><input id="e" type="email" placeholder="you@example.com">
   <button type="submit">Join waitlist</button>
  </form>
-</body></html>
+<script>
+ // ?v=b gives the second copy different labels, so a question can name exactly one of the two embedded forms.
+ if (location.search.includes("v=b")) { n.previousElementSibling.textContent = "Company name"; e.previousElementSibling.textContent = "Work email"; document.querySelector("h2").textContent = "Request a demo"; document.querySelector("button").textContent = "Request demo"; }
+</script></body></html>
