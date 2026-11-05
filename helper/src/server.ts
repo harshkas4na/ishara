@@ -65,7 +65,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path.startsWith("/app/")) {
       // The proof sheet and the replay page (web/). Same traversal guard as /test/.
       const rel = normalize(decodeURIComponent(path.slice(5))).replace(/^(\.\.[/\\])+/, "");
-      const file = join(WEB_DIR, rel || "index.html");
+      const file = join(WEB_DIR, rel && rel !== "." ? rel : "index.html") // "." is what a bare /app/ normalizes to;
       if (!file.startsWith(WEB_DIR)) return send(res, 403, { error: "forbidden" });
       try {
         const data = await readFile(file);
@@ -75,7 +75,7 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && path.startsWith("/test/")) {
       const rel = normalize(decodeURIComponent(path.slice(6))).replace(/^(\.\.[/\\])+/, "");
-      const file = join(TEST_DIR, rel || "index.html");
+      const file = join(TEST_DIR, rel && rel !== "." ? rel : "index.html");
       if (!file.startsWith(TEST_DIR)) return send(res, 403, { error: "forbidden" });
       try {
         const data = await readFile(file);
