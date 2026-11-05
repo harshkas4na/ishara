@@ -3,7 +3,7 @@
 // pointer-events:none so the user can still click the thing we point at.
 (() => {
   const NS = (globalThis.Ishara = globalThis.Ishara || {});
-  let host, root, layer, bubble, pointer, rings = [], follow = null, typeBox, panel, ink = null, arriveTimer = 0;
+  let host, root, layer, bubble, pointer, rings = [], follow = null, typeBox, panel, ink = null, arriveTimer = 0, pollTimer = 0;
 
   function build() {
     if (host) return;
@@ -91,7 +91,7 @@
 
   function clear() {
     build();
-    follow = null;
+    follow = null; clearInterval(pollTimer);
     clearTimeout(arriveTimer); removeInk();
     pointer.className = "ptr"; pointer.style.display = "none";
     rings.forEach((r) => r.remove()); rings = [];
@@ -211,6 +211,21 @@
     follow = place; // keep tracking if the user scrolls or the layout shifts
     // On landing: ripple, loop the target with the marker, then bob gently while the user reads.
     arriveTimer = setTimeout(() => { pointer.classList.add("arrive", "bob"); drawInk(rectOf(el)); }, 650);
+  }
+
+  // A control inside an iframe. `entry` is the proxy outline.js put in the map ({frameWindow, childId, iframeEl, ...}).
+  // The child scrolls it to its centre and reports where it is; after that the proxy is a normal-enough element for
+  // point(). A child scrolling by itself cannot reach us, so while this pointer lives we re-ask (without scrolling).
+  async function pointAtFrameElement(entry, text, receiptId) {
+    build();
+    const r = await NS.frames.locate(entry);
+    if (!r) return say("The element is gone. Ask again.", { stop: true });
+    await point(entry, text, receiptId);
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      if (!follow || !entry.isConnected) return clearInterval(pollTimer);
+      if (await NS.frames.locate(entry, { scroll: false })) follow();
+    }, 500);
   }
 
   function ringBoth(els, text) {
@@ -354,5 +369,5 @@
     };
   }
 
-  NS.overlay = { clear, say, point, ringBoth, thinking, openTypeBox, setDebug, toggleDebug, showOutline };
+  NS.overlay = { clear, say, point, pointAtFrameElement, ringBoth, thinking, openTypeBox, setDebug, toggleDebug, showOutline };
 })();
