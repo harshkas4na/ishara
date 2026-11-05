@@ -51,7 +51,7 @@ var chordMods = CGEventFlags(); var chordKey: Int64 = 0
 if let c = parseChord(chordText) { chordMods = c.mods; chordKey = c.key } else {
     fail("config", "ISHARA_PTT_KEY=\"\(chordText)\" is not understood. Use modifiers (ctrl, opt, cmd, shift) plus one key, e.g. ctrl+opt+space.")
 }
-let debug = ProcessInfo.processInfo.environment["ISHARA_PTT_DEBUG"] == "1" // log every key event to stderr
+let debug = ProcessInfo.processInfo.environment["ISHARA_PTT_DEBUG"] == "1" // log chord-related key events to stderr
 let modMask: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand, .maskShift]
 
 // ---------- recorder ----------
@@ -142,13 +142,17 @@ let rec = Recorder()
 var held = false          // chord currently down
 var tapRef: CFMachPort? = nil
 var levelTimer: Timer? = nil
+var downAt = Date()
+let MAX_TAKE_S = 30.0 // a lost key-up (tap disabled mid-hold) must not leave the mic on and the buffer growing
 
 func chordDown() {
     guard !held else { return }  // key repeat sends keyDown again; ignore it
     held = true
     if let e = rec.start() { held = false; emit(["ev": "error", "code": "microphone", "message": "Microphone failed: \(e). If this keeps happening, check System Settings > Privacy & Security > Microphone for the app that started the helper."]); return }
     emit(["ev": "down"])
+    downAt = Date()
     levelTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
+        if Date().timeIntervalSince(downAt) > MAX_TAKE_S { chordUp(); return }
         print(String(format: "{\"ev\":\"level\",\"rms\":%.4f}", rec.level())); fflush(stdout) // hand-formatted: JSONSerialization prints 0.0064999999999999997
     }
 }
@@ -164,9 +168,14 @@ let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.
 func handleKey(_ type: CGEventType, _ event: CGEvent) {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         if let t = tapRef { CGEvent.tapEnable(tap: t, enable: true) } // macOS turns a slow tap off; turn it back on
+        if held { chordUp() } // the key-up may have been missed while the tap was off: end the take now
         return
     }
-    if debug { fputs("ptt: type=\(type.rawValue) key=\(event.getIntegerValueField(.keyboardEventKeycode)) flags=\(event.flags.rawValue)\n", stderr) }
+    // Debug logs only the chord's own key and modifier changes, never other keys: stderr goes to the helper log,
+    // and logging every keycode would turn a debug switch into a keylogger.
+    if debug && (type == .flagsChanged || event.getIntegerValueField(.keyboardEventKeycode) == chordKey) {
+        fputs("ptt: type=\(type.rawValue) chordKey=\(type != .flagsChanged) flags=\(event.flags.rawValue)\n", stderr)
+    }
     let modsOK = event.flags.intersection(modMask) == chordMods // exactly the chord's modifiers, no extras
     switch type {
     case .keyDown:
@@ -194,6 +203,12 @@ for sig in [SIGTERM, SIGINT] {
     src.setEventHandler { if rec.running { _ = rec.stop() }; exit(0) }
     src.resume()
     signalSources.append(src)
+}
+// The helper is our parent. If it dies without signalling us (SIGKILL, crash), we are re-parented to launchd: quit,
+// so a global key tap never outlives the app that asked for it.
+let parentAtStart = getppid()
+Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+    if getppid() != parentAtStart { if rec.running { _ = rec.stop() }; exit(0) }
 }
 emit(["ev": "ready", "chord": chordText])
 CFRunLoopRun()

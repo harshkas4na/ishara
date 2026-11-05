@@ -95,3 +95,14 @@ test("stop kills the daemon and cancels a pending restart", () => {
   r.ptt.stop(); assert.equal(r.killed(), 1);
   r.exit(0); assert.equal(r.timers.length, 0); assert.equal(r.ptt.status().running, false);
 });
+
+test("a second take while the first is still answering is refused, not raced", async () => {
+  let release!: () => void;
+  const r = rig({ ask: async (q) => { await new Promise<void>((res) => (release = res)); } });
+  r.line(up()); await tick(); await tick();
+  r.line(up()); await tick();
+  assert.match((r.sent.at(-1) as any).text, /Still answering/);
+  release(); await tick(); await tick();
+  r.line(up()); await tick(); await tick();
+  assert.match((r.sent.at(-1) as any).text, /I heard/, "accepted again once the first answer is done");
+});

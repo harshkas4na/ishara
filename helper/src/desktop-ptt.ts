@@ -48,10 +48,16 @@ export function createPtt(d: PttDeps) {
   let startedAt = 0;
   let restartTimer: unknown = null;
   let lastMeterAt = -Infinity, lastMeterText = "";
+  let busy = false;         // a take is being transcribed or answered; a second one must not race it
 
   const stopBubble = (text: string, sub?: string) => d.send({ cmd: "stop", text, sub });
 
   async function onUp(ev: any): Promise<void> {
+    if (busy) return stopBubble("Still answering the last question.", "Ask again when it is done.");
+    busy = true;
+    try { await take(ev); } finally { busy = false; }
+  }
+  async function take(ev: any): Promise<void> {
     const samples = Number(ev.samples) || 0, maxRms = Number(ev.maxRms) || 0;
     if (samples < MIN_SAMPLES) return stopBubble("Too short.", "Hold the keys while you speak, then release.");
     if (maxRms < MIN_RMS) return stopBubble("I could not hear any sound from the microphone.", "Check the input device and the Microphone permission.");
