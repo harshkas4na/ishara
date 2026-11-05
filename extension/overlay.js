@@ -3,7 +3,7 @@
 // pointer-events:none so the user can still click the thing we point at.
 (() => {
   const NS = (globalThis.Ishara = globalThis.Ishara || {});
-  let host, root, layer, bubble, pointer, rings = [], follow = null, typeBox, panel;
+  let host, root, layer, bubble, pointer, rings = [], follow = null, typeBox, panel, ink = null, arriveTimer = 0;
 
   function build() {
     if (host) return;
@@ -15,10 +15,24 @@
 <style>
   *{box-sizing:border-box;font-family:system-ui,sans-serif}
   .layer{position:fixed;inset:0;pointer-events:none}
-  .ptr{position:fixed;left:0;top:0;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;
-       border:3px solid #6d28d9;background:rgba(109,40,217,.18);box-shadow:0 0 0 4px rgba(255,255,255,.7);
-       transition:transform .55s cubic-bezier(.2,.8,.2,1);display:none}
-  .ptr::after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:#6d28d9}
+  /* The cursor: a needle with a saffron tip. It glides, ripples when it lands, bobs while it waits, and
+     traces a figure-eight while 0G is thinking. Hotspot (the tip) is the element's centre. */
+  .ptr{position:fixed;left:0;top:0;width:0;height:0;display:none;transition:transform .75s cubic-bezier(.22,.9,.2,1)}
+  .fx,.fy{position:absolute;left:0;top:0}
+  .ptr svg{position:absolute;left:-4px;top:-3px;width:36px;height:36px;overflow:visible;filter:drop-shadow(0 3px 5px rgba(30,20,90,.45))}
+  .ptr .rip{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2.5px solid #f59e0b;opacity:0}
+  .ptr.arrive .rip{animation:rip .9s ease-out 2}
+  @keyframes rip{0%{transform:scale(.3);opacity:.9}100%{transform:scale(3.2);opacity:0}}
+  .ptr.bob .fy{animation:bob 1.8s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translate(0,0) rotate(0)}50%{transform:translate(2px,5px) rotate(-3deg)}}
+  .ptr.think{transition:none}
+  .ptr.think .fx{animation:fx 3.6s ease-in-out infinite alternate}
+  .ptr.think .fy{animation:fy 1.8s ease-in-out infinite}
+  @keyframes fx{from{transform:translateX(-46px)}to{transform:translateX(46px)}}
+  @keyframes fy{0%,100%{transform:translateY(0)}25%{transform:translateY(-22px)}75%{transform:translateY(22px)}}
+  @media (prefers-reduced-motion:reduce){.ptr .fx,.ptr .fy,.ptr .rip{animation:none!important}}
+  .ink{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+  .ink path{fill:none;stroke:#f59e0b;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round;opacity:.92;filter:drop-shadow(0 0 2px rgba(255,255,255,.85))}
   .ring{position:fixed;border:3px solid #d97706;border-radius:6px;box-shadow:0 0 0 3px rgba(255,255,255,.8);display:none}
   .bub{position:fixed;max-width:320px;padding:8px 12px;background:#1f1147;color:#fff;border-radius:10px;
        font-size:14px;line-height:1.35;display:none;white-space:pre-line;box-shadow:0 4px 18px rgba(0,0,0,.3)}
@@ -59,7 +73,12 @@
     bubble = root.querySelector(".bub");
     typeBox = root.querySelector(".tb");
     panel = root.querySelector(".dbg");
-    pointer = document.createElement("div"); pointer.className = "ptr"; layer.append(pointer);
+    pointer = document.createElement("div"); pointer.className = "ptr";
+    pointer.innerHTML = `<div class="fx"><div class="fy"><i class="rip"></i>
+      <svg viewBox="0 0 36 36" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs>
+      <path d="M4 3 L4 27 L10.2 21.4 L14.6 31.2 L19.2 29.1 L14.8 19.6 L23.2 19.2 Z" fill="url(#g)" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="4" cy="3" r="3.6" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/></svg></div></div>`;
+    layer.append(pointer);
     document.documentElement.append(host);
   }
 
@@ -68,7 +87,8 @@
   function clear() {
     build();
     follow = null;
-    pointer.style.display = "none";
+    clearTimeout(arriveTimer); removeInk();
+    pointer.className = "ptr"; pointer.style.display = "none";
     rings.forEach((r) => r.remove()); rings = [];
     bubble.style.display = "none";
   }
@@ -100,24 +120,70 @@
 
   function rectOf(el) { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }
 
+  // The marker: a hand-drawn loop around small targets, an underline under wide ones (a loop around a full-width
+  // text box looks wrong). Deterministic wobble so it does not jitter when the page scrolls.
+  function inkPath(r) {
+    const wide = r.w > 420 || r.h > 150;
+    if (wide) {
+      const y = r.y + r.h + 6, x0 = r.x + 4, x1 = r.x + r.w - 4, n = 14;
+      let d = `M${x0} ${y}`;
+      for (let i = 1; i <= n; i++) d += ` L${(x0 + (x1 - x0) * i / n).toFixed(1)} ${(y + Math.sin(i * 1.9) * 2.2).toFixed(1)}`;
+      return d;
+    }
+    const pad = 9, cx = r.x + r.w / 2, cy = r.y + r.h / 2, rx = r.w / 2 + pad + 8, ry = r.h / 2 + pad, N = 28, over = 0.16;
+    const pts = [];
+    for (let i = 0; i <= Math.round(N * (1 + over)); i++) {
+      const a = -Math.PI * 0.78 + (i / N) * Math.PI * 2, w = 1 + Math.sin(i * 1.7) * 0.022 + (i / N) * 0.035;
+      pts.push([cx + Math.cos(a) * rx * w, cy + Math.sin(a) * ry * w]);
+    }
+    let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
+      d += ` Q${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)}`;
+    }
+    return d;
+  }
+  function drawInk(r) {
+    removeInk();
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg"); svg.setAttribute("class", "ink");
+    const path = document.createElementNS(ns, "path"); path.setAttribute("d", inkPath(r)); svg.append(path);
+    layer.append(svg); ink = { svg, path };
+    const len = path.getTotalLength();
+    // Draw it stroke by stroke, like a pen, unless the user prefers less motion.
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      path.style.strokeDasharray = len; path.style.strokeDashoffset = len;
+      requestAnimationFrame(() => { path.style.transition = "stroke-dashoffset .6s ease-out"; path.style.strokeDashoffset = 0; });
+    }
+  }
+  function removeInk() { if (ink) { ink.svg.remove(); ink = null; } }
+
   // Scroll first, then read the rect, so the pointer lands where the element really is now,
   // not where the outline saw it before the page moved.
   async function point(el, text, receiptId) {
-    build(); clear();
+    build();
+    // If the cursor was already dancing while 0G thought, glide from where it is instead of from off-screen.
+    const wasThinking = pointer.classList.contains("think") && pointer.style.display === "block";
+    if (wasThinking) { clearTimeout(arriveTimer); removeInk(); rings.forEach((x) => x.remove()); rings = []; } else clear();
     el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
     await raf2();
     const place = () => {
       const r = rectOf(el);
       pointer.style.transform = `translate(${r.x + r.w / 2}px,${r.y + r.h / 2}px)`;
+      if (ink) ink.path.setAttribute("d", inkPath(r));
       if (bubble.style.display === "block") placeBubble(r);
     };
-    pointer.style.transition = "none"; pointer.style.transform = `translate(${innerWidth / 2}px,${innerHeight + 40}px)`;
-    pointer.style.display = "block";
-    await raf2();
-    pointer.style.transition = "";
+    if (!wasThinking) {
+      pointer.style.transition = "none"; pointer.style.transform = `translate(${innerWidth / 2}px,${innerHeight + 40}px)`;
+      pointer.style.display = "block";
+      await raf2();
+    }
+    pointer.className = "ptr"; pointer.style.transition = "";
     place();
     say(text, { near: rectOf(el), receipt: receiptId });
     follow = place; // keep tracking if the user scrolls or the layout shifts
+    // On landing: ripple, loop the target with the marker, then bob gently while the user reads.
+    arriveTimer = setTimeout(() => { pointer.classList.add("arrive", "bob"); drawInk(rectOf(el)); }, 650);
   }
 
   function ringBoth(els, text) {
@@ -156,7 +222,11 @@
   addEventListener("scroll", tick, true);
   addEventListener("resize", tick);
 
-  function thinking(text = "Thinking…") { build(); clear(); say(text); }
+  function thinking(text = "Thinking…") {
+    build(); clear(); say(text);
+    pointer.style.transition = "none"; pointer.style.transform = `translate(${innerWidth / 2}px,${Math.round(innerHeight * 0.55)}px)`;
+    pointer.className = "ptr think"; pointer.style.display = "block";
+  }
 
   function openTypeBox(onSubmit) {
     build();

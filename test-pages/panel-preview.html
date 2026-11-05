@@ -2,10 +2,13 @@
 <meta charset="utf-8">
 <title>Ishara panel preview</title>
 <!-- Dev only: renders the debug panel with sample decisions so its look can be checked without asking 0G.
-     Use ?state=point | ask | stop | nofit | error | bubble  -->
+     Use ?state=point | ask | stop | nofit | error | bubble | think | small | field | wide  (think&then=small glides from the dance)  -->
 <style>body{font:16px system-ui;margin:2rem;color:#222}</style>
 <h1>Panel preview</h1>
 <p>The panel opens on the right. Sample data only.</p>
+<p><button id="small" style="margin:40px 0 0 120px;padding:10px 18px;font-size:16px">Verify and Publish</button></p>
+<p><input id="field" placeholder="Contract address" style="margin:30px 0 0 120px;width:420px;padding:8px;font-size:16px"></p>
+<p><textarea id="wide" style="margin:30px 0 0 120px;width:760px;height:180px" placeholder="Solidity code"></textarea></p>
 <script src="/ext/overlay.js"></script>
 <script>
   const state = new URLSearchParams(location.search).get("state") || "point";
@@ -22,7 +25,12 @@
       decision: { outcome: "safe_stop", safeStopCause: "unavailable", say: "", reason: "0GM down", requestIds: {}, ms: { total: 8000 } } },
     error: { question: "", error: "I could not hear any sound from the microphone" },
   };
-  if (state === "bubble") { Ishara.overlay.point(document.querySelector("p"), "Enter your contract address in the first input field.", ids.brain); }
+  const demo = (id, text) => Ishara.overlay.point(document.getElementById(id), text, ids.brain);
+  if (state === "think") { Ishara.overlay.thinking("I heard: “where do I verify” …thinking"); if (new URLSearchParams(location.search).get("then")) setTimeout(() => demo(new URLSearchParams(location.search).get("then"), "Press this button to publish."), 2500); }
+  else if (state === "small") demo("small", "Press this button to verify and publish.");
+  else if (state === "field") demo("field", "Type the contract address here.");
+  else if (state === "wide") demo("wide", "Paste your Solidity code here.");
+  else if (state === "bubble") { Ishara.overlay.point(document.querySelector("p"), "Enter your contract address in the first input field.", ids.brain); }
   else {
   Ishara.overlay.setDebug(samples[state]);
   Ishara.overlay.toggleDebug({ sessionId: "preview", proof: async () => ({ data: {} }), endSession: async () => ({ data: { root: "0xabc", storage: { ms: 14800 }, contract: { address: "0x1" }, entries: 2 } }) });
