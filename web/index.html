@@ -14,6 +14,7 @@ root.append(explainer(
   "For each answer we keep a receipt: the request id, which provider answered, and the provider’s digital signature. The signature is checked against the signer key that provider registered on-chain.",
   "At the end of a session the whole log is encrypted, stored on 0G Storage, and its fingerprint (a root hash) is written to a contract on the Galileo chain. Replay fetches it back and re-checks all of that.",
   "A receipt proves that a sealed provider answered a given request. It does not prove the exact words. Each page says so again where it matters."));
+root.append(el("p", {}, el("a", { href: "memory.html", text: "What Ishara remembers about how you use it" })));
 root.append(el("h2", { text: "Saved sessions" }));
 const list = el("ul", { class: "sessions" }); const box = el("div", { class: "card" }, list); root.append(box);
 (async () => {

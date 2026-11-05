@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What Ishara remembers</title><link rel="stylesheet" href="shared.css">
+<style>
+  .counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .counts .n { font-size: 28px; font-weight: 700; } .counts .l { color: var(--muted); font-size: 13px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+  button.big { font: inherit; font-weight: 700; padding: 12px 20px; border-radius: 10px; border: 2px solid var(--accent); background: var(--surface); color: var(--ink); cursor: pointer; }
+  button.big.on { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+  button.big.danger { border-color: var(--bad); color: var(--bad); }
+  button.big.danger.sure { background: var(--bad); color: var(--bg); }
+  .topics span, .alias { display: inline-block; margin: 2px 6px 2px 0; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg); font-size: 14px; }
+  ul.q { margin: 6px 0 0; padding-left: 20px; } ul.q li { margin: 2px 0; }
+  h3.host { margin: 0 0 6px; font-size: 17px; font-family: var(--mono); }
+</style></head>
+<body><div class="wrap" id="root"></div>
+<script src="shared.js"></script>
+<script>
+// "What Ishara remembers about how you use it". Everything shown comes from GET /memory; every value goes in with
+// textContent (the question text is the user's own speech, not ours to trust as markup).
+const root = $("#root");
+root.append(header("private to this laptop"));
+root.append(el("h1", { text: "What Ishara remembers about how you use it" }));
+root.append(el("p", { text: "Ishara keeps a short list of what you asked and which control you followed, so it can learn your own words for things. It stores counts, your questions and control names. It never stores the page text, what you type into a page, or anything that looks like a key or address." }));
+root.append(el("div", { class: "limit" },
+  el("h3", { text: "Where this lives" }),
+  el("p", { text: "These notes are stored only on this laptop, in a folder you can open and delete. They are never uploaded. One exception, and only if you turn the memory switch on: a short summary of the current site’s history (a few of your earlier questions on that site) is included in the sealed question sent to 0G." })));
+const body = el("div"); root.append(body);
+
+async function call(method, path) {
+  const r = await fetch(path, { method, cache: "no-store" });
+  return r.json();
+}
+let confirming = false;
+
+function render(d) {
+  body.replaceChildren();
+  const c = d.counts;
+  body.append(el("h2", { text: "In total" }));
+  body.append(el("div", { class: "card counts" },
+    el("div", {}, el("div", { class: "n", text: c.asked }), el("div", { class: "l", text: "questions asked" })),
+    el("div", {}, el("div", { class: "n", text: c.accepted }), el("div", { class: "l", text: "pointers you followed" })),
+    el("div", {}, el("div", { class: "n", text: c.missed }), el("div", { class: "l", text: "answers that probably missed" }))));
+  const typ = d.profile.typicalQuestionWords;
+  body.append(el("p", { class: "muted", text: typ ? `Your questions are typically ${typ} word${typ === 1 ? "" : "s"} long.` : "Nothing to average yet." }));
+  body.append(el("p", { class: "muted", text: d.usedInPrompt
+    ? "Memory switch: ON. A short summary of the current site’s history goes into the sealed question."
+    : "Memory switch: OFF. Notes are kept, but nothing from them is sent anywhere, not even to 0G." }));
+
+  body.append(el("h2", { text: "Controls" }));
+  const pauseBtn = el("button", { class: "big" + (d.paused ? " on" : ""), type: "button", text: d.paused ? "Paused: click to resume remembering" : "Pause remembering",
+    onclick: async () => { await call("POST", d.paused ? "/memory/resume" : "/memory/pause"); load(); } });
+  const forgetBtn = el("button", { class: "big danger" + (confirming ? " sure" : ""), type: "button", text: confirming ? "Yes, delete everything now" : "Forget everything",
+    onclick: async () => {
+      if (!confirming) { confirming = true; render(d); return; }
+      await call("DELETE", "/memory"); confirming = false; load();
+    } });
+  const actions = el("div", { class: "actions" }, pauseBtn, forgetBtn);
+  if (confirming) actions.append(el("button", { class: "big", type: "button", text: "Keep it", onclick: () => { confirming = false; render(d); } }),
+    el("span", { class: "muted", text: "This deletes the log and the summary on this laptop. It cannot be undone." }));
+  body.append(actions);
+  if (d.paused) body.append(el("div", { class: "verdict warn", text: "Paused. New questions are not being remembered.", }));
+
+  const hosts = Object.values(d.profile.hosts || {}).sort((a, b) => b.asked - a.asked);
+  body.append(el("h2", { text: "Per site" }));
+  if (!hosts.length) body.append(el("div", { class: "card muted", text: "Nothing remembered yet. Ask Ishara a question on any page and it will appear here." }));
+  for (const h of hosts) {
+    const card = el("div", { class: "card" }, el("h3", { class: "host", text: h.host }),
+      el("div", { class: "muted", text: `${h.asked} asked · ${h.accepted} followed · ${h.missed} probably missed` }));
+    if (h.topics.length) card.append(el("div", { class: "kv" }, el("div", { class: "k", text: "What you ask about most" }),
+      el("div", { class: "topics" }, h.topics.map((t) => el("span", { text: `${t.word} ×${t.count}` })))));
+    card.append(el("div", { class: "kv" }, el("div", { class: "k", text: "Your own words for controls (seen at least twice)" }),
+      h.aliases.length ? el("div", {}, h.aliases.map((a) => el("span", { class: "alias", text: `“${a.word}” → ${a.label} ×${a.count}` })))
+        : el("div", { class: "muted", text: "None learned yet." })));
+    if (h.lastQuestions.length) card.append(el("div", { class: "kv" }, el("div", { class: "k", text: "Latest questions" }),
+      el("ul", { class: "q" }, h.lastQuestions.map((q) => el("li", { text: q })))));
+    body.append(card);
+  }
+
+  body.append(el("h2", { text: "Most recent 20 questions, all sites" }));
+  const recent = el("div", { class: "card" });
+  if (!d.recent.length) recent.append(el("span", { class: "muted", text: "None." }));
+  else recent.append(el("ul", { class: "q" }, d.recent.map((r) => el("li", {}, r.question + " ", el("span", { class: "muted", text: `· ${r.host} · ${r.outcome || ""} · ${fmtTime(r.t)}` })))));
+  body.append(recent);
+}
+
+async function load() {
+  try { render(await getJson("/memory", "memory")); }
+  catch (e) {
+    body.replaceChildren(el("div", { class: "verdict bad", text: "Cannot reach the Ishara helper." }, el("small", { text: "Start it with `npm run helper`, then reload. (" + e.message + ")" })));
+  }
+}
+load();
+</script></body></html>
