@@ -8,7 +8,7 @@
   "scripts": {
     "helper": "node helper/src/server.ts",
     "check": "node scripts/smoke.ts",
-    "test": "node --test helper/test/"
+    "test": "node --test helper/test/*.test.ts"
   },
   "engines": {
     "node": ">=24"
