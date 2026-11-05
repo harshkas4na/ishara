@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { extname } from "node:path";
 import { HELPER_PORT } from "./config.ts";
-import { decide, recordsFor } from "./decide.ts";
+import { decide, recordsFor, tutorTurn, tutorWalk } from "./decide.ts";
+import { handleTutorRoute } from "./tutor-route.ts";
 import { hasKey, warm, testRouterActive } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
 import { desktopAsk, warmDesktop } from "./desktop.ts";
@@ -11,6 +12,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
 import { pttStatus, startPtt, stopPtt } from "./desktop-ptt.ts";
+import { startSpeech, stopSpeech, speechStatus, speaker } from "./speech.ts";
 import { memory, memoryRoute } from "./memory.ts";
 import { allowedOrigin, refuse, staticPath } from "./http-guard.ts";
 
@@ -54,6 +56,16 @@ async function optional(file: string): Promise<any | null> {
   try { return await import(file); } catch { return null; }
 }
 
+// Speech seam for /tutor: speech.ts is loaded lazily so the route works without it. A new request cuts off the
+// previous answer; each `say` sentence is queued unless the caller asked for silence or the speaker is muted.
+const speechMod: Promise<any | null> = optional("./speech.ts");
+// (tutor-route.ts only calls these when the request did not say speak:false.)
+const tutorSpeech = {
+  onStart: () => { speechMod.then((m) => m?.speaker.interrupt()).catch(() => {}); },
+  onSay: (t: string) => { speechMod.then((m) => { if (m && !m.speaker.isMuted()) m.speaker.enqueue(t); }).catch(() => {}); },
+  onEnd: () => { speechMod.then((m) => m?.speaker.flush()).catch(() => {}); },
+};
+
 const server = createServer(async (req, res) => {
   const t0 = Date.now();
   cors(req, res);
@@ -80,12 +92,30 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { error: "need { sessionId, question, outline{elements,text} }" });
       return send(res, 200, await decide(String(b.sessionId ?? "default"), b.question, b.outline));
     }
+    // Tutor (tutor-route.ts): SSE answer for /tutor, the walkthrough commands, and GET /tutor for feature detection.
+    // Behind the same guard (checked above); `speak:false` in the body silences the speaker for this request.
+    if (path === "/tutor" || path === "/tutor/walk") {
+      return void await handleTutorRoute(req, res, path, { turn: tutorTurn, walk: tutorWalk, ...tutorSpeech });
+    }
     // Personal memory (memory.ts): view, pause/resume, forget, and the "accepted" feedback from the extension.
     // Behind the same Host/Origin guard as everything above. DELETE has no body; the others are small JSON.
     if (path === "/memory" || path.startsWith("/memory/")) {
       const body = req.method === "POST" ? (await readBody(req, 100_000)).toString("utf8") : "";
       const r = memoryRoute(memory(), req.method ?? "GET", path, body);
       if (r) return send(res, r.status, r.body);
+    }
+    // Spoken answers (speech.ts). Same Host/Origin guard as everything here. /speech/say is for tests and the debug panel.
+    if (path === "/speech" && req.method === "GET") return send(res, 200, speechStatus());
+    if (path === "/speech/stop" && req.method === "POST") { speaker.interrupt(); return send(res, 200, speechStatus()); }
+    if (path === "/speech/mute" && req.method === "POST") {
+      const b = JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}");
+      if (typeof b?.muted !== "boolean") return send(res, 400, { error: "need { muted: boolean }" });
+      speaker.setMuted(b.muted); return send(res, 200, speechStatus());
+    }
+    if (path === "/speech/say" && req.method === "POST") {
+      const b = JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}");
+      if (typeof b?.text !== "string") return send(res, 400, { error: "need { text }" });
+      speaker.interrupt(); speaker.speak(b.text); return send(res, 200, speechStatus());
     }
     // Static pages: web/ at /app (proof sheet, replay), test-pages/ at /test, and /ext for the dev panel preview
     // (test-pages/panel-preview.html loads the overlay code from it; scripts and styles only).
@@ -133,6 +163,7 @@ server.listen(HELPER_PORT, "127.0.0.1", () => {
   console.log(`helper on http://127.0.0.1:${HELPER_PORT}`);
   startWhisper().then(() => console.log("whisper:", JSON.stringify(whisperStatus())));
   warm();
+  startSpeech().then(() => console.log("speech:", JSON.stringify(speechStatus()))); // loads the voice model (~3 s) off the request path
   // Vision loads its OCR model on first use (measured up to 56 s). Opt-in, because warming it reads the screen once.
   if (process.env.ISHARA_DESKTOP === "1") {
     warmDesktop();
@@ -143,5 +174,5 @@ server.listen(HELPER_PORT, "127.0.0.1", () => {
 });
 // Ctrl-C does not fire "exit", so whisper-server outlived every helper restart (10 orphans found on 5 Nov, each
 // holding the model). Stop it on the signals too.
-for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { stopWhisper(); stopPtt(); process.exit(0); });
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { stopWhisper(); stopPtt(); stopSpeech(); process.exit(0); });
 process.on("exit", stopPtt); // the daemon holds the microphone; never leave it running
