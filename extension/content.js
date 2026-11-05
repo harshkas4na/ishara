@@ -3,12 +3,13 @@
 //   hold Alt+Space        push-to-talk
 //   Alt+Shift+Space       type-instead box
 //   Alt+Shift+D           debug panel
+//   Alt+Shift+O           show what Ishara sees (a numbered box on every control it kept)
 (() => {
   const NS = globalThis.Ishara;
   // One id per page load: the helper keys its log and the 0G session root on it. A new one after "End session",
   // because the contract takes one root per session and later answers would otherwise never be stored.
   let sessionId = crypto.randomUUID();
-  let recording = false, busy = false, pending = null; // pending: outline compiled at key-down
+  let recording = false, busy = false, pending = null, inspecting = false; // pending: outline compiled at key-down
   let startP = null, transcribing = false;
 
   const send = (msg) => new Promise((res) => chrome.runtime.sendMessage(msg, (r) => {
@@ -22,7 +23,7 @@
 
   async function ask(question, compiled) {
     if (busy) return;
-    busy = true;
+    busy = true; inspecting = false; // any answer replaces the inspector boxes
     try {
       // Show what we understood so a wrong transcript is visible at once (voice errors look like wrong answers otherwise).
       NS.overlay.thinking(`I heard: “${question}” …thinking`);
@@ -112,6 +113,10 @@
     } else if (e.altKey && e.shiftKey && e.code === "Space") {
       e.preventDefault(); e.stopPropagation();
       NS.overlay.openTypeBox((q) => ask(q));
+    } else if (e.altKey && e.shiftKey && e.code === "KeyO") {
+      e.preventDefault();
+      if (inspecting) { inspecting = false; NS.overlay.clear(); }
+      else { inspecting = true; const c = NS.compileOutline(); NS.overlay.showOutline(c.outline, c.map); }
     } else if (e.altKey && e.shiftKey && e.code === "KeyD") {
       e.preventDefault();
       NS.overlay.toggleDebug({

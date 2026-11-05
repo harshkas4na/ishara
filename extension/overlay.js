@@ -24,6 +24,8 @@
        font-size:14px;line-height:1.35;display:none;white-space:pre-line;box-shadow:0 4px 18px rgba(0,0,0,.3)}
   .bub.stop{background:#7f1d1d}.bub small{display:block;opacity:.75;margin-top:4px}
   .bub a.rc{display:block;margin-top:6px;font-size:12px;color:#c4b5fd;pointer-events:auto;text-decoration:underline;cursor:pointer}
+  .ol{position:fixed;border:1.5px solid #0ea5e9;background:rgba(14,165,233,.08);display:none;border-radius:3px}
+  .ol span{position:absolute;left:-1px;top:-15px;background:#0ea5e9;color:#fff;font:10px ui-monospace,Menlo,monospace;padding:1px 4px;border-radius:3px 3px 0 0}
   .tb{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);pointer-events:auto;display:none;
       background:#fff;border:2px solid #6d28d9;border-radius:10px;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.3)}
   .tb input{width:min(480px,80vw);font-size:16px;padding:8px;border:1px solid #ccc;border-radius:6px;color:#000;background:#fff}
@@ -131,6 +133,25 @@
     say(text, { near: rectOf(els[0]) });
   }
 
+  // Shows what Ishara sees on this page: a numbered box on every control the outline compiler kept. Anything the
+  // user expects to be pointable but has no box is invisible to the tutor (iframes, canvas, closed shadow DOM).
+  function showOutline(outline, map) {
+    build(); clear();
+    const boxes = outline.elements.map((e) => {
+      const d = document.createElement("div"); d.className = "ol";
+      const t = document.createElement("span"); t.textContent = e.id; d.append(t);
+      layer.append(d); rings.push(d);
+      return [d, map.get(e.id)];
+    });
+    follow = () => boxes.forEach(([d, el]) => {
+      if (!el || !el.isConnected) { d.style.display = "none"; return; }
+      const r = rectOf(el);
+      Object.assign(d.style, { display: "block", left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+    });
+    follow();
+    say(`Ishara sees ${outline.elements.length} controls on this page. Option+Shift+O hides this.`);
+  }
+
   const tick = () => { if (follow) follow(); };
   addEventListener("scroll", tick, true);
   addEventListener("resize", tick);
@@ -232,5 +253,5 @@
     };
   }
 
-  NS.overlay = { clear, say, point, ringBoth, thinking, openTypeBox, setDebug, toggleDebug };
+  NS.overlay = { clear, say, point, ringBoth, thinking, openTypeBox, setDebug, toggleDebug, showOutline };
 })();
