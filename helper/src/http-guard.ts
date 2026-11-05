@@ -1,11 +1,11 @@
 // Who may talk to the helper, and which files the static routes may serve. Pure functions, tested in helper.test.ts.
 import { join, normalize } from "node:path";
-import { HELPER_PORT } from "./config.ts";
+import { HELPER_PORT, EXTENSION_ID } from "./config.ts";
 
 const SELF = new Set([`http://127.0.0.1:${HELPER_PORT}`, `http://localhost:${HELPER_PORT}`]);
 
-// The extension (any id: an unpacked extension's id differs per machine) and the helper's own pages.
-export const allowedOrigin = (o: string): boolean => o.startsWith("chrome-extension://") || SELF.has(o);
+// Only OUR extension (its id is pinned by the manifest "key") and the helper's own pages.
+export const allowedOrigin = (o: string): boolean => o === `chrome-extension://${EXTENSION_ID}` || SELF.has(o);
 
 // The helper holds the 0G key. CORS only hides responses from other sites; it does not stop a page from SENDING a
 // simple POST (text/plain) that spends 0G calls or ends a session. And without a Host check, DNS rebinding lets any

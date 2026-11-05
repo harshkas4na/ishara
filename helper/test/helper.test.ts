@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { EXTENSION_ID } from "../src/config.ts";
 import assert from "node:assert/strict";
 import { parsePoint } from "../src/zg.ts";
 import { shortlist } from "../src/shortlist.ts";
@@ -69,7 +70,8 @@ test("decide: laya failing means ask, not point", async () => {
 import { refuse, staticPath } from "../src/http-guard.ts";
 test("guard: only our own host, and only the extension or our pages as origin", () => {
   assert.equal(refuse("127.0.0.1:7777", undefined), false);
-  assert.equal(refuse("localhost:7777", "chrome-extension://abcdef"), false);
+  assert.equal(refuse("localhost:7777", `chrome-extension://${EXTENSION_ID}`), false);
+  assert.equal(refuse("localhost:7777", "chrome-extension://someotherextensionid"), true); // another extension must not spend the 0G key
   assert.equal(refuse("127.0.0.1:7777", "http://127.0.0.1:7777"), false);
   assert.equal(refuse("127.0.0.1:7777", "https://evil.example"), true, "cross-site POST must not reach /decide");
   assert.equal(refuse("127.0.0.1:7777", "http://127.0.0.1:77770"), true);

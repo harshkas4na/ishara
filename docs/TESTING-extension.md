@@ -3,6 +3,10 @@
 The helper must be running first (`http://127.0.0.1:7777`, see the helper's README). Check it:
 open `http://127.0.0.1:7777/health` and expect `{"ok":true,...}`.
 
+> The manifest pins the extension id (`klblmocbilliepigooglmeaalncfggbg`) so the helper accepts requests from this
+> extension only. If you loaded an earlier build, **remove it and Load unpacked again** (the id changed), then allow
+> the microphone once more on the setup page.
+
 ## 1. Load it
 1. Open `chrome://extensions`, switch on **Developer mode** (top right).
 2. **Load unpacked**, choose the `extension/` folder of this repo.

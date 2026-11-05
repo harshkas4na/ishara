@@ -10,3 +10,7 @@ export const HELPER_PORT = 7777;
 export const VERIFY_MIN_P = 0.4;
 export const LAYA_TIMEOUT_MS = 4000; // laya stalled 2 of 40 calls in the lab, so every call gets a cut-off
 export const BRAIN_TIMEOUT_MS = 8000;
+
+// The extension's id is fixed by the "key" in extension/manifest.json, so the helper can accept requests from this
+// extension only. Another installed extension (or a different build) cannot spend the 0G key's calls.
+export const EXTENSION_ID = "klblmocbilliepigooglmeaalncfggbg";

@@ -2,17 +2,35 @@
   "manifest_version": 3,
   "name": "Ishara",
   "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoefeuacvd+Acc98DPoJIkHD4ZBx5kz/Iy2UNCBtZzmvSLO6cQURph6dag81mubjkpkMnGTsQp+w6qBqVoB0rmnHWkz/pqRGsoyEj81BUA5CsKw5K2u0sDcfN+3E4FekGZF0IoDd8wphlGzjf60tNlqT0cZybyk8Fkjc+9O0jqrznF+7nkhOjzaGsZ7ttORfP8jhwQ8oBiFO7poQZu3tIiP8x99FV5MQLmxMHHn8GSBMmvw9BnIsGTGar+BBvKgBNh+6sueXzYeoNjBOJn++vWmR7BcvNUQg8hcLXi7SWs17NQGs30xlAnzek2GKYI1FAaE7QYQ35pxSwk0qtFjl4gQIDAQAB",
   "description": "A sealed screen tutor: hold a key, ask where something is, and a pointer shows you.",
-  "permissions": ["activeTab", "storage", "offscreen"],
-  "host_permissions": ["http://127.0.0.1:7777/*"],
-  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:7777/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["outline.js", "overlay.js", "content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "outline.js",
+        "overlay.js",
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
-  "action": { "default_title": "Ishara mic setup" }
+  "action": {
+    "default_title": "Ishara mic setup"
+  }
 }
