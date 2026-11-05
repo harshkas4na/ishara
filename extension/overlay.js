@@ -23,6 +23,7 @@
   .bub{position:fixed;max-width:320px;padding:8px 12px;background:#1f1147;color:#fff;border-radius:10px;
        font-size:14px;line-height:1.35;display:none;white-space:pre-line;box-shadow:0 4px 18px rgba(0,0,0,.3)}
   .bub.stop{background:#7f1d1d}.bub small{display:block;opacity:.75;margin-top:4px}
+  .bub a.rc{display:block;margin-top:6px;font-size:12px;color:#c4b5fd;pointer-events:auto;text-decoration:underline;cursor:pointer}
   .tb{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);pointer-events:auto;display:none;
       background:#fff;border:2px solid #6d28d9;border-radius:10px;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.3)}
   .tb input{width:min(480px,80vw);font-size:16px;padding:8px;border:1px solid #ccc;border-radius:6px;color:#000;background:#fff}
@@ -74,6 +75,12 @@
     bubble.className = "bub" + (opts.stop ? " stop" : "");
     bubble.textContent = text;
     if (opts.sub) { const s = document.createElement("small"); s.textContent = opts.sub; bubble.append(s); }
+    // The receipt is the product, so it is one click from the answer: opens the proof page for this request.
+    if (opts.receipt) {
+      const a = document.createElement("a"); a.className = "rc"; a.textContent = "How do I know? ↗";
+      a.href = `http://127.0.0.1:7777/app/proof.html?id=${encodeURIComponent(opts.receipt)}`; a.target = "_blank"; a.rel = "noopener";
+      bubble.append(a);
+    }
     bubble.style.display = "block";
     placeBubble(opts.near);
   }
@@ -93,7 +100,7 @@
 
   // Scroll first, then read the rect, so the pointer lands where the element really is now,
   // not where the outline saw it before the page moved.
-  async function point(el, text) {
+  async function point(el, text, receiptId) {
     build(); clear();
     el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
     await raf2();
@@ -107,7 +114,7 @@
     await raf2();
     pointer.style.transition = "";
     place();
-    say(text, { near: rectOf(el) });
+    say(text, { near: rectOf(el), receipt: receiptId });
     follow = place; // keep tracking if the user scrolls or the layout shifts
   }
 

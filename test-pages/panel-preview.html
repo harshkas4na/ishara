@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>Ishara panel preview</title>
 <!-- Dev only: renders the debug panel with sample decisions so its look can be checked without asking 0G.
-     Use ?state=point | ask | stop | nofit | error  -->
+     Use ?state=point | ask | stop | nofit | error | bubble  -->
 <style>body{font:16px system-ui;margin:2rem;color:#222}</style>
 <h1>Panel preview</h1>
 <p>The panel opens on the right. Sample data only.</p>
@@ -22,6 +22,9 @@
       decision: { outcome: "safe_stop", safeStopCause: "unavailable", say: "", reason: "0GM down", requestIds: {}, ms: { total: 8000 } } },
     error: { question: "", error: "I could not hear any sound from the microphone" },
   };
+  if (state === "bubble") { Ishara.overlay.point(document.querySelector("p"), "Enter your contract address in the first input field.", ids.brain); }
+  else {
   Ishara.overlay.setDebug(samples[state]);
   Ishara.overlay.toggleDebug({ sessionId: "preview", proof: async () => ({ data: {} }), endSession: async () => ({ data: { root: "0xabc", storage: { ms: 14800 }, contract: { address: "0x1" }, entries: 2 } }) });
+  }
 </script>

@@ -34,7 +34,7 @@
       NS.overlay.setDebug({ question, decision: d, outlineMs: ms, proposedLabel: labelOf(d.proposedId), targetLabel: labelOf(d.targetId) });
       // The element may have been removed since compile; refuse to point rather than guess.
       const el = d.targetId && current(map.get(d.targetId), outline.elements.find((e) => e.id === d.targetId));
-      if (d.outcome === "point" && el) await NS.overlay.point(el, d.say);
+      if (d.outcome === "point" && el) await NS.overlay.point(el, d.say, d.requestIds && d.requestIds.brain);
       else if (d.outcome === "point") NS.overlay.say("The element is gone. Ask again.", { stop: true });
       else if (d.outcome === "ask_which") {
         const els = (d.candidates || []).map((id) => map.get(id)).filter((e) => e && e.isConnected);
