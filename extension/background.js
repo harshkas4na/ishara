@@ -75,3 +75,15 @@ chrome.runtime.onMessage.addListener((msg, sender, send) => {
 
 // Toolbar click is the one-time microphone setup.
 chrome.action.onClicked.addListener(() => chrome.tabs.create({ url: chrome.runtime.getURL("setup.html") }));
+
+// Dev auto-reload: only active when the helper runs with ISHARA_DEV=1 (it reports dev:false otherwise, so a normal
+// install never reloads itself). Polls the extension files' fingerprint and reloads when it changes.
+chrome.alarms.create("dev-reload", { periodInMinutes: 0.1 });
+chrome.alarms.onAlarm.addListener(async (a) => {
+  if (a.name !== "dev-reload") return;
+  const r = await helper("/dev/ext-version", {}, 3000);
+  if (r.error || !r.data?.dev) return;
+  const { devVersion } = await chrome.storage.local.get("devVersion");
+  if (devVersion && devVersion !== r.data.version) { await chrome.storage.local.set({ devVersion: r.data.version }); chrome.runtime.reload(); }
+  else if (!devVersion) await chrome.storage.local.set({ devVersion: r.data.version });
+});

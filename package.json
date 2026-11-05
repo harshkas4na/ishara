@@ -10,7 +10,8 @@
     "check": "node scripts/smoke.ts",
     "test": "node --test helper/test/*.test.ts",
     "desktop:build": "swiftc -O -swift-version 5 desktop/ishara-ax.swift -o desktop/ishara-ax && swiftc -O -swift-version 5 desktop/ishara-overlay.swift -o desktop/ishara-overlay",
-    "desktop": "node scripts/desktop-demo.ts"
+    "desktop": "node scripts/desktop-demo.ts",
+    "helper:dev": "ISHARA_DEV=1 node helper/src/server.ts"
   },
   "engines": {
     "node": ">=24"

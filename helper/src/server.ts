@@ -7,6 +7,7 @@ import { decide, recordsFor } from "./decide.ts";
 import { hasKey, warm } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
 import { desktopAsk, warmDesktop } from "./desktop.ts";
+import { readdirSync, statSync } from "node:fs";
 import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
 import { memory, memoryRoute } from "./memory.ts";
 import { allowedOrigin, refuse, staticPath } from "./http-guard.ts";
@@ -88,6 +89,13 @@ const server = createServer(async (req, res) => {
     // (test-pages/panel-preview.html loads the overlay code from it; scripts and styles only).
     if (req.method === "GET" && path.startsWith("/app/")) return serveStatic(res, WEB_DIR, path.slice(5));
     if (req.method === "GET" && path.startsWith("/test/")) return serveStatic(res, TEST_DIR, path.slice(6));
+    // Dev only (ISHARA_DEV=1): a fingerprint of the extension's files. The service worker polls it and reloads itself
+    // when it changes, so extension edits take effect without a trip to chrome://extensions. Off by default.
+    if (req.method === "GET" && path === "/dev/ext-version") {
+      if (process.env.ISHARA_DEV !== "1") return send(res, 200, { dev: false });
+      const sig = readdirSync(EXT_DIR).sort().map((f) => { const st = statSync(join(EXT_DIR, f)); return `${f}:${st.size}:${Math.round(st.mtimeMs)}`; }).join("|");
+      return send(res, 200, { dev: true, version: sig });
+    }
     if (req.method === "GET" && path.startsWith("/ext/")) return serveStatic(res, EXT_DIR, path.slice(5), [".js", ".css"]);
 
     // Receipts (episode-log.ts): the proof for one answer, the session log, ending a session, and the replay.
