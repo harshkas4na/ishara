@@ -201,7 +201,7 @@
 
   // Shows what Ishara sees on this page: a numbered box on every control the outline compiler kept. Anything the
   // user expects to be pointable but has no box is invisible to the tutor (iframes, canvas, closed shadow DOM).
-  function showOutline(outline, map) {
+  function showOutline(outline, map, extra = {}) {
     build(); clear();
     const boxes = outline.elements.map((e) => {
       const d = document.createElement("div"); d.className = "ol";
@@ -215,7 +215,7 @@
       Object.assign(d.style, { display: "block", left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
     });
     follow();
-    say(`Ishara sees ${outline.elements.length} controls on this page. Option+Shift+O hides this.`);
+    say(`Ishara sees ${outline.elements.length} controls on this page` + (extra.dropped ? ` (${extra.dropped} more did not fit)` : "") + (extra.ms != null ? `, read in ${extra.ms.toFixed(0)} ms` : "") + `. Option+Shift+O hides this.`);
   }
 
   const tick = () => { if (follow) follow(); };

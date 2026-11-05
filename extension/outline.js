@@ -98,28 +98,51 @@
     for (const host of root.querySelectorAll("*")) if (host.shadowRoot && !host.hasAttribute("data-ishara-root")) yield* candidates(host.shadowRoot, depth + 1);
   }
 
+  // How many candidates we are willing to test for visibility and occlusion (each costs an elementFromPoint).
+  const SCAN_LIMIT = 800;
+  // The same label over and over ("hide", "comments" on every row of a list) tells the model nothing new and
+  // fills the cap. Keep a few copies of each.
+  const MAX_SAME = 3;
+
   function compile() {
     const t0 = performance.now();
-    const elements = [];
-    const map = new Map();
     const seen = new Set();
+    const counts = new Map();
+    const found = [];
+    let scanned = 0;
     for (const el of candidates()) {
-      if (elements.length >= MAX_ELEMENTS) break;
+      if (++scanned > SCAN_LIMIT) break;
       if (seen.has(el) || el.closest("[data-ishara-root]")) continue;
       seen.add(el);
       const rect = el.getBoundingClientRect();
       if (!isVisible(el, rect) || !notOccluded(el, rect)) continue;
       const label = clip(labelOf(el));
       const role = roleOf(el);
+      const control = role === "input" || role === "select" || role === "checkbox";
       // Unlabelled elements give the model nothing to match on, except form controls.
-      if (!label && role !== "input" && role !== "select" && role !== "checkbox") continue;
+      if (!label && !control) continue;
+      const key = role + "|" + label.toLowerCase();
+      const n = (counts.get(key) || 0) + 1; counts.set(key, n);
+      if (n > (control ? MAX_SAME * 2 : MAX_SAME)) continue;
+      const inView = rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
+      found.push({ el, rect, label, role, inView, order: found.length });
+    }
+    // On a long page the cap must not cut off what the user is looking at: keep what is on screen first, then fill
+    // from the rest of the page, then restore reading order so ids follow the page from top to bottom.
+    let kept = found;
+    if (found.length > MAX_ELEMENTS) {
+      kept = [...found.filter((f) => f.inView), ...found.filter((f) => !f.inView)].slice(0, MAX_ELEMENTS).sort((a, b) => a.order - b.order);
+    }
+    const elements = [];
+    const map = new Map();
+    for (const f of kept) {
       const id = "b" + elements.length;
       elements.push({
-        id, label, role,
-        rect: { x: Math.round(rect.left), y: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) },
-        _type: el.tagName === "INPUT" ? (el.type || "text") : el.tagName === "TEXTAREA" ? "textarea" : "",
+        id, label: f.label, role: f.role,
+        rect: { x: Math.round(f.rect.left), y: Math.round(f.rect.top), w: Math.round(f.rect.width), h: Math.round(f.rect.height) },
+        _type: f.el.tagName === "INPUT" ? (f.el.type || "text") : f.el.tagName === "TEXTAREA" ? "textarea" : "",
       });
-      map.set(id, el);
+      map.set(id, f.el);
     }
     // `(text)` suffix mirrors the interface example; headings and links don't need one.
     const text = elements.map((e) => {
@@ -131,6 +154,7 @@
       outline: { url: location.href, viewport: { w: innerWidth, h: innerHeight }, elements: out, text },
       map,
       ms: performance.now() - t0,
+      dropped: found.length - elements.length, // controls that did not fit the cap (shown by the inspector)
     };
   }
 

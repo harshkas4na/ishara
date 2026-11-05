@@ -130,7 +130,7 @@
     } else if (e.altKey && e.shiftKey && e.code === "KeyO") {
       e.preventDefault();
       if (inspecting) { inspecting = false; NS.overlay.clear(); }
-      else { inspecting = true; const c = NS.compileOutline(); NS.overlay.showOutline(c.outline, c.map); }
+      else { inspecting = true; const c = NS.compileOutline(); NS.overlay.showOutline(c.outline, c.map, { dropped: c.dropped, ms: c.ms }); }
     } else if (e.altKey && e.shiftKey && e.code === "KeyD") {
       e.preventDefault();
       NS.overlay.toggleDebug({
