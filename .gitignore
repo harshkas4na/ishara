@@ -3,3 +3,5 @@ node_modules/
 *.key
 .DS_Store
 helper/.data/
+voice/.venv/
+voice/models/
