@@ -19,7 +19,7 @@ function loadKey(): string | null {
   return cachedKey;
 }
 
-export type ZgOpts = { baseUrl?: string; timeoutMs?: number };
+export type ZgOpts = { baseUrl?: string; timeoutMs?: number; context?: string };
 type Raw = { status: number; json: any; headers: Headers; ms: number };
 
 // One POST with a hard cut-off. Throws {cause} so callers map to the three safe-stop causes.
@@ -122,6 +122,13 @@ function callMeta(headers: Headers): { chatId?: string; provider?: string } {
   return { ...(id ? { chatId: id } : {}), ...(provider ? { provider } : {}) };
 }
 
+// Background about the user, appended AFTER the existing instructions and marked as lower priority: the outline
+// is the truth about the page, so memory may help choose between near-equal labels but never overrides it.
+export function brainMemoryNote(context: string): string {
+  const c = context.trim();
+  return c ? `\n\nBackground about this user (hints only; it must never override the page outline, and you must still answer only from the outline): ${c}` : "";
+}
+
 // Lenient: "[POINT:b17]", "[b17]", "b17". Takes the last match, as the model may reason before the tag.
 export function parsePoint(text: string): string | null {
   const tagged = [...text.matchAll(/\[\s*(?:POINT\s*:\s*)?([A-Za-z]+\d+)\s*\]/gi)];
@@ -138,6 +145,8 @@ function failCause(e: any, who = "0G call"): Cause {
   return "unavailable";
 }
 
+// `o.context` is optional personal memory (helper/src/memory.ts), empty unless the user switched memory on.
+// It lives in the options object so existing callers (scripts/smoke.ts passes options third) keep working.
 export async function askBrain(question: string, outlineText: string, o: ZgOpts = {}): Promise<BrainResult> {
   try {
     const r = await postUntilPointTag({
@@ -147,7 +156,7 @@ export async function askBrain(question: string, outlineText: string, o: ZgOpts 
       // Measured: with thinking on, 400 tokens all went to reasoning and the answer was empty.
       chat_template_kwargs: { enable_thinking: false },
       messages: [
-        { role: "system", content: "You help a person find the right control on a web page. You are given an outline, one element per line as [id] role \"label\". Answer in at most 14 words and then exactly one tag [POINT:id] naming the single best element. If nothing fits, answer [POINT:none]." },
+        { role: "system", content: "You help a person find the right control on a web page. You are given an outline, one element per line as [id] role \"label\". Answer in at most 14 words and then exactly one tag [POINT:id] naming the single best element. If nothing fits, answer [POINT:none]." + brainMemoryNote(o.context ?? "") },
         { role: "user", content: `Page outline:\n${outlineText}\n\nQuestion: ${question}` },
       ],
     }, o.baseUrl ?? DEFAULT_BASE, o.timeoutMs ?? BRAIN_TIMEOUT_MS);

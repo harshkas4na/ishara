@@ -2,14 +2,15 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { gate } from "./gate.ts";
 import { askBrain, askVerify, BRAIN_MODEL, LAYA_MODEL } from "./zg.ts";
 import { episodeLog, type CallRef } from "./episode-log.ts";
+import { memory, memoryUsed, hostOf } from "./memory.ts";
 import type { BrainResult, VerifyResult, Decision, Outline, OutlineElement } from "./types.ts";
 
 export type Deps = {
-  brain: (question: string, outlineText: string) => Promise<BrainResult>;
+  brain: (question: string, outlineText: string, context?: string) => Promise<BrainResult>;
   verify: (question: string, element: OutlineElement) => Promise<VerifyResult>;
 };
 // The real 0G calls. Tests inject fakes through Deps; the product never does.
-export const realDeps: Deps = { brain: (q, t) => askBrain(q, t), verify: (q, el) => askVerify(q, el) };
+export const realDeps: Deps = { brain: (q, t, c) => askBrain(q, t, { context: c }), verify: (q, el) => askVerify(q, el) };
 
 export type DecisionRecord = { at: string; sessionId: string; question: string; decision: Decision };
 const records: DecisionRecord[] = [];
@@ -32,7 +33,12 @@ function saveOutline(o: Outline): void {
 // earlier parallel "both choose" design vetoed 4 of 12 correct answers on a page with plausible distractors.
 export async function decide(sessionId: string, question: string, outline: Outline, deps: Deps = realDeps): Promise<Decision> {
   const t0 = Date.now();
-  let brain = await deps.brain(question, outline.text);
+  // Personal memory (memory.ts): recorded always, but fed to the sealed prompt only when ISHARA_MEMORY=1 (default
+  // off until the eval shows it does not hurt accuracy). Pure local file reads; any failure means "no context".
+  const host = hostOf(outline.url);
+  let context = "";
+  try { if (memoryUsed()) context = memory().context(host); } catch { /* memory must never break a decision */ }
+  let brain = await deps.brain(question, outline.text, context);
   // 0GM may name an id that is not on the page. That is the same as naming nothing.
   const el = brain.ok && brain.targetId ? outline.elements.find((e) => e.id === (brain as { targetId: string }).targetId) : undefined;
   if (brain.ok && brain.targetId && !el) brain = { ...brain, targetId: null };
@@ -57,6 +63,10 @@ export async function decide(sessionId: string, question: string, outline: Outli
   };
   // One line per decision so a wrong answer can be traced without a debugger (no secrets in it).
   console.log(`[decide] "${question}" brain=${brain.ok ? brain.targetId : "FAIL:" + brain.cause} laya=${verify === null ? "-" : verify.ok ? verify.p.toFixed(2) : "FAIL:" + verify.cause} -> ${decision.outcome} (${decision.reason})`);
+  try { // the label of what was proposed/pointed at: a short control name, never the outline text
+    const lab = outline.elements.find((e) => e.id === (decision.targetId ?? decision.proposedId))?.label;
+    memory().recordAsk(sessionId, host, question, decision.outcome === "ask_which" ? "ask" : decision.outcome, lab);
+  } catch (e) { console.error("[memory] record failed:", (e as Error).message); }
   records.push({ at: new Date().toISOString(), sessionId, question, decision });
   if (records.length > 500) records.splice(0, records.length - 500); // a long-running helper must not grow without bound
   // Receipts: remember which provider answered under which chat id, and start fetching the signatures now

@@ -8,6 +8,7 @@ import { hasKey, warm } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
 import { desktopAsk, warmDesktop } from "./desktop.ts";
 import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
+import { memory, memoryRoute } from "./memory.ts";
 import { allowedOrigin, refuse, staticPath } from "./http-guard.ts";
 
 const TEST_DIR = fileURLToPath(new URL("../../test-pages/", import.meta.url));
@@ -21,7 +22,7 @@ function cors(req: IncomingMessage, res: ServerResponse) {
     res.setHeader("access-control-allow-origin", o);
     res.setHeader("vary", "origin");
     res.setHeader("access-control-allow-headers", "content-type, x-prompt");
-    res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+    res.setHeader("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
   }
 }
 function send(res: ServerResponse, status: number, body: unknown) {
@@ -75,6 +76,13 @@ const server = createServer(async (req, res) => {
       if (typeof b?.question !== "string" || !Array.isArray(b?.outline?.elements) || typeof b?.outline?.text !== "string")
         return send(res, 400, { error: "need { sessionId, question, outline{elements,text} }" });
       return send(res, 200, await decide(String(b.sessionId ?? "default"), b.question, b.outline));
+    }
+    // Personal memory (memory.ts): view, pause/resume, forget, and the "accepted" feedback from the extension.
+    // Behind the same Host/Origin guard as everything above. DELETE has no body; the others are small JSON.
+    if (path === "/memory" || path.startsWith("/memory/")) {
+      const body = req.method === "POST" ? (await readBody(req, 100_000)).toString("utf8") : "";
+      const r = memoryRoute(memory(), req.method ?? "GET", path, body);
+      if (r) return send(res, r.status, r.body);
     }
     // Static pages: web/ at /app (proof sheet, replay), test-pages/ at /test, and /ext for the dev panel preview
     // (test-pages/panel-preview.html loads the overlay code from it; scripts and styles only).
