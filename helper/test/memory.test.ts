@@ -237,3 +237,20 @@ test("memory context reaches the brain only when ISHARA_MEMORY=1", async () => {
   assert.equal(seen[0], "");
   assert.match(seen[1] ?? "", /an earlier question here/);
 });
+
+import { decide as decideForMem } from "../src/decide.ts";
+import { memory as sharedMemory } from "../src/memory.ts";
+test("a fake-router decision is never written into memory", async () => {
+  const before = sharedMemory().view().counts.events;
+  const outline = { url: "https://mem-test.example/x", viewport: { w: 1, h: 1 }, text: '[b1] button "Save"', elements: [{ id: "b1", role: "button", label: "Save", rect: { x: 0, y: 0, w: 1, h: 1 } }] };
+  await decideForMem("mem-fake", "where do I save", outline, {
+    brain: async () => ({ ok: true, targetId: "b1", ms: 1, testRouter: true }),
+    verify: async () => ({ ok: true, p: 0.9, ms: 1, testRouter: true }),
+  });
+  assert.equal(sharedMemory().view().counts.events, before);
+  await decideForMem("mem-real", "where do I save", outline, {
+    brain: async () => ({ ok: true, targetId: "b1", ms: 1 }),
+    verify: async () => ({ ok: true, p: 0.9, ms: 1 }),
+  });
+  assert.equal(sharedMemory().view().counts.events, before + 1, "a real decision is still recorded");
+});

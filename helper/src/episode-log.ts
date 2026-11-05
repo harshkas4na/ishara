@@ -10,6 +10,7 @@
 // answered this chat id", not "these exact words". Everything shown to a user repeats that limit.
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { Contract, JsonRpcProvider, keccak256, toUtf8Bytes } from "ethers";
 import { fetchProof, PROOF_NOTE, type Proof, type ProofResult, type SignatureMaterial } from "./proof.ts";
 import {
@@ -18,7 +19,9 @@ import {
 } from "./storage.ts";
 import { APP_NAME } from "./config.ts";
 
-const DATA_DIR = "helper/.data/sessions"; // local only, gitignored: holds each session's log key
+// Local only, gitignored: holds each session's log key. Under `node --test` a temp dir, so test decisions never show
+// up as sessions on the home page (they did: "s", "x1", "sess" were test runs).
+const DATA_DIR = process.env.NODE_TEST_CONTEXT ? join(tmpdir(), `ishara-sessions-test-${process.pid}`) : "helper/.data/sessions";
 const CONTRACT_DIR = "contracts/out";
 
 export type CallRef = { role: "brain" | "laya"; model: string; requestId?: string; chatId?: string; provider?: string };
@@ -145,10 +148,12 @@ export class EpisodeLog {
     return { requestId, provider: "", recoveredSigner: "", onChainSigner: "", match: false, fetchedAt: new Date().toISOString(), status: "unknown", detail: "no decision with that id in this helper", note: PROOF_NOTE };
   }
 
-  list(): Array<{ sessionId: string; startedAt: string; decisions: number; root?: string }> {
+  list(): Array<{ sessionId: string; startedAt: string; decisions: number; root?: string; testRouter?: true }> {
     const ids = new Set([...this.sessions.keys()]);
     if (existsSync(this.dir)) for (const f of readdirSync(this.dir)) { try { ids.add(JSON.parse(readFileSync(join(this.dir, f), "utf8")).sessionId); } catch { /* skip */ } }
-    return [...ids].map((id) => this.session(id)!).filter(Boolean).map((s) => ({ sessionId: s.sessionId, startedAt: s.startedAt, decisions: s.entries.length, root: s.ended?.root }));
+    return [...ids].map((id) => this.session(id)!).filter(Boolean).map((s) => ({ sessionId: s.sessionId, startedAt: s.startedAt, decisions: s.entries.length, root: s.ended?.root,
+      // A session with any fake-router answer is marked in the list too, not only inside the replay.
+      ...(s.entries.some((e) => e.testRouter) ? { testRouter: true as const } : {}) }));
   }
 
   getLog(sessionId: string): { entries: Entry[]; ended?: Session["ended"] } {

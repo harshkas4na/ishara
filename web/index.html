@@ -25,7 +25,9 @@ const list = el("ul", { class: "sessions" }); const box = el("div", { class: "ca
     for (const s of ss) {
       const stored = !!s.root;
       list.append(el("li", {},
-        el("div", {}, el("b", { text: s.sessionId }), el("div", { class: "muted", text: `${fmtTime(s.startedAt)} · ${s.decisions} decision${s.decisions === 1 ? "" : "s"}` }),
+        el("div", {}, el("b", { text: s.sessionId }),
+          s.testRouter ? el("span", { class: "chip", style: "margin-left:8px;background:#f59e0b;color:#1c1100;border-color:#b45309", text: "TEST ROUTER, not 0G" }) : null,
+          el("div", { class: "muted", text: `${fmtTime(s.startedAt)} · ${s.decisions} decision${s.decisions === 1 ? "" : "s"}` }),
           stored ? el("div", {}, el("span", { class: "muted", text: "stored on 0G, root " }), hashView(s.root)) : el("div", { class: "muted", text: "not stored on 0G yet (local copy only)" })),
         el("a", { class: "btnlink", href: "replay.html?session=" + encodeURIComponent(s.sessionId), text: stored ? "Replay" : "View local log" })));
     }

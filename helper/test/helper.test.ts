@@ -112,3 +112,10 @@ test("decide: a confirmed pick is unaffected by the second-candidate logic", asy
   const d = await decide("s", "where is the contract address", outline, { brain: ok("b3"), verify: yes(0.9) });
   assert.equal(d.outcome, "point"); assert.equal(d.targetId, "b3");
 });
+
+import { secondCandidate } from "../src/shortlist.ts";
+test("shortlist: words like 'constructor' are not looked up on Object.prototype", () => {
+  const els = [{ id: "b1", role: "input", label: "Constructor arguments", rect: { x: 0, y: 0, w: 1, h: 1 } }, { id: "b2", role: "button", label: "Submit", rect: { x: 0, y: 0, w: 1, h: 1 } }];
+  assert.equal(secondCandidate("where do I add constructor arguments", els, "b2"), "b1");
+  assert.equal(secondCandidate("toString valueOf hasOwnProperty", els, "b1"), null);
+});

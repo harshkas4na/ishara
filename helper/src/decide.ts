@@ -22,6 +22,7 @@ export function recordByRequestId(id: string): DecisionRecord | undefined {
 
 // Dev aid: keep the last real outline per page so scripts/eval.ts can replay real pages. Gitignored (helper/.data).
 function saveOutline(o: Outline): void {
+  if (process.env.NODE_TEST_CONTEXT) return; // tests must not overwrite the captured outlines the eval replays
   try {
     mkdirSync("helper/.data/outlines", { recursive: true });
     const name = o.url.replace(/[^a-z0-9]+/gi, "_").slice(0, 80);
@@ -75,7 +76,8 @@ export async function decide(sessionId: string, question: string, outline: Outli
   console.log(`[decide] "${question}" brain=${brain.ok ? brain.targetId : "FAIL:" + brain.cause} laya=${verify === null ? "-" : verify.ok ? verify.p.toFixed(2) : "FAIL:" + verify.cause} -> ${decision.outcome} (${decision.reason})`);
   try { // the label of what was proposed/pointed at: a short control name, never the outline text
     const lab = outline.elements.find((e) => e.id === (decision.targetId ?? decision.proposedId))?.label;
-    memory().recordAsk(sessionId, host, question, decision.outcome === "ask_which" ? "ask" : decision.outcome, lab);
+    // Fake-router answers never teach the memory: what it learns can later reach the real sealed prompt.
+    if (!decision.testRouter) memory().recordAsk(sessionId, host, question, decision.outcome === "ask_which" ? "ask" : decision.outcome, lab);
   } catch (e) { console.error("[memory] record failed:", (e as Error).message); }
   records.push({ at: new Date().toISOString(), sessionId, question, decision });
   if (records.length > 500) records.splice(0, records.length - 500); // a long-running helper must not grow without bound

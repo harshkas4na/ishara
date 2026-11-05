@@ -43,7 +43,7 @@ function sameStem(a: string, b: string): boolean {
 // Headings (role "text") are never candidates: a heading cannot be what the pointer lands on.
 function scoreElements(question: string, elements: OutlineElement[]): Array<{ id: string; score: number; i: number }> {
   const q = tokens(question);
-  const expanded = [...new Set(q.flatMap((t) => SYNONYMS[t] ?? []))].filter((s) => !q.includes(s));
+  const expanded = [...new Set(q.flatMap((t) => (Object.hasOwn(SYNONYMS, t) ? SYNONYMS[t] : [])))].filter((s) => !q.includes(s));
   const wantsAction = q.some((t) => ACTION.has(t));
   const pool = elements.filter((e) => e.role !== "text");
   const scored = (pool.length >= 3 ? pool : elements).map((el, i) => {
