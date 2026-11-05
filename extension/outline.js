@@ -141,6 +141,7 @@
     }
     const elements = [];
     const map = new Map();
+    const meta = new Map(); // id -> { state, errorText } for controls of other frames (page reader, blocks.js)
     for (const f of kept) {
       const id = "b" + elements.length;
       elements.push({
@@ -150,6 +151,7 @@
       });
       // A frame control is stored as its proxy (see makeProxy), a page control as the element itself.
       map.set(id, f.entry || f.el);
+      if (f._x) meta.set(id, f._x);
     }
     // `(text)` suffix mirrors the interface example; headings and links don't need one.
     const text = elements.map((e) => {
@@ -161,6 +163,7 @@
     return {
       outline: { url: location.href, viewport: { w: innerWidth, h: innerHeight }, elements: out, text },
       map,
+      meta,
       types, // id -> input type; only the frame protocol needs it, to hand the parent the same "(type)" suffix
       ms: performance.now() - t0,
       dropped: found.length - elements.length, // controls that did not fit the cap (shown by the inspector)
@@ -290,7 +293,7 @@
         const entry = makeProxy(f, c.id, cr, size);
         const rect = entry.getBoundingClientRect();
         const inView = rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
-        found.push({ entry, rect, label, role, inView, _type: String(c._type || "").slice(0, 20), order: found.length });
+        found.push({ entry, rect, label, role, inView, _type: String(c._type || "").slice(0, 20), order: found.length, _x: NS.sanitizeExtras ? NS.sanitizeExtras(c._x) : undefined });
       }
     });
     return finish(found, t0);
@@ -306,8 +309,13 @@
       lastMap = c.map;
       reply({
         ishara: "outline", req: d.req, size: { w: innerWidth, h: innerHeight },
-        elements: c.outline.elements.map((x) => ({ ...x, _type: c.types.get(x.id) || "" })),
+        // _x = control state and error text for the page reader, computed (and redacted) HERE in the owning frame.
+        elements: c.outline.elements.map((x) => ({ ...x, _type: c.types.get(x.id) || "", _x: NS.controlExtrasFor ? NS.controlExtrasFor(c.map.get(x.id)) : undefined })),
       });
+    } else if (d.ishara === "blocks?") {
+      // Page reader (blocks.js): this frame's text blocks. Same trust model as above: the reply goes through the worker.
+      const r = NS.blocksForFrame ? await NS.blocksForFrame() : null;
+      if (r) reply({ ishara: "blocks", req: d.req, size: r.size, blocks: r.blocks });
     } else if (d.ishara === "locate") {
       const entry = lastMap.get(d.id);
       let rect = null;
@@ -328,4 +336,6 @@
   NS.compileOutline = compile;
   NS.compileOutlineAsync = compileAsync;
   NS.frames = { locate, isChild };
+  // Shared with blocks.js so the page reader uses the same visibility test and the same frame plumbing.
+  NS.internals = { isVisible, iframesOf, frameBox, call };
 })();

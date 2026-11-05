@@ -24,6 +24,8 @@
       ],
       "js": [
         "outline.js",
+        "blocks-core.js",
+        "blocks.js",
         "overlay.js",
         "content.js"
       ],
