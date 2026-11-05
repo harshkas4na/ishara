@@ -49,7 +49,7 @@ session back from 0G Storage and verifies it.
   plaintext hash stored so a wrong key cannot pass silently. The extension has no third-party scripts or analytics.
 
 ## Measured (not claimed)
-Replayed through the real 0G path on a mock "verify contract" page (`scripts/eval.ts`, 2026-11-05):
+Replayed through the real 0G path on a mock "verify contract" page (`scripts/eval.ts`; first run 5 Nov, re-run unchanged on 6 Nov after the outage):
 
 | Set | Result |
 |---|---|
@@ -57,6 +57,7 @@ Replayed through the real 0G path on a mock "verify contract" page (`scripts/eva
 | 6 vague questions ("help", "I am stuck", ...) | 6 of 6 asked instead of pointing |
 | Time per question | 2.6-2.9 s warm, up to 6 s on a cold first call |
 | Unit tests | 40 passing (`npm test`) |
+| Live receipts (6 Nov, after the outage) | for both 0GM-1.0 and laya the signature recovers to the signer registered on-chain (`scripts/e2e-log.ts`) |
 | Log on 0G Storage | uploaded in ~15 s, root recorded on the contract, replay decrypted it and matched the hash and the on-chain root |
 
 It also pointed correctly on a real page (GitHub's sign-in form). Why laya checks instead of choosing: see `docs/DECISIONS.md`.
@@ -73,7 +74,7 @@ toolbar button once and allow the microphone. Then open `http://127.0.0.1:7777/t
 Full steps: `docs/TESTING-extension.md`. Check the 0G path alone with `npm run check`.
 
 ## Known limits
-- **0GM-1.0 has one private provider.** On the evening of 5 Nov it returned 502 for hours. The tutor safe-stops
+- **0GM-1.0 has few private providers, and they can fail.** On the night of 5 Nov the sealed models were unavailable to every team for about three hours (0G side: Private mode returned 502/503). The tutor safe-stopped and said why; it did not fall back to another model. They came back around 01:50 IST on 6 Nov, with new provider addresses, and everything below was re-run.
   and says why; it does not fall back to another model.
 - **The proof is limited.** It shows a sealed provider with this on-chain signer answered this chat id. It does
   not prove the exact words. The signature is only served for about 20 minutes, so it is fetched right after each answer.
