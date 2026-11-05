@@ -13,11 +13,11 @@ export type Outline = {
 };
 export type Cause = "timeout" | "unavailable" | "offline";
 export type BrainResult =
-  | { ok: true; targetId: string | null; sentence?: string; requestId?: string; chatId?: string; provider?: string; ms: number }
-  | { ok: false; cause: Cause };
+  | { ok: true; targetId: string | null; sentence?: string; requestId?: string; chatId?: string; provider?: string; ms: number; testRouter?: boolean }
+  | { ok: false; cause: Cause; testRouter?: boolean };
 export type VerifyResult =
-  | { ok: true; p: number; requestId?: string; chatId?: string; provider?: string; ms: number } // laya's P(yes): "is this control what the user asked for?"
-  | { ok: false; cause: Cause };
+  | { ok: true; p: number; requestId?: string; chatId?: string; provider?: string; ms: number; testRouter?: boolean } // laya's P(yes): "is this control what the user asked for?"
+  | { ok: false; cause: Cause; testRouter?: boolean };
 export type Decision = {
   outcome: "point" | "ask" | "ask_which" | "safe_stop";
   targetId?: string;
@@ -29,4 +29,5 @@ export type Decision = {
   layaP?: number;      // laya's P(yes) for that proposal
   requestIds: { brain?: string; laya?: string };
   ms: { total: number; brain?: number; laya?: number };
+  testRouter?: boolean; // dev only: answered by the local fake router (test/fake-router), NOT by 0G
 };

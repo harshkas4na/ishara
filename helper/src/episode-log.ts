@@ -28,6 +28,7 @@ export type ProofState =
 export type Entry = {
   at: string; question: string; outcome: string; targetId?: string; say: string; reason: string;
   calls: Array<CallRef & { proof: ProofState }>;
+  testRouter?: true; // dev only: from the fake router, so replay shows a TEST ROUTER chip
 };
 type Session = {
   sessionId: string; startedAt: string; keyHex: string; entries: Entry[];
@@ -90,7 +91,7 @@ export class EpisodeLog {
   }
 
   /** One decision just happened. Store it and start fetching each call's proof in the background. */
-  record(sessionId: string, d: { question: string; outcome: string; targetId?: string; say: string; reason: string; calls: CallRef[] }): Entry {
+  record(sessionId: string, d: { question: string; outcome: string; targetId?: string; say: string; reason: string; calls: CallRef[]; testRouter?: boolean }): Entry {
     let s = this.session(sessionId);
     if (!s) {
       s = { sessionId, startedAt: new Date().toISOString(), keyHex: newLogKey().toString("hex"), entries: [] };
@@ -99,6 +100,7 @@ export class EpisodeLog {
     const entry: Entry = {
       at: new Date().toISOString(), question: d.question, outcome: d.outcome,
       ...(d.targetId ? { targetId: d.targetId } : {}), say: d.say, reason: d.reason,
+      ...(d.testRouter ? { testRouter: true as const } : {}),
       calls: d.calls.map((c) => ({ ...c, proof: (c.chatId && c.provider ? { status: "pending" } : { status: "unavailable", detail: "the response carried no chat id or provider" }) as ProofState })),
     };
     s.entries.push(entry);

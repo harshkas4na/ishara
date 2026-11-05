@@ -9,9 +9,33 @@ export const DEFAULT_BASE = "https://router-api.0g.ai/v1";
 export const BRAIN_MODEL = "0gm-1.0-35b-a3b";
 export const LAYA_MODEL = "laya";
 
+// DEVELOPMENT ONLY. ISHARA_ROUTER_URL points the client at a local stand-in (test/fake-router) so the whole chain can
+// be exercised while the real sealed models are down. It tests mechanics, never 0G's accuracy, so it is opt-in per
+// run, accepted only for a loopback host (the real key and real traffic can never be redirected to a remote server
+// by a stray env var), and every result it produces carries testRouter:true so nothing downstream can pass it off.
+// Read on each call (not cached) so tests can flip it; unset means exactly the production behaviour.
+const warnedBad = new Set<string>();
+export function routerOverride(): string | null {
+  const raw = process.env.ISHARA_ROUTER_URL?.trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    if ((u.protocol === "http:" || u.protocol === "https:") && (u.hostname === "127.0.0.1" || u.hostname === "localhost")) return raw.replace(/\/+$/, "");
+  } catch { /* falls through to the warning */ }
+  if (!warnedBad.has(raw)) { warnedBad.add(raw); console.error("[zg] WARNING: ISHARA_ROUTER_URL ignored: only 127.0.0.1 or localhost is accepted. Using the real router."); }
+  return null;
+}
+export const testRouterActive = (): boolean => routerOverride() !== null;
+// Spread into results so the flag travels: brain/verify result -> Decision -> overlay, episode log, replay.
+const testFlag = (): { testRouter?: true } => (testRouterActive() ? { testRouter: true } : {});
+// The literal placeholder is sent instead of the real key, and the key file is not read at all.
+const FAKE_KEY = "fake-router-key";
+function authKey(): string | null { return testRouterActive() ? FAKE_KEY : loadKey(); }
+function baseFor(o: ZgOpts): string { return o.baseUrl ?? routerOverride() ?? DEFAULT_BASE; }
+
 let cachedKey: string | null | undefined;
 // Read once. The key only ever goes into the Authorization header below.
-export function hasKey(): boolean { return loadKey() !== null; }
+export function hasKey(): boolean { return testRouterActive() ? true : loadKey() !== null; }
 function loadKey(): string | null {
   if (cachedKey !== undefined) return cachedKey;
   try { cachedKey = readFileSync(`${homedir()}/.config/0g/key`, "utf8").trim() || null; }
@@ -24,7 +48,7 @@ type Raw = { status: number; json: any; headers: Headers; ms: number };
 
 // One POST with a hard cut-off. Throws {cause} so callers map to the three safe-stop causes.
 async function post(path: string, body: unknown, baseUrl: string, timeoutMs: number): Promise<Raw> {
-  const key = loadKey();
+  const key = authKey();
   if (!key) throw { cause: "unavailable" as Cause };
   const t0 = Date.now();
   let res: Response;
@@ -58,7 +82,7 @@ async function post(path: string, body: unknown, baseUrl: string, timeoutMs: num
 const POINT_TAG = /\[\s*POINT\s*:\s*([A-Za-z]+\d*)\s*\]/i;
 
 async function postUntilPointTag(body: unknown, baseUrl: string, timeoutMs: number): Promise<Raw & { text: string }> {
-  const key = loadKey();
+  const key = authKey();
   if (!key) throw { cause: "unavailable" as Cause };
   const t0 = Date.now();
   const signal = AbortSignal.timeout(timeoutMs); // covers connect AND reading the stream
@@ -159,13 +183,13 @@ export async function askBrain(question: string, outlineText: string, o: ZgOpts 
         { role: "system", content: "You help a person find the right control on a web page. You are given an outline, one element per line as [id] role \"label\". Answer in at most 14 words and then exactly one tag [POINT:id] naming the single best element. If nothing fits, answer [POINT:none]." + brainMemoryNote(o.context ?? "") },
         { role: "user", content: `Page outline:\n${outlineText}\n\nQuestion: ${question}` },
       ],
-    }, o.baseUrl ?? DEFAULT_BASE, o.timeoutMs ?? BRAIN_TIMEOUT_MS);
-    if (r.status !== 200) { console.error(`[zg] brain HTTP ${r.status}`); return { ok: false, cause: "unavailable" }; }
+    }, baseFor(o), o.timeoutMs ?? BRAIN_TIMEOUT_MS);
+    if (r.status !== 200) { console.error(`[zg] brain HTTP ${r.status}`); return { ok: false, cause: "unavailable", ...testFlag() }; }
     const id = parsePoint(r.text);
     // The sentence is what the user reads next to the pointer, so it must be 0GM's own words, not a canned "Here.".
     const sentence = r.text.replace(/\[\s*POINT\s*:[^\]]*\]?/gi, "").replace(/\s+/g, " ").trim().slice(0, 160);
-    return { ok: true, targetId: id === "none" || id === null ? null : id, sentence: sentence || undefined, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms };
-  } catch (e) { return { ok: false, cause: failCause(e, "brain") }; }
+    return { ok: true, targetId: id === "none" || id === null ? null : id, sentence: sentence || undefined, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms, ...testFlag() };
+  } catch (e) { return { ok: false, cause: failCause(e, "brain"), ...testFlag() }; }
 }
 
 // laya as a checker, not a chooser. Measured on the mock verify page: asking laya to CHOOSE among shortlisted
@@ -178,15 +202,15 @@ export async function askVerify(question: string, el: OutlineElement, o: ZgOpts 
       model: LAYA_MODEL,
       state: `The user asked: "${question}"\nProposed control: ${el.role} "${el.label}"`,
       questions: { right: { type: "noul", instructions: "Is the proposed control exactly what the user is asking for?" } },
-    }, o.baseUrl ?? DEFAULT_BASE, o.timeoutMs ?? LAYA_TIMEOUT_MS);
-    if (r.status !== 200) { console.error(`[zg] laya HTTP ${r.status}`, JSON.stringify(r.json)?.slice(0, 300)); return { ok: false, cause: "unavailable" }; }
+    }, baseFor(o), o.timeoutMs ?? LAYA_TIMEOUT_MS);
+    if (r.status !== 200) { console.error(`[zg] laya HTTP ${r.status}`, JSON.stringify(r.json)?.slice(0, 300)); return { ok: false, cause: "unavailable", ...testFlag() }; }
     const p = r.json?.answers?.right?.noul;
-    if (typeof p !== "number") return { ok: false, cause: "unavailable" };
-    return { ok: true, p, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms };
-  } catch (e) { return { ok: false, cause: failCause(e, "laya") }; }
+    if (typeof p !== "number") return { ok: false, cause: "unavailable", ...testFlag() };
+    return { ok: true, p, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms, ...testFlag() };
+  } catch (e) { return { ok: false, cause: failCause(e, "laya"), ...testFlag() }; }
 }
 
 // Opens the TLS connection early (measured: first request on a new connection costs ~3.6 s on mobile data).
-export async function warm(baseUrl = DEFAULT_BASE): Promise<void> {
+export async function warm(baseUrl = routerOverride() ?? DEFAULT_BASE): Promise<void> {
   try { await fetch(baseUrl + "/models", { signal: AbortSignal.timeout(6000) }); } catch { /* best effort */ }
 }

@@ -12,7 +12,9 @@
     "desktop:build": "swiftc -O -swift-version 5 desktop/ishara-ax.swift -o desktop/ishara-ax && swiftc -O -swift-version 5 desktop/ishara-overlay.swift -o desktop/ishara-overlay && swiftc -O -swift-version 5 desktop/ishara-ptt.swift -o desktop/ishara-ptt",
     "desktop": "node scripts/desktop-demo.ts",
     "helper:desktop": "ISHARA_DESKTOP=1 ISHARA_DEV=1 node helper/src/server.ts",
-    "helper:dev": "ISHARA_DEV=1 node helper/src/server.ts"
+    "helper:dev": "ISHARA_DEV=1 node helper/src/server.ts",
+    "fake-router": "node test/fake-router/server.ts",
+    "helper:fake": "ISHARA_ROUTER_URL=http://127.0.0.1:7791/v1 ISHARA_DEV=1 node helper/src/server.ts"
   },
   "engines": {
     "node": ">=24"

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { extname } from "node:path";
 import { HELPER_PORT } from "./config.ts";
 import { decide, recordsFor } from "./decide.ts";
-import { hasKey, warm } from "./zg.ts";
+import { hasKey, warm, testRouterActive } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
 import { desktopAsk, warmDesktop } from "./desktop.ts";
 import { readdirSync, statSync } from "node:fs";
@@ -66,7 +66,7 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && path === "/health") {
       const w = whisperStatus();
-      return send(res, 200, { ok: true, whisper: w.ok, whisperError: w.error, key: hasKey() });
+      return send(res, 200, { ok: true, whisper: w.ok, whisperError: w.error, key: hasKey(), ...(testRouterActive() ? { testRouter: true } : {}) });
     }
     if (req.method === "POST" && path === "/transcribe") {
       const wav = await readBody(req);

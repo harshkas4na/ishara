@@ -55,6 +55,8 @@ export async function decide(sessionId: string, question: string, outline: Outli
       ...(brain.ok && brain.requestId ? { brain: brain.requestId } : {}),
       ...(verify?.ok && verify.requestId ? { laya: verify.requestId } : {}),
     },
+    // Fake-router results are marked at the source (zg.ts); carry the mark to everything that shows or stores this.
+    ...(brain.testRouter || verify?.testRouter ? { testRouter: true } : {}),
     ms: {
       total: Date.now() - t0,
       ...(brain.ok ? { brain: brain.ms } : {}),
@@ -75,7 +77,7 @@ export async function decide(sessionId: string, question: string, outline: Outli
     const calls: CallRef[] = [];
     if (brain.ok) calls.push({ role: "brain", model: BRAIN_MODEL, requestId: brain.requestId, chatId: brain.chatId, provider: brain.provider });
     if (verify?.ok) calls.push({ role: "laya", model: LAYA_MODEL, requestId: verify.requestId, chatId: verify.chatId, provider: verify.provider });
-    if (calls.length) episodeLog.record(sessionId, { question, outcome: decision.outcome, targetId: decision.targetId, say: decision.say, reason: decision.reason, calls });
+    if (calls.length) episodeLog.record(sessionId, { question, outcome: decision.outcome, targetId: decision.targetId, say: decision.say, reason: decision.reason, calls, ...(decision.testRouter ? { testRouter: true } : {}) });
   } catch (e) { console.error("[episode-log] record failed:", (e as Error).message); }
   return decision;
 }
