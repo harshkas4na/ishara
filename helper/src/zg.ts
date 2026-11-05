@@ -141,7 +141,7 @@ export async function askBrain(question: string, outlineText: string, o: ZgOpts 
       // Measured: with thinking on, 400 tokens all went to reasoning and the answer was empty.
       chat_template_kwargs: { enable_thinking: false },
       messages: [
-        { role: "system", content: "You help a person find the right control on a web page. You are given an outline, one element per line as [id] role \"label\". Answer with one short sentence and then exactly one tag [POINT:id] naming the single best element. If nothing fits, answer [POINT:none]." },
+        { role: "system", content: "You help a person find the right control on a web page. You are given an outline, one element per line as [id] role \"label\". Answer in at most 14 words and then exactly one tag [POINT:id] naming the single best element. If nothing fits, answer [POINT:none]." },
         { role: "user", content: `Page outline:\n${outlineText}\n\nQuestion: ${question}` },
       ],
     }, o.baseUrl ?? DEFAULT_BASE, o.timeoutMs ?? BRAIN_TIMEOUT_MS);

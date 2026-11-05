@@ -42,6 +42,17 @@
     } finally { busy = false; }
   }
 
+  // Live mic level while the key is held: a row of blocks that grows with your voice. Silence stays empty,
+  // which is how you can tell the mic is not hearing you before you let go.
+  chrome.runtime.onMessage.addListener((m) => {
+    if (m.type !== "level" || !recording) return;
+    const n = Math.min(10, Math.round(Math.sqrt(m.rms) * 28));
+    NS.overlay.say("Listening… release to send\n" + "▮".repeat(n) + "▯".repeat(10 - n));
+  });
+
+  // Whisper turns noise into stock phrases. If that is all we got, say so instead of asking 0G about it.
+  const NOISE = /^(you|thank you|thanks|thanks for watching|bye|okay|ok|the|uh|um|hmm|\.+)\W*$/i;
+
   async function startTalking() {
     if (recording || busy) return;
     recording = true;
@@ -62,6 +73,7 @@
     if (t.error) return showError(t.error);
     const text = (t.data?.text || "").trim();
     if (!text) return showError("I heard nothing. Try again.");
+    if (text.length < 3 || NOISE.test(text)) return showError(`I heard “${text}”, which is probably noise. Try again.`);
     ask(text, compiled);
   }
 

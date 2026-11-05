@@ -51,11 +51,13 @@ type Proof = {
 
 ## Gate input (pure function in `helper/src/gate.ts`)
 ```ts
-type BrainResult = { ok: true; targetId: string | null; requestId?: string; ms: number } | { ok: false; cause: "timeout" | "unavailable" | "offline" };
-type LayaResult  = { ok: true; choice: string; p: number; requestId?: string; ms: number } | { ok: false; cause: "timeout" | "unavailable" | "offline" };
-function gate(brain: BrainResult, laya: LayaResult, shortlist: string[]): GateDecision;
+type BrainResult  = { ok: true; targetId: string | null; sentence?: string; requestId?: string; ms: number } | { ok: false; cause: "timeout" | "unavailable" | "offline" };
+type VerifyResult = { ok: true; p: number; requestId?: string; ms: number } | { ok: false; cause: "timeout" | "unavailable" | "offline" };
+function gate(brain: BrainResult, verify: VerifyResult | null): GateDecision;
 ```
-`choice` is a shortlist id or `"none"`.
+0GM-1.0 proposes one element. laya then answers a yes/no ("is this control what the user asked for?") and `p` is
+its P(yes). `verify` is `null` when 0GM named nothing, so no check was made. The outcome `ask_which` stays in the type
+for the extension but the current gate never produces it.
 
 ## Rules for everyone
 - No fake or mock decisions in the product path. A test double may exist only under `test/`.

@@ -21,7 +21,7 @@
   .ptr::after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:#6d28d9}
   .ring{position:fixed;border:3px solid #d97706;border-radius:6px;box-shadow:0 0 0 3px rgba(255,255,255,.8);display:none}
   .bub{position:fixed;max-width:320px;padding:8px 12px;background:#1f1147;color:#fff;border-radius:10px;
-       font-size:14px;line-height:1.35;display:none;box-shadow:0 4px 18px rgba(0,0,0,.3)}
+       font-size:14px;line-height:1.35;display:none;white-space:pre-line;box-shadow:0 4px 18px rgba(0,0,0,.3)}
   .bub.stop{background:#7f1d1d}.bub small{display:block;opacity:.75;margin-top:4px}
   .tb{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);pointer-events:auto;display:none;
       background:#fff;border:2px solid #6d28d9;border-radius:10px;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.3)}

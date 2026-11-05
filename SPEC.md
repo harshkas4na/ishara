@@ -7,12 +7,17 @@ for every decision, and that refuses instead of guessing.
 1. Hold the key, speak. Local Whisper turns audio into text. The page is compiled into a text outline
    (ids, labels, positions). Nothing but those two texts leaves the laptop.
 2. The local helper sends the question and outline to the 0G Private Computer Router with the trust-mode
-   header `private`. Two calls run at the same time:
-   - 0GM-1.0 reads the whole outline and answers `[POINT:id]`. Thinking is off.
-   - laya chooses among 3 shortlisted ids (local keyword match) or `none`.
-3. The gate decides: point only if laya's choice is not `none`, its probability is at least 0.45, and 0GM
-   named the same id. Disagree -> ask which. `none` or low probability -> ask. Timeout (laya 4 s, 0GM 8 s),
-   503 or offline -> safe-stop, never a guess.
+   header `private`, in two steps:
+   - 0GM-1.0 reads the whole outline and answers one short sentence plus `[POINT:id]`. Thinking is off and the
+     reply is read as it streams.
+   - laya (a separate sealed decision model) is then asked a yes/no about that one element: "is this control
+     what the user asked for?"
+3. The gate decides: point only if 0GM named an element and laya's P(yes) is at least 0.4. Otherwise ask the
+   user. Timeout (laya 4 s, 0GM 8 s), 503 or offline from 0GM -> safe-stop, never a guess. If laya alone is
+   unreachable, ask: never point on 0GM alone.
+   Why not "both choose, and agree": measured on the mock verify page, laya choosing among shortlisted elements
+   vetoed 4 of 12 correct answers when the other candidates were plausible. The yes/no check got 11 of 12 correct
+   with 0 wrong points and 6 of 6 vague questions asked (`scripts/eval.ts`).
 4. After each answer the provider signature is fetched, the signer is recovered and compared to the
    on-chain signer, and a log entry is written with the request id.
 5. At session end the log is encrypted and uploaded to 0G Storage; its root goes to a small contract on

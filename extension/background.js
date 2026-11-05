@@ -30,16 +30,26 @@ async function ensureOffscreen() {
 
 const json = (body) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
-async function handle(msg) {
+// The tab that is recording, so live mic levels go back to it.
+let recTab = null;
+
+async function handle(msg, sender) {
   switch (msg.type) {
+    case "level":
+      if (recTab != null) chrome.tabs.sendMessage(recTab, { type: "level", rms: msg.rms }).catch(() => {});
+      return {};
     case "rec-start": {
+      recTab = sender?.tab?.id ?? null;
       await ensureOffscreen();
       return chrome.runtime.sendMessage({ target: "offscreen", cmd: "start" });
     }
     case "rec-stop": {
       const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "stop" });
       if (!r || r.error) return { error: r?.error || "recorder gave no answer" };
+      recTab = null;
       if (r.samples < 4000) return { error: "too short, hold the key while you speak" }; // under 0.25 s
+      // Silence goes to Whisper as noise and comes back as a made-up word ("you"); refuse it here instead.
+      if (r.maxRms < 0.006) return { error: "I could not hear any sound from the microphone" };
       const wav = fromBase64(r.wavBase64);
       return helper("/transcribe", {
         method: "POST",
@@ -55,9 +65,9 @@ async function handle(msg) {
   return { error: "unknown message " + msg.type };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+chrome.runtime.onMessage.addListener((msg, sender, send) => {
   if (msg.target === "offscreen") return; // addressed to the offscreen document, not us
-  handle(msg).then(send);
+  handle(msg, sender).then(send);
   return true; // async response
 });
 
