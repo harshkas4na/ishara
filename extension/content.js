@@ -48,6 +48,7 @@
 
   async function ask(question, compiled) {
     if (busy) return;
+    send({ type: "speech-stop" }); // a typed question also silences the previous spoken answer
     busy = true; inspecting = false; // any answer replaces the inspector boxes
     if (stopWatch) stopWatch(); // a new question ends the previous pointer's accept-watch
     try {
@@ -116,6 +117,7 @@
   async function startTalking() {
     if (recording || busy || transcribing) return;
     recording = true;
+    send({ type: "speech-stop" }); // stop the spoken answer before the mic opens, so it can never be recorded
     NS.overlay.clear();
     // Compile now, in parallel with the speech, so the outline is ready the moment we have text.
     pending = NS.compileOutlineAsync(); // a promise: frames get ~250 ms to answer while the user speaks
@@ -156,6 +158,9 @@
     } else if (e.altKey && e.shiftKey && e.code === "Space") {
       e.preventDefault(); e.stopPropagation();
       NS.overlay.openTypeBox((q) => ask(q));
+    } else if (e.altKey && e.shiftKey && e.code === "KeyM") { // mute / unmute the spoken answers
+      e.preventDefault();
+      send({ type: "speech-toggle" }).then((r) => NS.overlay.say(r.data ? (r.data.muted ? "Voice muted" : "Voice on") : "Voice: " + (r.error || "unavailable")));
     } else if (e.altKey && e.shiftKey && e.code === "KeyO") {
       e.preventDefault();
       if (inspecting) { inspecting = false; NS.overlay.clear(); }
@@ -172,6 +177,7 @@
         },
       });
     } else if (e.key === "Escape") NS.overlay.clear();
+        speech: (toggle) => send({ type: toggle ? "speech-toggle" : "speech-status" }), // debug panel Mute button
   }
   // isTrusted: a page can dispatch a fake Alt+Space; it must never start the microphone or spend 0G calls.
   addEventListener("keydown", (e) => { if (e.isTrusted) onKeyDown(e); }, true);

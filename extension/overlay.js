@@ -352,6 +352,14 @@
     if (!ids.brain && !ids.laya) el("div", "res", "No answer, so no receipt for this question.");
     else el("div", "res id", "request " + (ids.brain || ids.laya).slice(0, 8) + "…");
 
+    // Spoken answers: a Mute/Unmute button (same flag as Option+Shift+M).
+    if (NS._dbgHandlers.speech) {
+      const mb = el("button", "", "Voice…", btns);
+      const show = (r) => { mb.textContent = !r.data ? "Voice unavailable" : r.data.muted ? "Unmute voice" : r.data.ready ? "Mute voice" : "Voice off (" + (r.data.reason || "not ready") + ")"; };
+      NS._dbgHandlers.speech(false).then(show);
+      mb.onclick = () => NS._dbgHandlers.speech(true).then(() => NS._dbgHandlers.speech(false)).then(show);
+    }
+
     // 4. End the session: encrypt the log, store it on 0G, record its root on the chain.
     el("div", "sec", "Save this session", panel);
     const btns2 = el("div", "btns");
