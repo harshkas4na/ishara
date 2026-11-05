@@ -4,6 +4,7 @@
 (() => {
   const NS = (globalThis.Ishara = globalThis.Ishara || {});
   let host, root, layer, bubble, pointer, rings = [], follow = null, typeBox, panel, ink = null, arriveTimer = 0, pollTimer = 0;
+  let ans, convoPanel, dimInks = [], classicOn = false; // tutor answer bubble, conversation panel, dimmed markers of earlier pointers
 
   function build() {
     if (host) return;
@@ -43,6 +44,46 @@
        font-size:14px;line-height:1.35;display:none;white-space:pre-line;box-shadow:0 4px 18px rgba(0,0,0,.3)}
   .bub.stop{background:#7f1d1d}.bub small{display:block;opacity:.75;margin-top:4px}
   .bub a.rc{display:block;margin-top:6px;font-size:12px;color:#c4b5fd;pointer-events:auto;text-decoration:underline;cursor:pointer}
+  .ink.dim{opacity:.32}
+  /* Tutor answer bubble. pointer-events:none like the rest of the layer; only buttons, links and an overflowing body take clicks. */
+  .ans{position:fixed;width:max-content;max-width:min(380px,calc(100vw - 16px));padding:10px 14px 10px;background:#1f1147;color:#fff;border-radius:12px;
+       font-size:14.5px;line-height:1.4;display:none;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none}
+  .ans.stop{background:#7f1d1d}
+  .ans .aq{font-size:11.5px;line-height:1.3;color:#b9b0e0;margin-bottom:5px;overflow-wrap:anywhere}
+  .ans .ah{display:none;align-items:center;gap:8px;margin-bottom:6px}
+  .ans .chip{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:99px;background:#f59e0b;color:#1c1100}
+  .ans .dots{display:flex;gap:5px}.ans .dots i{width:7px;height:7px;border-radius:50%;background:#5b4a9a}
+  .ans .dots i.on{background:#f59e0b}.ans .dots i.past{background:#c4b5fd}
+  .ans .ab{white-space:pre-wrap;overflow-wrap:anywhere;max-height:min(42vh,320px);overflow-y:auto;scrollbar-width:thin}
+  .ans .ab.scroll{pointer-events:auto}
+  .ans .ab .s{animation:fi .35s ease-out}
+  @keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+  .ans .ph{color:#b9b0e0}
+  .ans .ac{display:flex;flex-direction:column;gap:4px;margin-top:6px;align-items:flex-start}
+  .ans .ac:empty,.ans .af:empty{display:none}
+  .ans .mut{display:inline-block;font-size:12px;line-height:1.3;padding:3px 9px;border-radius:8px;background:rgba(255,255,255,.12);color:#cfc8ee}
+  .ans .mut.nudge{background:rgba(245,158,11,.2);color:#fcd34d}
+  .ans .aw{display:none;align-items:center;gap:8px;margin-top:9px;pointer-events:none}
+  .ans .aw button{pointer-events:auto;cursor:pointer;font:inherit;font-size:13.5px;font-weight:600;min-height:36px;min-width:64px;padding:6px 16px;border-radius:9px;
+       border:1px solid #6d5bc0;background:#34226f;color:#fff}
+  .ans .aw button:hover:not(:disabled){background:#4a33a0}
+  .ans .aw button.nx{background:#f59e0b;border-color:#f59e0b;color:#1c1100}.ans .aw button.nx:hover:not(:disabled){background:#fbbf24}
+  .ans .aw button:disabled{opacity:.4;cursor:default}
+  .ans .aw .sp{flex:1}
+  .ans .af{margin-top:6px}
+  .ans .af a{font-size:12px;color:#c4b5fd;pointer-events:auto;text-decoration:underline;cursor:pointer}
+  .cv{position:fixed;left:12px;bottom:12px;width:340px;max-height:62vh;overflow:auto;pointer-events:auto;display:none;
+      background:#0f172a;color:#e2e8f0;border-radius:12px;font-size:13px;line-height:1.4;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+  .cv .hd{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px}
+  .cv .hd b{color:#fff;font-size:13px}
+  .cv .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 14px 0;font-size:11.5px;color:#94a3b8}
+  .cv .md{background:#1e3a8a;color:#bfdbfe;font-weight:600;padding:1px 8px;border-radius:99px}
+  .cv .turn{padding:8px 14px;border-bottom:1px solid #1e293b}.cv .turn:last-child{border-bottom:0}
+  .cv .who{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b}
+  .cv .who.i{color:#a78bfa}.cv .tx{white-space:pre-wrap;overflow-wrap:anywhere;color:#e2e8f0}
+  .cv .empty{padding:14px;color:#64748b}.cv a{color:#7dd3fc;cursor:pointer;text-decoration:underline}
+  .cv .foot{padding:8px 14px 12px;border-top:1px solid #1e293b}
+  .cv .tr{margin:8px 14px 0;padding:6px 10px;border-radius:8px;background:#f59e0b;color:#1c1100;font-weight:700;font-size:12px}
   .ol{position:fixed;border:1.5px solid #0ea5e9;background:rgba(14,165,233,.08);display:none;border-radius:3px}
   .ol span{position:absolute;left:-1px;top:-15px;background:#0ea5e9;color:#fff;font:10px ui-monospace,Menlo,monospace;padding:1px 4px;border-radius:3px 3px 0 0}
   .tb{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);pointer-events:auto;display:none;
@@ -54,6 +95,7 @@
   .dbg .hd{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px}
   .dbg .hd b{color:#fff;font-size:13px;letter-spacing:.02em}
   .dbg .verdict{margin:12px 14px 0;padding:12px 14px;border-radius:10px;border:1px solid}
+  .dbg .verdict.explain{background:#0b2545;border-color:#1d4ed8}.dbg .explain .tag{color:#60a5fa}
   .dbg .verdict.point{background:#052e1a;border-color:#15803d}.dbg .verdict.ask{background:#3a2a05;border-color:#b45309}
   .dbg .verdict.stop{background:#3b0d0d;border-color:#b91c1c}.dbg .verdict.err{background:#3b0d0d;border-color:#b91c1c}
   .dbg .tag{font-size:11px;font-weight:700;letter-spacing:.08em}
@@ -73,11 +115,12 @@
   .dbg .res{margin:8px 14px 14px;font-size:12px;color:#cbd5e1}.dbg .res a{color:#7dd3fc}
   .dbg .id{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#94a3b8}
 </style>
-<div class="layer"></div><div class="bub"></div><div class="tb"><input placeholder="Ask where something is, then Enter"><div>Esc to close</div></div><div class="dbg"></div>`;
+<div class="layer"></div><div class="bub"></div><div class="tb"><input placeholder="Ask where something is, then Enter"><div>Esc to close</div></div><div class="dbg"></div><div class="ans"><div class="aq"></div><div class="ah"></div><div class="ab"></div><div class="ac"></div><div class="aw"></div><div class="af"></div></div><div class="cv"></div>`;
     layer = root.querySelector(".layer");
     bubble = root.querySelector(".bub");
     typeBox = root.querySelector(".tb");
     panel = root.querySelector(".dbg");
+    ans = root.querySelector(".ans"); convoPanel = root.querySelector(".cv");
     pointer = document.createElement("div"); pointer.className = "ptr";
     pointer.innerHTML = `<div class="fx"><div class="fy"><i class="rip"></i>
       <svg viewBox="0 0 36 36" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs>
@@ -89,10 +132,13 @@
 
   const raf2 = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-  function clear() {
+  // clearStage: pointer, rings, markers and the classic bubble. clear() (Esc, new voice question) also hides the tutor
+  // answer. point() calls clearStage only, so moving to a new target never wipes the answer being read.
+  function clear() { clearStage(); hideAnswer(); }
+  function clearStage() {
     build();
     follow = null; clearInterval(pollTimer);
-    clearTimeout(arriveTimer); removeInk();
+    clearTimeout(arriveTimer); removeInk(); dimInks.forEach((d) => d.svg.remove()); dimInks = [];
     pointer.className = "ptr"; pointer.style.display = "none";
     rings.forEach((r) => r.remove()); rings = [];
     bubble.style.display = "none";
@@ -151,12 +197,12 @@
     }
     return d;
   }
-  function drawInk(r) {
+  function drawInk(r, el) {
     removeInk();
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg"); svg.setAttribute("class", "ink");
     const path = document.createElementNS(ns, "path"); path.setAttribute("d", inkPath(r)); svg.append(path);
-    layer.append(svg); ink = { svg, path };
+    layer.append(svg); ink = { svg, path, el };
     const len = path.getTotalLength();
     // Draw it stroke by stroke, like a pen, unless the user prefers less motion.
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -165,6 +211,7 @@
     }
   }
   function removeInk() { if (ink) { ink.svg.remove(); ink = null; } }
+  function dimInk() { if (ink && ink.el) { ink.svg.classList.add("dim"); dimInks.push(ink); ink = null; } }
 
   // A comet trail while the cursor glides: sample where the CSS transition has got to and leave a fading dot there.
   function trailFor(ms) {
@@ -186,11 +233,14 @@
 
   // Scroll first, then read the rect, so the pointer lands where the element really is now,
   // not where the outline saw it before the page moved.
-  async function point(el, text, receiptId) {
+  async function point(el, text, receiptId, opts = {}) {
     build();
     // If the cursor was already dancing while 0G thought, glide from where it is instead of from off-screen.
-    const wasThinking = pointer.classList.contains("think") && pointer.style.display === "block";
-    if (wasThinking) { clearTimeout(arriveTimer); removeInk(); rings.forEach((x) => x.remove()); rings = []; } else clear();
+    // opts (tutor): quiet = the caller owns the bubble; keep = a second pointer in one answer (the first marker stays, dimmed);
+    // glide = move on from the current target (next step) instead of flying in again.
+    const wasThinking = pointer.style.display === "block" && (pointer.classList.contains("think") || opts.keep || opts.glide);
+    if (opts.keep) dimInk();
+    if (wasThinking) { clearTimeout(arriveTimer); removeInk(); rings.forEach((x) => x.remove()); rings = []; } else clearStage();
     el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
     await raf2();
     const place = () => {
@@ -198,6 +248,7 @@
       pointer.style.transform = `translate(${r.x + r.w / 2}px,${r.y + r.h / 2}px)`;
       if (ink) ink.path.setAttribute("d", inkPath(r));
       if (bubble.style.display === "block") placeBubble(r);
+      tut.rect = r; placeAnswer(); // the tutor bubble follows its target too
     };
     if (!wasThinking) {
       pointer.style.transition = "none"; pointer.style.transform = `translate(${innerWidth / 2}px,${innerHeight + 40}px)`;
@@ -207,10 +258,10 @@
     pointer.className = "ptr"; pointer.style.transition = "";
     place();
     trailFor(750);
-    say(text, { near: rectOf(el), receipt: receiptId });
+    if (!opts.quiet) say(text, { near: rectOf(el), receipt: receiptId });
     follow = place; // keep tracking if the user scrolls or the layout shifts
     // On landing: ripple, loop the target with the marker, then bob gently while the user reads.
-    arriveTimer = setTimeout(() => { pointer.classList.add("arrive", "bob"); drawInk(rectOf(el)); }, 650);
+    arriveTimer = setTimeout(() => { pointer.classList.add("arrive", "bob"); drawInk(rectOf(el), el); }, 650);
   }
 
   // A control inside an iframe. `entry` is the proxy outline.js put in the map ({frameWindow, childId, iframeEl, ...}).
@@ -263,7 +314,7 @@
     say(`Ishara sees ${outline.elements.length} controls on this page` + (extra.dropped ? ` (${extra.dropped} more did not fit)` : "") + (extra.ms != null ? `, read in ${extra.ms.toFixed(0)} ms` : "") + (extra.reader ? `. Page reader: ${extra.reader}` : "") + `. Option+Shift+O hides this.`);
   }
 
-  const tick = () => { if (follow) follow(); };
+  const tick = () => { if (follow) follow(); dimInks.forEach((d) => { try { d.path.setAttribute("d", inkPath(rectOf(d.el))); } catch { /* element gone */ } }); };
   addEventListener("scroll", tick, true);
   addEventListener("resize", tick);
 
@@ -303,7 +354,7 @@
   function renderDebug() {
     panel.textContent = "";
     const el = (tag, cls, text, parent = panel) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; parent.append(n); return n; };
-    const hd = el("div", "hd"); el("b", "", "Ishara", hd); el("span", "", "Alt+Shift+D hides this", hd);
+    const hd = el("div", "hd"); el("b", "", "Ishara", hd); el("span", "", (classicOn ? "CLASSIC MODE (pointing only)  " : "") + "Alt+Shift+D hides this", hd);
     if (!last) { el("div", "sec", "Nothing asked yet"); return; }
     if (last.decision && last.decision.testRouter) {
       const tb = el("div", "", "TEST ROUTER: not a real 0G answer");
@@ -312,13 +363,14 @@
     const { decision: d, question, error, proposedLabel, targetLabel, outlineMs } = last;
 
     // 1. The verdict, in one look.
-    const kind = error ? "err" : !d ? "err" : d.outcome === "point" ? "point" : d.outcome === "safe_stop" ? "stop" : "ask";
-    const tagText = { point: "POINTED", ask: "ASKED YOU", stop: "REFUSED TO GUESS", err: "PROBLEM" }[kind];
+    const kind = error ? "err" : !d ? "err" : d.outcome === "point" ? "point" : d.outcome === "explain" ? "explain" : d.outcome === "safe_stop" ? "stop" : "ask";
+    const tagText = { point: "POINTED", explain: "EXPLAINED", ask: "ASKED YOU", stop: "REFUSED TO GUESS", err: "PROBLEM" }[kind];
     const v = el("div", "verdict " + kind);
     el("div", "tag", tagText, v);
     el("div", "q", question ? "“" + question + "”" : "", v);
     if (error || !d) el("div", "a", error || "No answer came back.", v);
     else if (d.outcome === "point") el("div", "a", `Pointed at “${targetLabel || d.targetId}”. ${d.say}`, v);
+    else if (d.outcome === "explain") el("div", "a", "Explained by 0GM-1.0, not independently checked. " + (d.say || ""), v);
     else if (d.outcome === "safe_stop") el("div", "a", "0G could not answer, so nothing moved. This is on purpose.", v);
     else el("div", "a", "I was not sure enough to point, so I asked.", v);
     if (error || !d) return;
@@ -333,6 +385,17 @@
       el("span", "ms", ms, r); void bb;
     };
     row("ok", "I heard you", outlineMs != null ? `page read in ${outlineMs.toFixed(0)} ms` : "", "");
+    if (last.tutor) { // /tutor turn: what streamed, and what laya said about each pointer
+      const t = last.tutor;
+      row("ok", `0GM answered (${t.mode || "explain"}), ${t.sentences} sentence${t.sentences === 1 ? "" : "s"}`, "sealed model on 0G", secs(d.ms?.brain));
+      if (!t.points.length) row("na", "No pointer requested", "explained by 0GM-1.0, not independently checked", "");
+      for (const p of t.points) {
+        const ok = p.status === "confirmed";
+        row(ok ? "ok" : "no", ok ? `laya is ${Math.round((p.layaP ?? 0) * 100)}% sure about “${p.label}”` : p.status === "suppressed" ? "laya could not be reached, so no pointer" : `laya did not confirm “${p.label}”`, p.reason || "", "");
+      }
+      el("div", "total", "Total " + secs(d.ms?.total) + (t.firstSayMs != null ? ", first sentence " + secs(t.firstSayMs) : ""), panel);
+      return tail();
+    }
     if (d.proposedId) row("ok", `0GM proposed “${proposedLabel || d.proposedId}”`, "sealed model on 0G read the page", secs(d.ms?.brain));
     else if (d.safeStopCause) row("no", "0GM did not answer", "cause: " + d.safeStopCause, "");
     else row("no", "0GM found nothing that fits", "", secs(d.ms?.brain));
@@ -342,8 +405,10 @@
     } else row("na", "laya was not asked", d.proposedId ? "could not be reached" : "nothing to check", "");
     row(d.outcome === "point" ? "ok" : d.outcome === "safe_stop" ? "no" : "na", d.outcome === "point" ? "Pointer moved" : d.outcome === "safe_stop" ? "Stopped instead of guessing" : "Asked you instead of pointing", "", "");
     el("div", "total", "Total " + secs(d.ms?.total), panel);
+    return tail();
 
-    // 3. Receipts.
+    // 3. Receipts onwards, shared by the classic and the tutor verdicts (a hoisted function: it can sit after the return).
+    function tail() {
     el("div", "sec", "Proof this came from 0G", panel);
     const btns = el("div", "btns");
     const ids = d.requestIds || {};
@@ -378,7 +443,238 @@
       else if (data.root) line(false, "Contract write failed");
       if (data.root) { const a = el("a", "", "Open the replay", res); a.href = `${HELPER}/app/replay.html?session=${encodeURIComponent(NS._dbgHandlers.sessionId)}`; a.target = "_blank"; }
     };
+    }
   }
 
-  NS.overlay = { clear, say, point, pointAtFrameElement, ringBoth, thinking, openTypeBox, setDebug, toggleDebug, showOutline };
+  // ---- Tutor: streaming answer bubble, steps, conversation panel (events from /tutor, docs/TUTOR-INTERFACE.md) ----
+  // Every string here came from a model reading an untrusted page, so it only ever goes in through textContent.
+  const WHY = { // same wording the classic refusal uses
+    unavailable: "0G's private model is not reachable right now.",
+    timeout: "0G took too long to answer.",
+    offline: "There is no connection to 0G.",
+  };
+  const CHIP = {
+    rejected: "not sure which control, so I won't point",
+    suppressed: "I can explain it, but I can't confirm which control",
+  };
+  // rect: where the pointed target is now (null = none, bubble sits top-centre). side: below/above is decided once per
+  // target so the bubble does not flip while it grows.
+  const tut = { rect: null, side: null, mode: null, guide: false, walkActive: false, step: null, buffered: [], sentences: [],
+    chips: new Set(), pointed: 0, pointedThisStep: false, points: [], pq: Promise.resolve(), lastPointAt: 0, t0: 0, firstSayMs: null,
+    entry: null, handlers: {}, resolveBlock: null };
+  const convo = []; // last 10 turns, text only, this tab's memory only; cleared on navigation
+  let convoPath = location.pathname, convoShown = false, cvIds = null;
+
+  const node = (tag, cls, text, parent) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; if (parent) parent.append(n); return n; };
+  const part = (c) => ans.querySelector("." + c);
+
+  function hideAnswer() { if (ans) { ans.style.display = "none"; ans.classList.remove("stop"); } tut.rect = null; tut.side = null; }
+
+  function placeAnswer() {
+    if (!ans || ans.style.display !== "block") return;
+    const body = part("ab");
+    body.classList.toggle("scroll", body.scrollHeight > body.clientHeight + 1); // wheel-scrollable only when it overflows
+    const bw = ans.offsetWidth, bh = ans.offsetHeight, r = tut.rect;
+    let x = innerWidth / 2 - bw / 2, y = 24;
+    if (r) {
+      x = Math.min(Math.max(8, r.x), Math.max(8, innerWidth - bw - 8));
+      const below = r.y + r.h + 34;
+      if (!tut.side) tut.side = below + Math.min(bh + 120, 260) < innerHeight ? "below" : "above";
+      y = tut.side === "below" ? below : r.y - bh - 34;
+      y = Math.min(Math.max(8, y), Math.max(8, innerHeight - bh - 8));
+    }
+    ans.style.left = x + "px"; ans.style.top = y + "px";
+  }
+
+  const isWalkWord = (q) => /^\s*(ok(ay)?[, ]+)?(next( step)?|back|previous|go back|repeat|again|say that again|stop|done|finished|where am i|agla|aage|peeche|dobara|ruko)\s*[.!?]*\s*$/i.test(q);
+
+  // A new turn. keepBody: a walk command (next/back/repeat) leaves the step text up until the new step arrives.
+  function tutorBegin({ mode, question, voice } = {}) {
+    build();
+    const walkCmd = tut.walkActive && isWalkWord(question || "");
+    const newTopic = !walkCmd && mode && mode !== "follow-up";
+    if (newTopic && tut.walkActive) endWalk();
+    if (!walkCmd) { tut.step = null; if (!tut.walkActive) part("aw").style.display = part("ah").style.display = "none"; }
+    tut.mode = mode || tut.mode; tut.guide = tut.mode === "guide" || tut.walkActive;
+    tut.buffered = []; tut.sentences = []; tut.chips.clear(); tut.points = []; tut.pointed = 0; tut.pointedThisStep = false;
+    tut.pq = Promise.resolve(); tut.lastPointAt = 0; tut.t0 = performance.now(); tut.firstSayMs = null;
+    if (!walkCmd) { part("ab").textContent = ""; tut.rect = null; tut.side = null; }
+    part("ac").textContent = ""; part("af").textContent = "";
+    part("aq").textContent = question ? (voice ? "I heard: “" + question + "”" : "You: " + question) : "";
+    part("aq").style.display = question && !walkCmd ? "block" : "none";
+    if (!walkCmd) node("span", "ph", "…", part("ab"));
+    ans.classList.remove("stop");
+    ans.style.display = "block"; bubble.style.display = "none"; // the "I heard…thinking" bubble hands over to this one
+    // Conversation record. A navigation to another path starts a fresh conversation (the helper does the same).
+    if (convoPath !== location.pathname) { convo.length = 0; convoPath = location.pathname; }
+    tut.entry = { q: question || "", a: "", mode: tut.mode, ids: null, ms: {}, testRouter: false, outcome: null };
+    convo.push(tut.entry); while (convo.length > 10) convo.shift();
+    placeAnswer(); renderConvo();
+  }
+
+  function tutorSay(seq, text) {
+    if (!ans || typeof text !== "string" || !text) return;
+    const first = tut.sentences.length === 0;
+    tut.sentences.push(text);
+    if (first) { tut.firstSayMs = Math.round(performance.now() - tut.t0); if (pointer.classList.contains("think")) { pointer.className = "ptr"; pointer.style.display = "none"; } }
+    tut.entry && (tut.entry.a = tut.sentences.join(" "));
+    if (tut.guide) { tut.buffered.push(text); renderConvo(); return; } // a guide step shows as one piece when its `step` arrives
+    const body = part("ab");
+    const ph = body.querySelector(".ph"); if (ph) ph.remove();
+    node("span", "s", text + " ", body);
+    body.scrollTop = body.scrollHeight;
+    placeAnswer(); renderConvo();
+  }
+
+  // A pointer after the laya check. Only `confirmed` moves anything.
+  function tutorPoint(ev, el) {
+    const label = ev.label || ev.targetId;
+    tut.points.push({ status: ev.status, layaP: ev.layaP, reason: ev.reason, targetId: ev.targetId, label });
+    if (ev.status !== "confirmed") { tutorChip(CHIP[ev.status] || CHIP.rejected); return Promise.resolve(); }
+    if (!el) { if (ev.kind !== "block") tutorChip("that control moved, so I won't point"); return Promise.resolve(); } // an unresolvable block: text only, no ring
+    const second = tut.pointed > 0 && !tut.guide;
+    tut.pointed++; tut.pointedThisStep = true;
+    // Two pointers in one answer: the second waits until 1.5 s after the first, so both can be seen. The first stays, dimmed.
+    tut.pq = tut.pq.then(async () => {
+      if (second) { const wait = 1500 - (Date.now() - tut.lastPointAt); if (wait > 0) await new Promise((r) => setTimeout(r, wait)); }
+      tut.lastPointAt = Date.now();
+      if (el.frame) await pointAtFrameElement(el, "", null, { quiet: true, keep: second, glide: tut.guide });
+      else await point(el, "", null, { quiet: true, keep: second, glide: tut.guide });
+    }).catch(() => {});
+    return tut.pq;
+  }
+
+  function tutorChip(text, cls) {
+    if (!ans || tut.chips.has(text)) return;
+    tut.chips.add(text);
+    node("span", "mut" + (cls ? " " + cls : ""), text, part("ac"));
+    placeAnswer();
+  }
+
+  function setWalkUI() {
+    const { n, m } = tut.step || {};
+    const hd = part("ah"), aw = part("aw");
+    hd.textContent = ""; aw.textContent = "";
+    if (!n) { hd.style.display = aw.style.display = "none"; return; }
+    hd.style.display = "flex"; aw.style.display = "flex";
+    node("span", "chip", `Step ${n} of ${m}`, hd);
+    const dots = node("span", "dots", null, hd);
+    for (let i = 1; i <= m; i++) node("i", i === n ? "on" : i < n ? "past" : "", null, dots);
+    const btn = (label, cmd, cls) => { const b = node("button", cls || "", label, aw); b.type = "button"; b.onclick = () => { if (tut.handlers.walk) tut.handlers.walk(cmd); }; return b; };
+    const back = btn("Back", "back"); back.disabled = n <= 1;
+    btn(n >= m ? "Done" : "Next", "next", "nx");
+    node("span", "sp", null, aw);
+    btn("Stop", "stop");
+  }
+
+  function tutorStep(ev) {
+    if (!ans || !ev || !ev.n) return;
+    tut.walkActive = true; tut.guide = true; tut.step = { n: ev.n, m: ev.m || ev.n };
+    const text = (typeof ev.say === "string" && ev.say) || tut.buffered.join(" ");
+    tut.buffered = [];
+    const body = part("ab"); body.textContent = "";
+    node("span", "s", text, body); body.scrollTop = 0;
+    part("ac").textContent = ""; tut.chips.clear(); // nudges and chips belonged to the previous step
+    if (!tut.pointedThisStep) clearPointersOnly(); // this step has nothing to point at (or laya said no): do not leave the old ring up
+    tut.pointedThisStep = false;
+    setWalkUI(); placeAnswer(); renderConvo();
+  }
+
+  // Hide pointer and markers but leave the bubble.
+  function clearPointersOnly() {
+    follow = null; clearInterval(pollTimer); clearTimeout(arriveTimer); removeInk();
+    dimInks.forEach((d) => d.svg.remove()); dimInks = [];
+    pointer.className = "ptr"; pointer.style.display = "none"; rings.forEach((r) => r.remove()); rings = [];
+    tut.rect = null; tut.side = null; tut.pointed = 0;
+  }
+
+  function endWalk() { tut.walkActive = false; tut.step = null; tut.guide = false; if (ans) { part("ah").style.display = part("aw").style.display = "none"; } }
+
+  function tutorNudge() { if (tut.walkActive && ans && ans.style.display === "block") tutorChip("Done? Say next, or press Next", "nudge"); }
+
+  function tutorDone(ev, question) {
+    if (!ans) return;
+    if (tut.buffered.length) { // guide sentences that never got a step event
+      const body = part("ab"); body.textContent = ""; node("span", "s", tut.buffered.join(" "), body); tut.buffered = [];
+    }
+    const body = part("ab");
+    const ph = body.querySelector(".ph"); if (ph) ph.remove();
+    if (ev.outcome === "cutoff") node("span", "mut", "(cut off, ask again)", body);
+    if (ev.testRouter) tutorChip("test router: not a real 0G answer");
+    const ids = ev.requestIds || {};
+    const af = part("af"); af.textContent = "";
+    if (ids.brain) {
+      const a = node("a", "rc", "How do I know? ↗", af);
+      a.href = `http://127.0.0.1:7777/app/proof.html?id=${encodeURIComponent(ids.brain)}`; a.target = "_blank"; a.rel = "noopener";
+    }
+    if (tut.entry) Object.assign(tut.entry, { ids, ms: { ...(ev.ms || {}), firstSay: tut.firstSayMs }, testRouter: !!ev.testRouter, outcome: ev.outcome, mode: ev.mode || tut.entry.mode, a: tut.sentences.join(" ") });
+    if (ev.mode && ev.mode !== "follow-up") tut.mode = ev.mode;
+    placeAnswer(); renderConvo();
+    // The debug panel (Option+Shift+D) is fed from the same events.
+    const conf = tut.points.find((p) => p.status === "confirmed");
+    const pts = tut.points;
+    setDebug({
+      question, tutor: { mode: ev.mode, points: pts, firstSayMs: tut.firstSayMs, sentences: tut.sentences.length },
+      outlineMs: tut.outlineMs, targetLabel: conf && conf.label,
+      decision: { outcome: conf ? "point" : "explain", targetId: conf && conf.targetId, layaP: (conf || pts[0] || {}).layaP, say: tut.sentences.join(" "),
+        requestIds: ids, ms: { total: (ev.ms || {}).total, brain: (ev.ms || {}).firstToken }, testRouter: !!ev.testRouter },
+    });
+  }
+
+  function tutorRefused(ev, question) {
+    build();
+    if (ans.style.display !== "block") tutorBegin({ mode: "explain", question });
+    clearPointersOnly(); hideWalkOnly();
+    ans.classList.add("stop");
+    part("ab").textContent = ""; const b = part("ab");
+    node("span", "s", "I can't answer right now. " + (WHY[ev.cause] || ""), b);
+    part("ac").textContent = ""; tut.chips.clear();
+    if (tut.entry) { tut.entry.a = "(could not answer: " + (ev.cause || "unavailable") + ")"; tut.entry.outcome = "refused"; }
+    placeAnswer(); renderConvo();
+    setDebug({ question, decision: { outcome: "safe_stop", safeStopCause: ev.cause, requestIds: {}, ms: {} } });
+  }
+  function hideWalkOnly() { part("ah").style.display = part("aw").style.display = "none"; }
+
+  // ---- conversation panel (Option+Shift+C) ----
+  function renderConvo() {
+    if (!convoPanel || !convoShown) return;
+    convoPanel.textContent = "";
+    const hd = node("div", "hd", null, convoPanel); node("b", "", "Conversation", hd); node("span", "", (classicOn ? "CLASSIC MODE  " : "") + "Alt+Shift+C hides this", hd);
+    const last = convo[convo.length - 1];
+    if (last && last.testRouter) node("div", "tr", "TEST ROUTER: not a real 0G answer", convoPanel);
+    if (last) {
+      const meta = node("div", "meta", null, convoPanel);
+      if (last.mode) node("span", "md", last.mode, meta);
+      const t = last.ms || {};
+      const s = (ms) => (ms / 1000).toFixed(1) + " s";
+      if (t.firstSay != null) node("span", "", "first sentence " + s(t.firstSay), meta);
+      if (t.total != null) node("span", "", "total " + s(t.total), meta);
+    }
+    if (!convo.length) node("div", "empty", "Nothing asked yet on this page.", convoPanel);
+    for (const c of convo) {
+      const turn = node("div", "turn", null, convoPanel);
+      node("div", "who", "You", turn); node("div", "tx", c.q, turn);
+      node("div", "who i", "Ishara", turn); node("div", "tx", c.a || "…", turn);
+    }
+    const id = last && last.ids && last.ids.brain;
+    if (id) {
+      const foot = node("div", "foot", null, convoPanel);
+      const a = node("a", "", "How do I know?", foot); a.href = `http://127.0.0.1:7777/app/proof.html?id=${encodeURIComponent(id)}`; a.target = "_blank"; a.rel = "noopener";
+    }
+    convoPanel.scrollTop = convoPanel.scrollHeight;
+  }
+  function toggleConvo() { build(); convoShown = !convoShown; convoPanel.style.display = convoShown ? "block" : "none"; renderConvo(); }
+
+  const tutor = {
+    begin: tutorBegin, say: tutorSay, point: tutorPoint, step: tutorStep, done: tutorDone, refused: tutorRefused, nudge: tutorNudge,
+    toggleConvo, endWalk, isWalkWord, hide: hideAnswer, clearPointers: clearPointersOnly,
+    setClassic: (v) => { classicOn = !!v; if (panel && panel.style.display === "block") renderDebug(); renderConvo(); },
+    walkActive: () => tut.walkActive,
+    setHandlers: (h) => Object.assign(tut.handlers, h),
+    setOutlineMs: (ms) => { tut.outlineMs = ms; },
+    // test hooks for test-pages/tutor-preview.html
+    _state: () => ({ sentences: tut.sentences.slice(), points: tut.points.slice(), step: tut.step, walkActive: tut.walkActive, convo: convo.length }),
+  };
+
+  NS.overlay = { tutor, clear, say, point, pointAtFrameElement, ringBoth, thinking, openTypeBox, setDebug, toggleDebug, showOutline };
 })();

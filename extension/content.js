@@ -11,7 +11,7 @@
   // them to the top frame through the service worker. Not by postMessage: any script in any frame (an ad) could post
   // the same message and switch the microphone on. And only real key presses (isTrusted), never script-made events.
   if (window !== window.top) {
-    const CHORD = (e) => !e.ctrlKey && !e.metaKey && e.altKey && (e.code === "Space" || (e.shiftKey && (e.code === "KeyO" || e.code === "KeyD")));
+    const CHORD = (e) => !e.ctrlKey && !e.metaKey && e.altKey && (e.code === "Space" || (e.shiftKey && (e.code === "KeyO" || e.code === "KeyD" || e.code === "KeyC" || e.code === "KeyP" || e.code === "KeyM")));
     const up = (m) => { try { chrome.runtime.sendMessage({ type: "chord", d: m }).catch(() => {}); } catch { /* extension reloaded */ } };
     addEventListener("keydown", (e) => {
       if (!e.isTrusted) return;
@@ -46,7 +46,110 @@
     NS.overlay.setDebug({ question, error: text });
   }
 
-  async function ask(question, compiled) {
+  // ---- Tutor ask flow (docs/TUTOR-INTERFACE.md). The classic /decide flow below stays untouched as the fallback. ----
+  // classic: forced from Option+Shift+P (stored, so it survives reloads) for a pointing-only demo; also used automatically
+  // when the helper has no /tutor route.
+  let classic = false, turn = 0, port = null, streaming = false, last = null; // last: {outline, map} of the latest ask, for walk-step pointers
+  try { chrome.storage.local.get("classic", (r) => { classic = !!(r && r.classic); NS.overlay.tutor.setClassic(classic); }); } catch { /* extension reloaded */ }
+
+  function closePort() { if (port) { try { port.disconnect(); } catch { /* already gone */ } port = null; } streaming = false; }
+  // A new question or Esc: end the old stream (the worker aborts its fetch; the helper keeps draining 0G for the proof).
+  function cancelTurn() { turn++; closePort(); send({ type: "speech-stop" }); }
+
+  // Block ids come from the page reader. It may hand back an Element or a Range; no resolver (or no match) means we
+  // show the sentence and skip the ring, never guess a position.
+  function blockEl(id) {
+    try {
+      const r = NS.resolveBlock && NS.resolveBlock(id);
+      if (!r) return null;
+      const el = r.nodeType === 1 ? r : r.startContainer ? (r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement) : null;
+      return el && el.isConnected ? el : null;
+    } catch { return null; }
+  }
+
+  async function ask(question, compiled, voice) {
+    if (classic) return askClassic(question, compiled);
+    const my = ++turn; closePort();
+    inspecting = false; if (stopWatch) stopWatch();
+    send({ type: "speech-stop" }); // silence the previous spoken answer at once; the worker also does it when the stream starts
+    const T = NS.overlay.tutor;
+    const walkCmd = T.walkActive() && T.isWalkWord(question);
+    // Thinking state first, as in the classic flow, so a wrong voice transcript is visible before anything else.
+    // A walk command keeps the step on screen instead.
+    if (!walkCmd) NS.overlay.thinking(`I heard: “${question}” …thinking`);
+    let c;
+    try { c = await (compiled || NS.compileOutlineAsync()); } catch (e) { return showError("Ishara could not read this page: " + (e && e.message), question); }
+    if (my !== turn) return;
+    // Richer context from the page reader when it is loaded (blocks, control state); otherwise the outline alone, which
+    // the helper accepts as a PageContext with no blocks. Built from THIS outline so the ids match.
+    let context = null;
+    try { if (NS.compilePageContextAsync) context = await NS.compilePageContextAsync({ outline: c }); } catch { context = null; }
+    if (my !== turn) return;
+    if (!context) context = { source: "browser", url: location.href, title: document.title, viewport: { w: innerWidth, h: innerHeight }, blocks: [], controls: c.outline.elements, errors: [] };
+    last = { outline: c.outline, map: c.map };
+    T.setOutlineMs(c.ms);
+    runStream(my, { type: "ask", body: { sessionId, question, context, mode: "auto" } }, { question, voice, compiled: c, blocks: context.blocks || [] });
+  }
+
+  // Walk buttons (Next / Back / Stop): no 0G call, the helper answers from its walk state.
+  function walkButton(cmd) {
+    if (streaming || !last) return; // a double press must not advance two steps
+    const my = ++turn; closePort();
+    send({ type: "speech-stop" });
+    runStream(my, { type: "walk", sessionId, cmd }, { question: cmd, cmd, blocks: [] });
+  }
+
+  function runStream(my, msg, ctx) {
+    const T = NS.overlay.tutor;
+    const q = ctx.question;
+    let p;
+    try { p = chrome.runtime.connect({ name: "tutor" }); } catch { return showError("Ishara was updated or reloaded. Reload this page to continue.", q); }
+    port = p; streaming = true;
+    let began = false, finished = false, stepSeen = false;
+    const begin = (mode) => { if (!began) { began = true; T.begin({ mode, question: q, voice: ctx.voice }); } };
+    const finish = () => { finished = true; streaming = false; if (port === p) port = null; try { p.disconnect(); } catch { /* done */ } };
+    p.onMessage.addListener((m) => {
+      if (my !== turn || !m) return;
+      const d = m.data || {};
+      switch (m.event) {
+        case "noroute": // the helper has no /tutor: use the old path exactly as before
+          finish(); return askClassic(q, Promise.resolve(ctx.compiled || last && { outline: last.outline, map: last.map, ms: 0 }));
+        case "thinking": return begin(d.mode);
+        case "say": begin(); return T.say(d.seq, d.text);
+        case "point": {
+          begin();
+          const outline = last && last.outline, map = last && last.map;
+          let el = null, label = null;
+          if (d.kind === "block") {
+            const b = (ctx.blocks || []).find((x) => x.id === d.targetId); label = b && b.text ? b.text.slice(0, 40) : d.targetId;
+            if (d.status === "confirmed") el = blockEl(d.targetId);
+          } else {
+            const seen = outline && outline.elements.find((e) => e.id === d.targetId); label = seen && seen.label;
+            if (d.status === "confirmed" && seen && map) el = current(map.get(d.targetId), seen); // the page may have re-rendered since compile
+          }
+          T.point({ ...d, label }, el);
+          if (el && d.kind !== "block" && !el.frame) watchAccepted(el, q); // "accepted" signal for confirmed pointers, as before
+          return;
+        }
+        case "step": begin(); stepSeen = true; return T.step(d);
+        case "done": {
+          begin(); T.done(d, q);
+          // A walk command that produced no new step at the end of the walk (the last "next", or "stop") ends the walk UI.
+          const w = ctx.cmd || (T.isWalkWord(q) ? q.trim().toLowerCase() : "");
+          if (!stepSeen && /^(next|done|stop|finished|ruko|agla|aage)/.test(w)) { T.endWalk(); T.clearPointers(); }
+          return finish();
+        }
+        case "refused": begin(); T.refused(d, q); return finish();
+      }
+    });
+    p.onDisconnect.addListener(() => { // the worker went away (extension reloaded) before the turn ended
+      if (my === turn && !finished) { streaming = false; port = null; showError("Ishara lost its connection. If it was just updated, reload this page.", q); }
+    });
+    p.postMessage(msg);
+  }
+  NS.overlay.tutor.setHandlers({ walk: walkButton });
+
+  async function askClassic(question, compiled) {
     if (busy) return;
     send({ type: "speech-stop" }); // a typed question also silences the previous spoken answer
     busy = true; inspecting = false; // any answer replaces the inspector boxes
@@ -87,7 +190,7 @@
   function watchAccepted(el, question) {
     if (stopWatch) stopWatch();
     const off = () => { clearTimeout(timer); el.removeEventListener("click", hit, true); el.removeEventListener("focusin", hit, true); stopWatch = null; };
-    const hit = () => { off(); send({ type: "feedback", body: { sessionId, question, host: location.hostname, kind: "accepted" } }); };
+    const hit = () => { off(); NS.overlay.tutor.nudge(); send({ type: "feedback", body: { sessionId, question, host: location.hostname, kind: "accepted" } }); };
     const timer = setTimeout(off, 20000);
     el.addEventListener("click", hit, true); el.addEventListener("focusin", hit, true);
     stopWatch = off;
@@ -118,6 +221,7 @@
     if (recording || busy || transcribing) return;
     recording = true;
     send({ type: "speech-stop" }); // stop the spoken answer before the mic opens, so it can never be recorded
+    cancelTurn(); // and end a stream still being read
     NS.overlay.clear();
     // Compile now, in parallel with the speech, so the outline is ready the moment we have text.
     pending = NS.compileOutlineAsync(); // a promise: frames get ~250 ms to answer while the user speaks
@@ -145,7 +249,7 @@
     const text = (t.data?.text || "").trim();
     if (!text) return showError("I heard nothing. Try again.");
     if (text.length < 3 || NOISE.test(text)) return showError(`I heard “${text}”, which is probably noise. Try again.`);
-    ask(text, compiled);
+    ask(text, compiled, true);
   }
 
   async function onKeyDown(e) {
@@ -158,6 +262,12 @@
     } else if (e.altKey && e.shiftKey && e.code === "Space") {
       e.preventDefault(); e.stopPropagation();
       NS.overlay.openTypeBox((q) => ask(q));
+    } else if (e.altKey && e.shiftKey && e.code === "KeyC") { // conversation panel
+      e.preventDefault(); NS.overlay.tutor.toggleConvo();
+    } else if (e.altKey && e.shiftKey && e.code === "KeyP") { // classic = pointing only (the /decide path), for a plain pointer demo
+      e.preventDefault(); classic = !classic; NS.overlay.tutor.setClassic(classic);
+      try { chrome.storage.local.set({ classic }); } catch { /* extension reloaded */ }
+      NS.overlay.say(classic ? "Classic mode: pointing only. Option+Shift+P goes back to the tutor." : "Tutor mode: answers, steps and follow-ups.");
     } else if (e.altKey && e.shiftKey && e.code === "KeyM") { // mute / unmute the spoken answers
       e.preventDefault();
       send({ type: "speech-toggle" }).then((r) => NS.overlay.say(r.data ? (r.data.muted ? "Voice muted" : "Voice on") : "Voice: " + (r.error || "unavailable")));
@@ -184,7 +294,7 @@
           return r;
         },
       });
-    } else if (e.key === "Escape") NS.overlay.clear();
+    } else if (e.key === "Escape") { cancelTurn(); NS.overlay.clear(); }
   }
   // isTrusted: a page can dispatch a fake Alt+Space; it must never start the microphone or spend 0G calls.
   addEventListener("keydown", (e) => { if (e.isTrusted) onKeyDown(e); }, true);

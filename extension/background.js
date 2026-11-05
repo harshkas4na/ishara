@@ -104,7 +104,7 @@ chrome.runtime.onConnect.addListener((port) => {
     stop(); // a new question (or walk command) ends the previous stream; the helper keeps draining 0G for the proof
     speechStop();
     const mine = (ctl = new AbortController());
-    const cap = setTimeout(() => mine.abort(), 90000); // never hold a stream longer than a whole answer plus proof
+    const cap = setTimeout(() => { post({ event: "done", data: { mode: "explain", outcome: "cutoff", requestIds: { laya: [] }, ms: { total: 90000 } } }); mine.abort(); }, 90000); // never hold a stream longer than a whole answer plus proof
     ping = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
     const post = (m) => { try { port.postMessage(m); } catch { stop(); } };
     globalThis.IsharaSSE.relay({
