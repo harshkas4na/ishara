@@ -67,7 +67,8 @@ async function handle(msg, sender) {
 
 chrome.runtime.onMessage.addListener((msg, sender, send) => {
   if (msg.target === "offscreen") return; // addressed to the offscreen document, not us
-  handle(msg, sender).then(send);
+  // A thrown error (offscreen document missing, tab gone) must still answer, or the page waits on a closed port.
+  handle(msg, sender).then(send, (e) => send({ error: String(e?.message ?? e) }));
   return true; // async response
 });
 

@@ -170,7 +170,7 @@
     const v = el("div", "verdict " + kind);
     el("div", "tag", tagText, v);
     el("div", "q", question ? "“" + question + "”" : "", v);
-    if (error) el("div", "a", error, v);
+    if (error || !d) el("div", "a", error || "No answer came back.", v);
     else if (d.outcome === "point") el("div", "a", `Pointed at “${targetLabel || d.targetId}”. ${d.say}`, v);
     else if (d.outcome === "safe_stop") el("div", "a", "0G could not answer, so nothing moved. This is on purpose.", v);
     else el("div", "a", "I was not sure enough to point, so I asked.", v);

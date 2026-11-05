@@ -4,9 +4,15 @@
 import { encodeWav, toBase64 } from "./wav.js";
 
 let session = null;
+let starting = null; // getUserMedia in flight; stop() waits for it so a quick tap cannot leave the mic on
 
-async function start() {
-  if (session) return {};
+function start() {
+  if (session) return Promise.resolve({});
+  if (!starting) starting = open().finally(() => { starting = null; });
+  return starting;
+}
+
+async function open() {
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -38,6 +44,7 @@ async function start() {
 }
 
 async function stop() {
+  if (starting) await starting;
   if (!session) return { error: "not recording" };
   const { stream, ctx, proc, chunks, rate, rec } = session;
   session = null;

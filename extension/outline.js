@@ -49,7 +49,8 @@
     if (aria) return aria;
     const by = el.getAttribute("aria-labelledby");
     if (by) {
-      const t = clean(by.split(/\s+/).map((id) => document.getElementById(id)?.textContent || "").join(" "));
+      const root = el.getRootNode(); // inside a shadow root the ids live there, not in document
+      const t = clean(by.split(/\s+/).map((id) => (root.getElementById?.(id) || document.getElementById(id))?.textContent || "").join(" "));
       if (t) return t;
     }
     const tag = el.tagName.toLowerCase();
@@ -80,10 +81,21 @@
   function notOccluded(el, rect) {
     const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
     if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return true;
-    const hit = document.elementFromPoint(cx, cy);
+    let hit = document.elementFromPoint(cx, cy);
     if (!hit) return true;
+    // Our own panel or type box is not the page: what lies under it is still clickable once it closes.
+    if (hit.closest("[data-ishara-root]")) return true;
+    // Inside open shadow roots the hit is retargeted to the host; walk down to the real element.
+    while (hit.shadowRoot) { const inner = hit.shadowRoot.elementFromPoint(cx, cy); if (!inner || inner === hit) break; hit = inner; }
     return el === hit || el.contains(hit) || hit.contains(el) ||
       (!!hit.closest("label") && el.labels && [...el.labels].includes(hit.closest("label")));
+  }
+
+  // The page's controls, then those inside open shadow roots (web components; closed roots cannot be read).
+  function* candidates(root = document, depth = 0) {
+    yield* root.querySelectorAll(SELECTOR);
+    if (depth > 4) return;
+    for (const host of root.querySelectorAll("*")) if (host.shadowRoot && !host.hasAttribute("data-ishara-root")) yield* candidates(host.shadowRoot, depth + 1);
   }
 
   function compile() {
@@ -91,7 +103,7 @@
     const elements = [];
     const map = new Map();
     const seen = new Set();
-    for (const el of document.querySelectorAll(SELECTOR)) {
+    for (const el of candidates()) {
       if (elements.length >= MAX_ELEMENTS) break;
       if (seen.has(el) || el.closest("[data-ishara-root]")) continue;
       seen.add(el);
