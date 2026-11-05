@@ -49,7 +49,7 @@ export function overlap(question: string, label: string): number {
   let hit = 0;
   for (const t of q) {
     if (l.includes(t) || ls.has(stem(t))) hit += 1;
-    else if ((SYN[t] ?? []).some((s) => l.includes(s) || ls.has(stem(s)))) hit += 0.7;
+    else if ((Object.hasOwn(SYN, t) ? SYN[t] : []).some((s) => l.includes(s) || ls.has(stem(s)))) hit += 0.7;
   }
   return Math.min(1, hit / q.length);
 }
@@ -129,6 +129,7 @@ export function createFakeRouter() {
       res.write("data: [DONE]\n\n");
       res.end();
     } catch (e: any) {
+      console.error("[fake-router] handler error:", e?.message ?? e);
       if (!res.headersSent) json(res, 500, { error: String(e?.message ?? e) }); else res.destroy();
     }
   });

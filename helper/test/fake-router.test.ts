@@ -127,3 +127,7 @@ test("override on: placeholder key is sent, never a real one", async () => {
   try { await askVerify("contract address", els[2]); } finally { globalThis.fetch = realFetch; }
   assert.equal(auth, "Bearer fake-router-key");
 });
+
+test("words that are Object.prototype keys (constructor) do not crash the picker", () => {
+  assert.equal(pick("where do I add constructor arguments", [{ id: "b14", role: "input", label: "Constructor Arguments (ABI-encoded, optional)" }]).el?.id, "b14");
+});
