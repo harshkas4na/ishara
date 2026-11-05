@@ -61,6 +61,17 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { error: "need { sessionId, question, outline{elements,text} }" });
       return send(res, 200, await decide(String(b.sessionId ?? "default"), b.question, b.outline));
     }
+    if (req.method === "GET" && path.startsWith("/app/")) {
+      // The proof sheet and the replay page (web/). Same traversal guard as /test/.
+      const rel = normalize(decodeURIComponent(path.slice(5))).replace(/^(\.\.[/\\])+/, "");
+      const file = join(WEB_DIR, rel || "index.html");
+      if (!file.startsWith(WEB_DIR)) return send(res, 403, { error: "forbidden" });
+      try {
+        const data = await readFile(file);
+        res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
+        return res.end(data);
+      } catch { return send(res, 404, { error: "not found" }); }
+    }
     if (req.method === "GET" && path.startsWith("/test/")) {
       const rel = normalize(decodeURIComponent(path.slice(6))).replace(/^(\.\.[/\\])+/, "");
       const file = join(TEST_DIR, rel || "index.html");
