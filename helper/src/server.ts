@@ -9,6 +9,7 @@ import { episodeLog } from "./episode-log.ts";
 import { startWhisper, transcribe, whisperStatus } from "./whisper.ts";
 
 const TEST_DIR = fileURLToPath(new URL("../../test-pages/", import.meta.url));
+const WEB_DIR = fileURLToPath(new URL("../../web/", import.meta.url));
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png" };
 
 function cors(req: IncomingMessage, res: ServerResponse) {
