@@ -1,0 +1,112 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ishara tutor preview</title>
+<!-- Dev only. Drives the tutor UI (extension/overlay.js) with SCRIPTED events, no network, no 0G, so every visual can be
+     checked. Served by the helper at /test/tutor-preview.html; loads /ext/overlay.js and /ext/sse.js.
+     ?state=explain | point | two | guide | refused | cutoff | suppressed | rejected | chat | long | testrouter
+     The line at the bottom is the in-page SSE parser test. -->
+<style>
+  body{font:16px system-ui;margin:2rem;color:#222;max-width:900px}
+  label{display:block;margin-top:14px}
+  input,select,textarea{font-size:16px;padding:8px;width:420px}
+  #ssetest{position:fixed;left:12px;bottom:4px;font:12px ui-monospace,monospace;color:#555}
+</style>
+<h1>Verify and Publish source code</h1>
+<p id="intro">The optimizer runs setting must match what you used when you compiled the contract. If it does not, the bytecode will not match and verification fails.</p>
+<label>Contract address <input id="addr" placeholder="0x..."></label>
+<label>Compiler version <select id="ver"><option>v0.8.24+commit.e11b9ed9</option><option>v0.8.20</option></select></label>
+<label><input id="opt" type="checkbox" style="width:auto"> Optimization enabled</label>
+<label>Runs <input id="runs" value="200"></label>
+<label>Source code <textarea id="src" rows="5"></textarea></label>
+<p><button id="go" style="padding:10px 18px;font-size:16px;margin-top:10px">Verify and Publish</button></p>
+<div id="ssetest">sse test: …</div>
+<script src="/ext/sse.js"></script>
+<script src="/ext/overlay.js"></script>
+<script>
+  const q = new URLSearchParams(location.search), state = q.get("state") || "explain";
+  const T = Ishara.overlay.tutor, $ = (id) => document.getElementById(id);
+  const ids = { brain: "9d838747-d2f1-47fe-a702-bb30fc23560c", laya: ["99fbafb5-cc9c-48dc-8de4-69fba1a1497c"] };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const doneEv = (o = {}) => ({ mode: "explain", outcome: "answered", requestIds: ids, ms: { firstToken: 1900, total: 4300 }, ...o });
+  const runsAnswer = ["The optimizer runs setting tells the compiler how many times you expect each function to be called.", "A low number makes the contract smaller and cheaper to deploy.", "A high number makes calls cheaper but the code bigger.", "For verification, it must be the same number you compiled with."];
+
+  async function say(list, gap = 650) { for (let i = 0; i < list.length; i++) { T.say(i + 1, list[i]); await sleep(gap); } }
+  // Same shape as content.js: resolve the element, hand it to the overlay.
+  const point = (id, status = "confirmed", extra = {}) => T.point({ seq: 1, targetId: id, kind: "control", status, layaP: 0.77, reason: "ok", label: id, ...extra }, status === "confirmed" ? $(id) : null);
+
+  const steps = [
+    { say: "First, paste the contract address you deployed.", id: "addr" },
+    { say: "Pick the same compiler version you compiled with.", id: "ver" },
+    { say: "Tick optimization if you compiled with it, and set the runs number to match.", id: "opt" },
+    { say: "Paste your source code, then press Verify and Publish.", id: "src" },
+  ];
+  let stepNo = 0;
+  async function showStep(n, withBegin) {
+    stepNo = n;
+    if (withBegin) T.begin({ mode: "guide", question: "walk me through filling this form" });
+    T.say(1, steps[n - 1].say);
+    point(steps[n - 1].id);
+    T.step({ n, m: steps.length, say: steps[n - 1].say, targetId: steps[n - 1].id, kind: "control" });
+    T.done(doneEv({ mode: "guide" }), "walk me through filling this form");
+  }
+  T.setHandlers({ walk: async (cmd) => {
+    if (cmd === "stop") { T.begin({ mode: "guide", question: "stop" }); T.say(1, "Okay, stopped."); T.done(doneEv({ mode: "guide" }), "stop"); T.endWalk(); T.clearPointers(); return; }
+    const n = cmd === "next" ? stepNo + 1 : cmd === "back" ? stepNo - 1 : stepNo;
+    T.begin({ mode: "guide", question: cmd });
+    if (n > steps.length) { T.say(1, "That is all four steps. You are done."); T.done(doneEv({ mode: "guide" }), cmd); T.endWalk(); T.clearPointers(); return; }
+    await sleep(300); showStep(Math.max(1, n), false);
+  } });
+
+  (async () => {
+    const Q = "what does the optimizer runs setting mean";
+    if (state === "explain") {
+      Ishara.overlay.thinking("I heard: “" + Q + "” …thinking"); await sleep(1200);
+      T.begin({ mode: "explain", question: Q, voice: true }); await say(runsAnswer); T.done(doneEv(), Q);
+    } else if (state === "point") {
+      T.begin({ mode: "point", question: "where do I put the contract address" });
+      T.say(1, "Put the address in the first field."); point("addr"); T.done(doneEv({ mode: "point" }), "where");
+    } else if (state === "two") {
+      T.begin({ mode: "explain", question: "how do I set the optimizer" });
+      T.say(1, "First tick the optimization box."); point("opt"); await sleep(900);
+      T.say(2, "Then set the runs number to match your compile."); point("runs"); await sleep(600);
+      T.done(doneEv(), "how");
+    } else if (state === "guide") {
+      T.begin({ mode: "guide", question: "walk me through filling this form" }); await sleep(500); await showStep(1, false);
+      if (q.get("step")) { for (let i = 2; i <= +q.get("step"); i++) { await sleep(300); await showStep(i, false); } }
+    } else if (state === "refused") {
+      T.begin({ mode: "explain", question: Q }); T.refused({ cause: "timeout", say: "" }, Q);
+    } else if (state === "cutoff") {
+      T.begin({ mode: "explain", question: Q }); await say(runsAnswer.slice(0, 2), 300); T.done(doneEv({ outcome: "cutoff" }), Q);
+    } else if (state === "suppressed") {
+      T.begin({ mode: "point", question: "where is the runs box" }); T.say(1, "It is the field under the optimization tick."); point("runs", "suppressed", { layaP: undefined, reason: "laya unreachable" });
+      T.done(doneEv({ mode: "point" }), "where");
+    } else if (state === "rejected") {
+      T.begin({ mode: "point", question: "where is the thing" }); T.say(1, "I think you mean the runs box."); point("runs", "rejected", { layaP: 0.12, reason: "low" });
+      T.done(doneEv({ mode: "point" }), "where");
+    } else if (state === "long") {
+      T.begin({ mode: "explain", question: "explain the whole page" });
+      await say(Array.from({ length: 14 }, (_, i) => `Sentence number ${i + 1} explains one more detail about this verification page in plain words.`), 120); T.done(doneEv(), "explain");
+    } else if (state === "testrouter") {
+      T.begin({ mode: "explain", question: Q }); await say(runsAnswer.slice(0, 2), 200); T.done(doneEv({ testRouter: true }), Q); T.toggleConvo();
+    } else if (state === "chat") {
+      for (const [qq, aa, md] of [[Q, runsAnswer.slice(0, 2), "explain"], ["where do I put it", ["In the first field."], "point"], ["why?", ["Because the compiler output must match byte for byte."], "follow-up"]]) {
+        T.begin({ mode: md, question: qq }); await say(aa, 80); T.done(doneEv({ mode: md }), qq);
+      }
+      T.toggleConvo();
+    }
+  })();
+
+  // ---- in-page SSE parser test (same cases as helper/test/sse.test.ts, a few of them) ----
+  (function () {
+    const out = [];
+    const run = (chunks) => { const r = []; const p = IsharaSSE.createParser((e) => r.push(e)); chunks.forEach((c) => p.push(c)); p.end(); return r; };
+    const eq = (a, b, name) => out.push((JSON.stringify(a) === JSON.stringify(b) ? "ok " : "FAIL ") + name);
+    eq(run(["event: say\ndata: {\"a\":1}\n\n"]), [{ event: "say", data: '{"a":1}' }], "one frame");
+    eq(run(["event: say\r", "\ndata: x\r\n\r\n"]), [{ event: "say", data: "x" }], "CRLF split");
+    eq(run([": ping\n\nevent: a\ndata: 1\n\n"]), [{ event: "a", data: "1" }], "comment");
+    const bytes = new TextEncoder().encode("event: say\ndata: नमस्ते\n\n");
+    eq(run([bytes.slice(0, 20), bytes.slice(20)]).map((e) => e.data), ["नमस्ते"], "utf8 split");
+    eq(run(["event: done\ndata:\n\n"]), [{ event: "done", data: "" }], "empty data");
+    $("ssetest").textContent = "sse test: " + out.join(" | ");
+  })();
+</script>

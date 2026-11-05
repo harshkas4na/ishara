@@ -92,3 +92,22 @@ block extension injection, closed shadow roots, `chrome://` and Web Store pages,
 frame's own viewport (the frame has to show them). Pointing at a frame control does not record the "accepted" signal.
 Privacy note: the messages are visible to the pages involved, so a hostile parent page could ask an embedded frame for
 its control labels (never typed values).
+
+## Tutor UI (streaming answers, steps, conversation)
+The extension asks `POST /tutor` (SSE, docs/TUTOR-INTERFACE.md) through a port to the service worker; `extension/sse.js`
+parses the stream. If the helper has no `/tutor` (404) the old `/decide` path runs unchanged.
+
+| Keys | Does |
+|---|---|
+| **Alt+Shift+C** | conversation panel: last 10 turns, mode chip, timings, "How do I know?", TEST ROUTER banner |
+| **Alt+Shift+P** | toggle CLASSIC (pointing only, `/decide`); stored in `chrome.storage.local.classic`, shown in the panels |
+| **Esc** | cancels the stream and speech, clears the bubble |
+
+Without 0G: `http://127.0.0.1:7777/test/tutor-preview.html?state=explain|point|two|guide|refused|cutoff|suppressed|rejected|long|chat|testrouter`
+(add `&step=3` to guide). Scripted events, no network. The bottom line of that page runs the SSE parser cases in the browser.
+Unit tests: `node --test helper/test/sse.test.ts` (parser: chunks, CRLF, comments, UTF-8 splits; relay: offline, 404, cutoff, abort).
+
+Real flow (helper on 7777, `/test/etherscan-verify.html`): press Alt+Shift+Space with a REAL key event, type a question, Return.
+Expect: dancing cursor and "You/I heard" line at once, then sentences fading in, the ring only after a confirmed pointer,
+a muted chip for rejected/suppressed pointers, red bubble with the cause when 0G is unreachable, "(cut off, ask again)" on a
+cut stream. Guide mode shows "Step n of m", dots and Back / Next / Stop once the helper sends `step` events.
