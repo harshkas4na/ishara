@@ -30,7 +30,12 @@
   .ptr.think .fy{animation:fy 1.8s ease-in-out infinite}
   @keyframes fx{from{transform:translateX(-46px)}to{transform:translateX(46px)}}
   @keyframes fy{0%,100%{transform:translateY(0)}25%{transform:translateY(-22px)}75%{transform:translateY(22px)}}
-  @media (prefers-reduced-motion:reduce){.ptr .fx,.ptr .fy,.ptr .rip{animation:none!important}}
+  .ptr.arrive.bob .fy{animation:land .35s ease-out,bob 1.8s ease-in-out .35s infinite}
+  @keyframes land{0%{transform:scale(1.3)}60%{transform:scale(.9)}100%{transform:scale(1)}}
+  .trail{position:fixed;width:11px;height:11px;margin:-5px 0 0 -5px;border-radius:50%;pointer-events:none;
+         background:radial-gradient(circle,#f59e0b 0%,#7c3aed 70%);opacity:.75;animation:tr .55s ease-out forwards}
+  @keyframes tr{to{opacity:0;transform:scale(.15)}}
+  @media (prefers-reduced-motion:reduce){.ptr .fx,.ptr .fy,.ptr .rip,.trail{animation:none!important}.trail{display:none}}
   .ink{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
   .ink path{fill:none;stroke:#f59e0b;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round;opacity:.92;filter:drop-shadow(0 0 2px rgba(255,255,255,.85))}
   .ring{position:fixed;border:3px solid #d97706;border-radius:6px;box-shadow:0 0 0 3px rgba(255,255,255,.8);display:none}
@@ -158,6 +163,24 @@
   }
   function removeInk() { if (ink) { ink.svg.remove(); ink = null; } }
 
+  // A comet trail while the cursor glides: sample where the CSS transition has got to and leave a fading dot there.
+  function trailFor(ms) {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const t0 = performance.now(); let last = 0;
+    const step = (now) => {
+      if (now - t0 > ms || pointer.style.display !== "block") return;
+      if (now - last > 26) {
+        last = now;
+        const m = new DOMMatrixReadOnly(getComputedStyle(pointer).transform);
+        const d = document.createElement("i"); d.className = "trail";
+        d.style.left = m.m41 + "px"; d.style.top = m.m42 + "px";
+        layer.append(d); setTimeout(() => d.remove(), 600);
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
   // Scroll first, then read the rect, so the pointer lands where the element really is now,
   // not where the outline saw it before the page moved.
   async function point(el, text, receiptId) {
@@ -180,6 +203,7 @@
     }
     pointer.className = "ptr"; pointer.style.transition = "";
     place();
+    trailFor(750);
     say(text, { near: rectOf(el), receipt: receiptId });
     follow = place; // keep tracking if the user scrolls or the layout shifts
     // On landing: ripple, loop the target with the marker, then bob gently while the user reads.
