@@ -8,6 +8,7 @@ import { hasKey, warm } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
 import { desktopAsk, warmDesktop } from "./desktop.ts";
 import { readdirSync, statSync } from "node:fs";
+import { join as joinPath } from "node:path";
 import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
 import { memory, memoryRoute } from "./memory.ts";
 import { allowedOrigin, refuse, staticPath } from "./http-guard.ts";
@@ -93,7 +94,7 @@ const server = createServer(async (req, res) => {
     // when it changes, so extension edits take effect without a trip to chrome://extensions. Off by default.
     if (req.method === "GET" && path === "/dev/ext-version") {
       if (process.env.ISHARA_DEV !== "1") return send(res, 200, { dev: false });
-      const sig = readdirSync(EXT_DIR).sort().map((f) => { const st = statSync(join(EXT_DIR, f)); return `${f}:${st.size}:${Math.round(st.mtimeMs)}`; }).join("|");
+      const sig = readdirSync(EXT_DIR).sort().map((f) => { const st = statSync(joinPath(EXT_DIR, f)); return `${f}:${st.size}:${Math.round(st.mtimeMs)}`; }).join("|");
       return send(res, 200, { dev: true, version: sig });
     }
     if (req.method === "GET" && path.startsWith("/ext/")) return serveStatic(res, EXT_DIR, path.slice(5), [".js", ".css"]);
