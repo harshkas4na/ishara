@@ -11,6 +11,7 @@ import { desktopAsk, warmDesktop } from "./desktop.ts";
 import { readdirSync, statSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
+import { minRms, transcribeGuarded } from "./transcript-guard.ts";
 import { pttStatus, startPtt, stopPtt } from "./desktop-ptt.ts";
 import { startSpeech, stopSpeech, speechStatus, speaker } from "./speech.ts";
 import { memory, memoryRoute } from "./memory.ts";
@@ -78,12 +79,13 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && path === "/health") {
       const w = whisperStatus();
-      return send(res, 200, { ok: true, whisper: w.ok, whisperError: w.error, key: hasKey(), ...(testRouterActive() ? { testRouter: true } : {}) });
+      // whisper is an object now: { ok, loading, model, hinglish, error? }. minRms is the loudness floor in force.
+      return send(res, 200, { ok: true, whisper: w, whisperError: w.error, minRms: minRms(), key: hasKey(), ...(testRouterActive() ? { testRouter: true } : {}) });
     }
     if (req.method === "POST" && path === "/transcribe") {
       const wav = await readBody(req);
       const prompt = typeof req.headers["x-prompt"] === "string" ? req.headers["x-prompt"] : undefined;
-      try { return send(res, 200, await transcribe(wav, prompt)); }
+      try { return send(res, 200, await transcribeGuarded(wav, prompt, transcribe)); } // shared guard: noise, blank, script, silent
       catch (e: any) { return send(res, 503, { error: `transcription unavailable: ${e.message}` }); }
     }
     if (req.method === "POST" && path === "/decide") {

@@ -53,12 +53,15 @@ test("silence is refused with the browser's wording", async () => {
   assert.match((r.sent.at(-1) as any).text, /I could not hear any sound from the microphone/);
   assert.equal(r.transcribed.length, 0); assert.equal(r.asked.length, 0);
 });
-test("stock noise phrases never reach 0G", async () => {
-  for (const t of ["you", "Thank you.", "Thanks for watching!", "...", "ok", "hi"]) {
-    const r = rig({ transcribe: async () => ({ text: t }) }); r.line(up()); await tick();
-    assert.match((r.sent.at(-1) as any).text, /probably noise/, t);
-    assert.equal(r.asked.length, 0, t);
-  }
+test("a transcript the helper guard rejected (text \"\") never reaches 0G", async () => {
+  // The guard itself (transcript-guard.ts) runs inside the real transcribe; its rules are tested in voice-guard.test.ts.
+  const r = rig({ transcribe: async () => ({ text: "" }) }); r.line(up()); await tick();
+  assert.match((r.sent.at(-1) as any).text, /I heard nothing/);
+  assert.equal(r.asked.length, 0);
+});
+test("short valid answers like ok are asked, not dropped client-side", async () => {
+  const r = rig({ transcribe: async () => ({ text: "ok" }) }); r.line(up()); await tick();
+  assert.deepEqual(r.asked, ["ok"]);
 });
 test("a good question shows Transcribing, then the transcript, then asks", async () => {
   const r = rig(); r.line(up()); await tick();

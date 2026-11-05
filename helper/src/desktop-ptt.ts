@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { desktopAsk, overlay, type OverlayCmd } from "./desktop.ts";
 import { decide } from "./decide.ts";
 import { transcribe } from "./whisper.ts";
+import { minRms, transcribeGuarded } from "./transcript-guard.ts";
 import { interrupt } from "./speech.ts";
 
 export const PTT_BIN = fileURLToPath(new URL("../../desktop/ishara-ptt", import.meta.url));
@@ -15,8 +16,7 @@ export const PTT_BIN = fileURLToPath(new URL("../../desktop/ishara-ptt", import.
 // Same thresholds as the browser path (extension/background.js, content.js): under 0.25 s is a tap, under 0.006
 // RMS is silence that Whisper would turn into a made-up word, and a handful of stock phrases are what it says to noise.
 export const MIN_SAMPLES = 0.25 * 16000;
-export const MIN_RMS = 0.006;
-export const NOISE = /^(you|thank you|thanks|thanks for watching|bye|okay|ok|the|uh|um|hmm|\.+)\W*$/i;
+export const MIN_RMS = minRms(); // ISHARA_MIN_RMS overrides; stock phrases and short words are judged by transcript-guard.ts
 export const METER_EVERY_MS = 150; // overlay is a JSON line to another process; 8 Hz is smooth enough, 120 ms floods
 
 export function meter(rms: number): string {
@@ -69,7 +69,7 @@ export function createPtt(d: PttDeps) {
     } catch (e: any) {
       return stopBubble("I could not transcribe that.", String(e?.message ?? e)); // never fake a transcript
     }
-    if (text.length < 3 || NOISE.test(text)) return stopBubble(`I heard “${text}”, which is probably noise. Try again.`);
+    if (!text) return stopBubble("I heard nothing. Try again."); // the helper guard returns "" for noise, blank and wrong-script output
     // Show what was understood before the (slow) sealed calls: a wrong transcript is then visible, not mysterious.
     d.send({ cmd: "think", text: `I heard: “${text}” …thinking` });
     try { await d.ask(text); }
@@ -136,7 +136,7 @@ export function createPtt(d: PttDeps) {
 
 const real = createPtt({
   send: (c) => overlay.send(c),
-  transcribe: (wav) => transcribe(wav),
+  transcribe: (wav) => transcribeGuarded(wav, undefined, transcribe), // same guard as POST /transcribe
   ask: (q) => desktopAsk(q, decide),
   spawnDaemon(onLine, onExit) {
     // stdout carries events; stderr is inherited so the daemon's own diagnostics reach the helper log.
