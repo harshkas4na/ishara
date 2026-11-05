@@ -43,6 +43,8 @@ export type Deps = {
   retryDelayMs: number;
 };
 
+export type EndResult = { entries: number; root?: string; plaintextSha256?: string; storage?: { txHash: string; ms: number }; contract?: { address: string; txHash: string }; error?: string };
+
 export const sessionKeyId = (sessionId: string): string => keccak256(toUtf8Bytes(sessionId)); // the bytes32 the contract stores
 
 function contractInfo(): { address: string; abi: unknown[] } | null {
@@ -72,7 +74,8 @@ const realDeps: Deps = {
 
 export class EpisodeLog {
   private sessions = new Map<string, Session>();
-  private pending = new Map<string, Promise<void>[]>();
+  private pending = new Map<string, Set<Promise<void>>>(); // proof fetches still running; each removes itself when done
+  private ending = new Map<string, Promise<EndResult>>(); // a second "End session" click joins the first upload
   private deps: Deps;
   private dir: string;
   // No parameter properties: Node runs this file by stripping types, which only supports plain syntax.
@@ -100,8 +103,11 @@ export class EpisodeLog {
     };
     s.entries.push(entry);
     this.persist(s);
-    const jobs = this.pending.get(sessionId) ?? [];
-    for (const call of entry.calls) if (call.proof.status === "pending") jobs.push(this.collectProof(s, call));
+    const jobs = this.pending.get(sessionId) ?? new Set();
+    for (const call of entry.calls) if (call.proof.status === "pending") {
+      const job: Promise<void> = this.collectProof(s, call).finally(() => jobs.delete(job));
+      jobs.add(job);
+    }
     this.pending.set(sessionId, jobs);
     return entry;
   }
@@ -121,9 +127,13 @@ export class EpisodeLog {
 
   /** For the "How do I know?" button: the proof for one request id (or chat id). Waits for an in-flight fetch. */
   async getProof(requestId: string): Promise<Proof & { status: string; detail?: string }> {
-    for (const s of this.sessions.values()) await Promise.allSettled(this.pending.get(s.sessionId) ?? []);
-    for (const s of this.sessions.values()) for (const e of s.entries) for (const c of e.calls) {
-      if (c.requestId !== requestId && c.chatId !== requestId) continue;
+    const find = () => { for (const s of this.sessions.values()) for (const e of s.entries) for (const c of e.calls) if (c.requestId === requestId || c.chatId === requestId) return { s, c }; };
+    let hit = find();
+    if (!hit) { this.list(); hit = find(); } // sessions from an earlier helper run are on disk, not yet in memory
+    if (hit) {
+      const { s, c } = hit;
+      // Wait only for this session's fetches (at most ~30 s with retries), not every session's.
+      if (c.proof.status === "pending") await Promise.allSettled(this.pending.get(s.sessionId) ?? []);
       if (c.proof.status === "ok") return { ...c.proof.proof, requestId, status: "ok" };
       return {
         requestId, provider: c.provider ?? "", recoveredSigner: "", onChainSigner: "", match: false,
@@ -148,7 +158,14 @@ export class EpisodeLog {
    * End of session: wait for the proofs still in flight, encrypt the whole log, put it on 0G Storage, write its
    * root to the contract. Each step that fails is reported as failed (never as done); the local copy always stays.
    */
-  async endSession(sessionId: string): Promise<{ entries: number; root?: string; plaintextSha256?: string; storage?: { txHash: string; ms: number }; contract?: { address: string; txHash: string }; error?: string }> {
+  async endSession(sessionId: string): Promise<EndResult> {
+    const running = this.ending.get(sessionId);
+    if (running) return running;
+    const p = this.endOnce(sessionId).finally(() => this.ending.delete(sessionId));
+    this.ending.set(sessionId, p);
+    return p;
+  }
+  private async endOnce(sessionId: string): Promise<EndResult> {
     const s = this.session(sessionId);
     if (!s || s.entries.length === 0) return { entries: 0, error: "no decisions were recorded for this session" };
     if (s.ended) return { entries: s.entries.length, root: s.ended.root, plaintextSha256: s.ended.plaintextSha256, storage: s.ended.storage, contract: s.ended.contract };

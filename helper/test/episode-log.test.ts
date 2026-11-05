@@ -106,3 +106,26 @@ test("encryptLog output can never be mistaken for the plaintext", () => {
   const e = encryptLog("hello", Buffer.alloc(32, 1));
   assert.ok(!e.ciphertext.toString("utf8").includes("hello"));
 });
+
+test("two End session clicks upload once and write the root once", async () => {
+  let uploads = 0, writes = 0;
+  const { log } = make({
+    upload: async () => { uploads++; await new Promise((r) => setTimeout(r, 20)); return { root: "0x" + "cd".repeat(32), txHash: "0xtx", ms: 20 }; },
+    recordOnChain: async () => { writes++; return { address: "0xcontract", txHash: "0xctx" }; },
+  });
+  rec(log, "s2", [call("2")]);
+  const [a, b] = await Promise.all([log.endSession("s2"), log.endSession("s2")]);
+  assert.equal(uploads, 1); assert.equal(writes, 1);
+  assert.equal(a.root, b.root);
+});
+
+test("a slow proof in one session does not hold up another session's proof", async () => {
+  const { log } = make({
+    fetchProof: async (o) => { if (o.chatId === "chat-slow") await new Promise((r) => setTimeout(r, 300)); return okProof(o.chatId); },
+  });
+  rec(log, "slow", [call("slow")]);
+  rec(log, "fast", [call("fast")]);
+  const t0 = Date.now();
+  assert.equal((await log.getProof("req-fast")).status, "ok");
+  assert.ok(Date.now() - t0 < 200, "waited for the other session");
+});

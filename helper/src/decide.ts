@@ -58,6 +58,7 @@ export async function decide(sessionId: string, question: string, outline: Outli
   // One line per decision so a wrong answer can be traced without a debugger (no secrets in it).
   console.log(`[decide] "${question}" brain=${brain.ok ? brain.targetId : "FAIL:" + brain.cause} laya=${verify === null ? "-" : verify.ok ? verify.p.toFixed(2) : "FAIL:" + verify.cause} -> ${decision.outcome} (${decision.reason})`);
   records.push({ at: new Date().toISOString(), sessionId, question, decision });
+  if (records.length > 500) records.splice(0, records.length - 500); // a long-running helper must not grow without bound
   // Receipts: remember which provider answered under which chat id, and start fetching the signatures now
   // (they expire after ~20 minutes). Never allowed to break or delay the answer.
   try {
