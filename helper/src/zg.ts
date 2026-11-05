@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { LAYA_TIMEOUT_MS, BRAIN_TIMEOUT_MS } from "./config.ts";
-import type { BrainResult, VerifyResult, Cause, OutlineElement } from "./types.ts";
+import type { BrainResult, VerifyResult, Cause, OutlineElement, ChatMessage, TutorStreamItem } from "./types.ts";
 
 // Mainnet Private Computer router. Never a non-private path: every call carries trust mode "private",
 // and if no private provider exists the router answers 503 and we report "unavailable" instead of guessing.
@@ -208,6 +208,105 @@ export async function askVerify(question: string, el: OutlineElement, o: ZgOpts 
     if (typeof p !== "number") return { ok: false, cause: "unavailable", ...testFlag() };
     return { ok: true, p, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms, ...testFlag() };
   } catch (e) { return { ok: false, cause: failCause(e, "laya"), ...testFlag() }; }
+}
+
+// ---- Tutor stream (docs/TUTOR-INTERFACE.md section 3). Separate from askBrain on purpose: the pointing path is
+// measured (11/12) and must not change, so the tutor gets its own call with its own timeouts.
+export const TUTOR_FIRST_TOKEN_MS = 6000; // no first token by here: 0GM is not answering, refuse
+export const TUTOR_IDLE_MS = 4000;        // silence between chunks after text started: keep what was said, mark it cut off
+export const TUTOR_MAX_TOKENS = 400;
+const TUTOR_DRAIN_MS = 30000;             // the background read to the end of the stream never waits longer than this
+
+// Yields text deltas as they arrive, then one final item. Never throws. Two different failures on purpose:
+// before any text it is {type:"error"} (the caller refuses); after some text it is a meta with cutoff:true (the
+// caller keeps what was spoken). When the consumer stops early the stream is still read to the end, not cancelled:
+// cancelling could stop the provider from recording the response that the proof signature is fetched for.
+export async function* askTutorStream(messages: ChatMessage[], o: ZgOpts & { firstTokenMs?: number; idleMs?: number } = {}): AsyncGenerator<TutorStreamItem> {
+  const tf = testFlag();
+  const t0 = Date.now();
+  const key = authKey();
+  if (!key) { yield { type: "error", cause: "unavailable", totalMs: 0, ...tf }; return; }
+  const firstMs = o.firstTokenMs ?? o.timeoutMs ?? TUTOR_FIRST_TOKEN_MS;
+  const idleMs = o.idleMs ?? TUTOR_IDLE_MS;
+  const ac = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const arm = (ms: number) => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; ac.abort(); }, ms); };
+  arm(firstMs); // covers connect AND the wait for the first token
+  let res: Response;
+  try {
+    res = await fetch(baseFor(o) + "/chat/completions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-0g-provider-trust-mode": "private" },
+      body: JSON.stringify({
+        model: BRAIN_MODEL, messages, stream: true, max_tokens: TUTOR_MAX_TOKENS, temperature: 0.3,
+        chat_template_kwargs: { enable_thinking: false }, // measured: with thinking on the whole budget went to reasoning
+      }),
+      signal: ac.signal,
+    });
+  } catch (e: any) {
+    clearTimeout(timer);
+    console.error("[zg] tutor fetch failed:", e?.name ?? e?.message);
+    yield { type: "error", cause: timedOut ? "timeout" : "offline", totalMs: Date.now() - t0, ...tf };
+    return;
+  }
+  if (res.status !== 200 || !res.body) {
+    clearTimeout(timer);
+    console.error(`[zg] tutor HTTP ${res.status}`);
+    try { await res.body?.cancel(); } catch { /* nothing to keep: no answer came */ }
+    yield { type: "error", cause: "unavailable", totalMs: Date.now() - t0, ...tf };
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  let emitted = false;
+  let firstTokenMs: number | undefined;
+  let traceId: string | undefined;
+  let failure: Cause | undefined;
+  let finished = false;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (emitted) arm(idleMs); else arm(firstMs - (Date.now() - t0) > 0 ? firstMs - (Date.now() - t0) : 1);
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        let j: any;
+        try { j = JSON.parse(data); } catch { continue; } // keep-alive or partial JSON
+        if (typeof j?.x_0g_trace?.request_id === "string") traceId = j.x_0g_trace.request_id;
+        const text = j?.choices?.[0]?.delta?.content;
+        if (typeof text === "string" && text.length) {
+          if (!emitted) { emitted = true; firstTokenMs = Date.now() - t0; arm(idleMs); }
+          yield { type: "delta", text };
+        }
+      }
+    }
+    finished = true;
+  } catch (e: any) {
+    failure = timedOut ? "timeout" : "offline";
+    console.error("[zg] tutor stream failed:", e?.name ?? e?.message);
+  } finally {
+    clearTimeout(timer);
+    if (!finished && !failure) {
+      // The consumer stopped early (generator.return). Read the rest in the background so the provider records it.
+      const stop = setTimeout(() => ac.abort(), TUTOR_DRAIN_MS);
+      void (async () => { try { for (;;) { const r = await reader.read(); if (r.done) break; } } catch { /* nothing waits on this */ } finally { clearTimeout(stop); } })();
+    }
+  }
+  const totalMs = Date.now() - t0;
+  if (failure && !emitted) { yield { type: "error", cause: failure, totalMs, ...tf }; return; }
+  const hdr = res.headers.get("x-request-id")?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+  yield {
+    type: "meta", totalMs, ...(firstTokenMs !== undefined ? { firstTokenMs } : {}),
+    ...((traceId ?? hdr) ? { requestId: (traceId ?? hdr) as string } : {}), ...callMeta(res.headers),
+    ...(failure ? { cutoff: true as const } : {}), ...tf,
+  };
 }
 
 // Opens the TLS connection early (measured: first request on a new connection costs ~3.6 s on mobile data).
