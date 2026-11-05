@@ -293,6 +293,27 @@
     return assemble(c, raw, budgetTokens, t0);
   };
 
+  // Turn a block id from the last context back into a DOM element so the UI can ring it. By TEXT, not by saved
+  // coordinates: the page may have scrolled since the context was built. No match (the text was redacted or
+  // neutralized, the block came from another frame, or the page changed) means null: the UI then shows the sentence
+  // and skips the ring, it never guesses a position.
+  NS.resolveBlock = (id) => {
+    const ctx = NS.lastPageContext && NS.lastPageContext.context;
+    const b = ctx && ctx.blocks.find((x) => x.id === id);
+    if (!b || !b.text) return null;
+    const norm = (t) => String(t || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const needle = norm(b.text).slice(0, 40);
+    if (needle.length < 4) return null;
+    const tw = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      const t = norm(n.nodeValue);
+      if (!t || !(t.includes(needle) || (t.length >= 12 && needle.includes(t)))) continue;
+      const p = n.parentElement;
+      if (p && !p.closest("[data-ishara-root]") && (!p.checkVisibility || p.checkVisibility())) return p;
+    }
+    return null;
+  };
+
   NS.pageContextSummary = (ctx = NS.lastPageContext && NS.lastPageContext.context) => {
     const m = NS.lastPageContext && NS.lastPageContext.meta;
     if (!ctx || !m) return "";
