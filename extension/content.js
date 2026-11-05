@@ -164,12 +164,20 @@
     } else if (e.altKey && e.shiftKey && e.code === "KeyO") {
       e.preventDefault();
       if (inspecting) { inspecting = false; NS.overlay.clear(); }
-      else { inspecting = true; const c = await NS.compileOutlineAsync(); NS.overlay.showOutline(c.outline, c.map, { dropped: c.dropped, ms: c.ms }); }
+      else {
+        inspecting = true; const c = await NS.compileOutlineAsync();
+        // Page reader (blocks.js): compile the context from THIS outline so ids match, show a one-line summary, log it.
+        // Debug only: /decide still receives the outline alone.
+        let reader = "";
+        try { const pc = await NS.compilePageContextAsync({ outline: c }); const pm = NS.lastPageContext.meta, ph = pm.phases || {}; reader = NS.pageContextSummary(pc) + ` (${pm.ms} ms; walk ${ph.walk}, build ${ph.build}, ${ph.records} text nodes)`; console.debug("[ishara] page context", pc); NS.publishContext(); } catch (err) { reader = "page reader failed: " + err.message; }
+        NS.overlay.showOutline(c.outline, c.map, { dropped: c.dropped, ms: c.ms, reader });
+      }
     } else if (e.altKey && e.shiftKey && e.code === "KeyD") {
       e.preventDefault();
       NS.overlay.toggleDebug({
         sessionId,
         proof: (id) => send({ type: "proof", requestId: id }),
+        speech: (toggle) => send({ type: toggle ? "speech-toggle" : "speech-status" }), // debug panel Mute button
         endSession: async () => {
           const r = await send({ type: "session-end", sessionId });
           if (r.data && r.data.root) sessionId = crypto.randomUUID();
@@ -177,7 +185,6 @@
         },
       });
     } else if (e.key === "Escape") NS.overlay.clear();
-        speech: (toggle) => send({ type: toggle ? "speech-toggle" : "speech-status" }), // debug panel Mute button
   }
   // isTrusted: a page can dispatch a fake Alt+Space; it must never start the microphone or spend 0G calls.
   addEventListener("keydown", (e) => { if (e.isTrusted) onKeyDown(e); }, true);

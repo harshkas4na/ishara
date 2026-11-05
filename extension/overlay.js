@@ -260,7 +260,7 @@
       Object.assign(d.style, { display: "block", left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
     });
     follow();
-    say(`Ishara sees ${outline.elements.length} controls on this page` + (extra.dropped ? ` (${extra.dropped} more did not fit)` : "") + (extra.ms != null ? `, read in ${extra.ms.toFixed(0)} ms` : "") + `. Option+Shift+O hides this.`);
+    say(`Ishara sees ${outline.elements.length} controls on this page` + (extra.dropped ? ` (${extra.dropped} more did not fit)` : "") + (extra.ms != null ? `, read in ${extra.ms.toFixed(0)} ms` : "") + (extra.reader ? `. Page reader: ${extra.reader}` : "") + `. Option+Shift+O hides this.`);
   }
 
   const tick = () => { if (follow) follow(); };

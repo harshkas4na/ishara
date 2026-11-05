@@ -36,7 +36,8 @@
       for (let s = n.nextElementSibling, k = 0; s && k < 2; s = s.nextElementSibling, k++) {
         if ((ERR_RE.test(s.className + " " + s.id) || s.getAttribute("role") === "alert") && !s.querySelector("input,select,textarea") && visibleText(s)) return s;
       }
-      if (up === 0 && n.parentElement) {
+      // The wide search is the expensive one (a selector scan per control); only controls that already look invalid get it.
+      if (up === 0 && n.parentElement && (el.getAttribute("aria-invalid") === "true" || (el.value && el.validity && !el.validity.valid))) {
         const inner = n.parentElement.querySelector("[role=alert],[class*=error i],[class*=invalid i],[id*=error i]");
         if (inner && !inner.contains(el) && !inner.querySelector("input,select,textarea") && visibleText(inner)) return inner;
       }
@@ -44,8 +45,15 @@
     return null;
   }
 
+  // One compile asks for each control's extras twice (error elements for the block pass, state for the output); compute once.
+  let extrasCache = new WeakMap();
   function controlExtras(el) {
     if (!el || !el.tagName) return {};
+    let x = extrasCache.get(el);
+    if (!x) extrasCache.set(el, (x = computeExtras(el)));
+    return { ...x };
+  }
+  function computeExtras(el) {
     const tag = el.tagName.toLowerCase(), type = (el.type || "").toLowerCase();
     const st = {};
     if (el.disabled || el.getAttribute("aria-disabled") === "true") st.disabled = true;
@@ -105,7 +113,7 @@
   };
 
   function collectLocal(controlEls) {
-    errorEls.clear();
+    errorEls.clear(); extrasCache = new WeakMap(); // fresh per compile: values change between compiles
     for (const e of controlEls) { const x = controlExtras(e); if (x._errEl) errorEls.add(x._errEl); }
     const records = [];
     const visCache = new Map(); // element -> boolean (checkVisibility); hidden subtrees are cheap to skip repeatedly
@@ -168,10 +176,15 @@
     return { records, capped };
   }
 
+  const phases = {};
   // This document's blocks (no ids yet), frames excluded.
   function localBlocks(controlEls, controlLabels) {
+    const a = performance.now();
     const { records } = collectLocal(controlEls);
-    return B.buildBlocks(records, { controlLabels });
+    const b = performance.now();
+    const out = B.buildBlocks(records, { controlLabels });
+    phases.walk = Math.round(b - a); phases.build = Math.round(performance.now() - b); phases.records = records.length; // shown in meta: where the time goes
+    return out;
   }
 
   // ---- frames ---------------------------------------------------------------------------------------------------
@@ -257,7 +270,7 @@
     const sel = selectionText(); if (sel) ctx.selection = sel;
     const f = activeControlId(map); if (f) ctx.focused = f;
     if (trimmed.dropped || c.dropped) ctx.truncated = { blocks: trimmed.dropped, controls: c.dropped || 0 };
-    const meta2 = { ms: Math.round(performance.now() - t0), tokens: B.contextTokens(ctx), blockTokens: ctx.blocks.reduce((n, b) => n + B.blockTokens(b), 0), errors: ctx.errors.length };
+    const meta2 = { phases: phases, ms: Math.round(performance.now() - t0), tokens: B.contextTokens(ctx), blockTokens: ctx.blocks.reduce((n, b) => n + B.blockTokens(b), 0), errors: ctx.errors.length };
     NS.lastPageContext = { context: ctx, meta: meta2 };
     return ctx;
   }
