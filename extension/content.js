@@ -11,7 +11,7 @@
   // them to the top frame through the service worker. Not by postMessage: any script in any frame (an ad) could post
   // the same message and switch the microphone on. And only real key presses (isTrusted), never script-made events.
   if (window !== window.top) {
-    const CHORD = (e) => e.altKey && (e.code === "Space" || (e.shiftKey && (e.code === "KeyO" || e.code === "KeyD")));
+    const CHORD = (e) => !e.ctrlKey && !e.metaKey && e.altKey && (e.code === "Space" || (e.shiftKey && (e.code === "KeyO" || e.code === "KeyD")));
     const up = (m) => { try { chrome.runtime.sendMessage({ type: "chord", d: m }).catch(() => {}); } catch { /* extension reloaded */ } };
     addEventListener("keydown", (e) => {
       if (!e.isTrusted) return;
@@ -147,6 +147,9 @@
   }
 
   async function onKeyDown(e) {
+    // Ctrl or Cmd held means it is some other chord (e.g. the desktop push-to-talk Control+Option+Space): not ours.
+    // Without this, one press started a browser recording AND the desktop recording at the same time.
+    if (e.ctrlKey || e.metaKey) return;
     if (e.altKey && e.code === "Space" && !e.shiftKey) {
       e.preventDefault(); e.stopPropagation();
       if (!e.repeat) startTalking();
