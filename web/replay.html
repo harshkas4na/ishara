@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Replay - Ishara</title><link rel="stylesheet" href="shared.css"></head>
+<body><div class="wrap" id="root"></div>
+<script src="shared.js"></script>
+<script>
+// Replay of one session. The data comes from GET /replay/<id>, which the helper fetched back from 0G Storage,
+// decrypted and hash-checked. If that fails we say so first, and only then offer the local copy, labelled as unverified.
+const root = $("#root");
+const sid = new URLSearchParams(location.search).get("session");
+root.append(header("Replay"));
+root.append(el("h1", { text: "Replay of a session" }));
+root.append(explainer(
+  "At the end of a session, Ishara encrypts its whole decision log and uploads it to 0G Storage, a decentralised store. The upload has a root hash, which is a fingerprint of the stored data.",
+  "This page asks the helper to download that data again, decrypt it with the session key (kept only on this machine), and check that its SHA-256 fingerprint matches what was recorded.",
+  "It also reads the Galileo contract and compares the root recorded there with the root we fetched. If both match, the log you see here is the log that was written, unchanged.",
+  "Each call row links to its signature check, which shows which sealed provider answered."));
+if (sid) root.append(el("p", { class: "muted" }, "Session ", el("b", { text: sid })));
+const out = el("div"); root.append(out);
+
+function check(state, title, sub, value) {
+  const sym = { ok: "✓", bad: "✗", unk: "?" }[state];
+  return el("li", {}, el("div", { class: "ico " + state, "aria-hidden": "true", text: sym }),
+    el("div", {}, el("b", { text: title }), el("span", { class: "sub", text: sub }), value ? el("div", {}, value) : null));
+}
+function verifiedPanel(r) {
+  const sha = r.verified === true;
+  const c = r.onChainRootMatches;
+  const all = sha && c === true;
+  const kind = !sha ? "bad" : c === false ? "bad" : c === true ? "good" : "warn";
+  const head = !sha ? "Not verified: the data does not match its fingerprint." : c === false ? "Mismatch: the stored root is not the one recorded on-chain." : c === true ? "Verified" : "Mostly verified: the on-chain root could not be checked.";
+  return el("div", {},
+    el("div", { class: "verdict " + kind, role: "status" }, head, el("small", { text: all ? "Fetched back from 0G Storage, decrypted, and matched against the chain." : "Read the three checks below to see which part did not pass." })),
+    el("div", { class: "card" }, el("ul", { class: "checks" },
+      check(r.root ? "ok" : "unk", "Fetched from 0G Storage by this root", "The log was downloaded using only this fingerprint as its address.", hashView(r.root)),
+      check(sha ? "ok" : "bad", sha ? "Decrypted, and the SHA-256 of the plaintext matches" : "Decrypted data does NOT match its SHA-256", "Proves the content is exactly what was encrypted at the end of the session.", hashView(r.plaintextSha256)),
+      check(c === true ? "ok" : c === false ? "bad" : "unk",
+        c === true ? "The root equals the one recorded on the Galileo contract" : c === false ? "The root differs from the one on the Galileo contract" : "The on-chain root could not be compared",
+        c === null || c === undefined ? "Unknown, not a pass: the contract may not be deployed or the chain was unreachable." : "The contract is a public timestamp: it holds this session’s root so it cannot be swapped later."))));
+}
+function proofLabel(p) {
+  const s = p?.status || "unavailable";
+  return { ok: ["ok", "signature saved"], pending: ["pending", "pending"], expired: ["bad", "expired"], error: ["bad", "error"], unavailable: ["pending", "no proof"] }[s] || ["pending", s];
+}
+function timeline(entries) {
+  if (!entries?.length) return el("p", { class: "muted", text: "No decisions in this session." });
+  return el("ol", { class: "timeline" }, entries.map((e) => {
+    const oc = ["point", "ask", "safe_stop"].includes(e.outcome) ? e.outcome : "other";
+    return el("li", {},
+      el("div", { class: "when", text: fmtTime(e.at) }),
+      el("div", { class: "q", text: e.question }),
+      el("div", {}, el("span", { class: "chip " + oc, text: String(e.outcome || "unknown").replace("_", " ") }), e.targetId ? el("span", { class: "muted", text: "  target " + e.targetId }) : null),
+      el("div", { class: "say", text: e.say }),
+      el("div", { class: "reason", text: e.reason }),
+      e.calls?.length ? el("div", { class: "calls" }, e.calls.map((c) => {
+        const [k, label] = proofLabel(c.proof); const rid = c.requestId || c.chatId;
+        return el("div", { class: "call" }, el("span", { class: "role", text: c.role }), el("span", { text: c.model || "" }),
+          rid ? el("a", { href: "proof.html?id=" + encodeURIComponent(rid) + (new URLSearchParams(location.search).get("fixture") ? "&fixture=ok" : ""), text: "how do I know? " + shorten(rid, 8, 4) }) : el("span", { class: "muted", text: "no request id" }),
+          el("span", { class: "chip " + k, text: label }), c.proof?.detail ? el("span", { class: "muted", text: c.proof.detail }) : null);
+      })) : null);
+  }));
+}
+const EXPLAIN_ERR = (m) => /not been stored/i.test(m) ? "Nothing has been uploaded for this session yet. End the session in the extension to store it on 0G." : /key|decrypt|auth|tag|integrity|sha|hash|mismatch/i.test(m) ? "This usually means the wrong key was used, or the stored data was altered. Either way, do not trust it." : "The helper could not complete the check.";
+
+(async () => {
+  if (!sid) { out.append(el("div", { class: "verdict warn", text: "No session given." }, el("small", { text: "Pick one from the list on the home page." }))); out.append(el("a", { href: "./", text: "All sessions" })); return; }
+  let r;
+  try { r = await getJson("/replay/" + encodeURIComponent(sid), "replay"); }
+  catch (e) { out.append(el("div", { class: "verdict bad", text: "Cannot reach the Ishara helper." }, el("small", { text: "Start it with `npm run helper` and reload. (" + e.message + ")" }))); return; }
+  if (r.error) {
+    out.append(el("div", { class: "verdict bad", role: "alert" }, "Could not verify this session.", el("small", { text: r.error }), el("small", { text: EXPLAIN_ERR(r.error) })));
+    if (r.root) out.append(el("div", { class: "card" }, el("div", { class: "kv" }, el("span", { class: "k", text: "Root it tried to fetch" }), hashView(r.root))));
+    // Fallback: show the local log, plainly labelled as unverified.
+    try {
+      const l = await getJson("/log/" + encodeURIComponent(sid), "log");
+      out.append(el("h2", { text: "Local copy, not yet verified against 0G" }));
+      out.append(el("div", { class: "verdict warn" }, "This is the helper’s own copy.", el("small", { text: "It has not been checked against 0G Storage or the chain, so treat it as a draft." })));
+      out.append(timeline(l.entries));
+    } catch { /* the error above already says what happened */ }
+    return;
+  }
+  out.append(verifiedPanel(r));
+  out.append(el("h2", { text: "Decisions" }));
+  out.append(timeline(r.entries));
+})();
+</script></body></html>
