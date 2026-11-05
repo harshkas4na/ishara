@@ -50,6 +50,60 @@ async function post(path: string, body: unknown, baseUrl: string, timeoutMs: num
   return { status: res.status, json, headers: res.headers, ms: Date.now() - t0 };
 }
 
+// The pointing tag is the first thing the brain says after one short sentence, so we read the reply as it
+// streams and answer the moment the tag is complete. Waiting for the whole reply cost ~2 s in the lab
+// (tag at 1.7-1.9 s, done at 2.1-2.4 s) and more when the router was slow to close the stream.
+// The rest of the stream is still drained in the background rather than cancelled: cancelling mid-reply
+// could stop the provider from recording the response that the proof signature is fetched for.
+const POINT_TAG = /\[\s*POINT\s*:\s*([A-Za-z]+\d*)\s*\]/i;
+
+async function postUntilPointTag(body: unknown, baseUrl: string, timeoutMs: number): Promise<Raw & { text: string }> {
+  const key = loadKey();
+  if (!key) throw { cause: "unavailable" as Cause };
+  const t0 = Date.now();
+  const signal = AbortSignal.timeout(timeoutMs); // covers connect AND reading the stream
+  let res: Response;
+  try {
+    res = await fetch(baseUrl + "/chat/completions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-0g-provider-trust-mode": "private" },
+      body: JSON.stringify({ ...(body as object), stream: true }),
+      signal,
+    });
+  } catch (e: any) {
+    throw { cause: (e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : "offline") as Cause };
+  }
+  if (res.status !== 200 || !res.body) return { status: res.status, json: null, headers: res.headers, ms: Date.now() - t0, text: "" };
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = ""; // a partial SSE line carried over to the next chunk
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") continue;
+        try { text += JSON.parse(data)?.choices?.[0]?.delta?.content ?? ""; } catch { /* keep-alive or partial JSON */ }
+      }
+      if (POINT_TAG.test(text)) {
+        const ms = Date.now() - t0;
+        void (async () => { try { for (;;) { const r = await reader.read(); if (r.done) break; } } catch { /* nothing waits on this */ } })();
+        return { status: 200, json: null, headers: res.headers, ms, text };
+      }
+    }
+  } catch (e: any) {
+    throw { cause: (e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : "offline") as Cause };
+  }
+  return { status: 200, json: null, headers: res.headers, ms: Date.now() - t0, text }; // stream ended without a tag: parsePoint is lenient
+}
+
 // X-Request-ID can come back as "<short>, <uuid>" (measured); the uuid equals x_0g_trace.request_id.
 function requestId(r: Raw): string | undefined {
   const t = r.json?.x_0g_trace?.request_id;
@@ -78,7 +132,7 @@ function failCause(e: any, status?: number): Cause {
 
 export async function askBrain(question: string, outlineText: string, o: ZgOpts = {}): Promise<BrainResult> {
   try {
-    const r = await post("/chat/completions", {
+    const r = await postUntilPointTag({
       model: BRAIN_MODEL,
       max_tokens: 60,
       temperature: 0,
@@ -90,8 +144,7 @@ export async function askBrain(question: string, outlineText: string, o: ZgOpts 
       ],
     }, o.baseUrl ?? DEFAULT_BASE, o.timeoutMs ?? BRAIN_TIMEOUT_MS);
     if (r.status !== 200) return { ok: false, cause: "unavailable" };
-    const text: string = r.json?.choices?.[0]?.message?.content ?? "";
-    const id = parsePoint(text);
+    const id = parsePoint(r.text);
     return { ok: true, targetId: id === "none" || id === null ? null : id, requestId: requestId(r), ms: r.ms };
   } catch (e) { return { ok: false, cause: failCause(e) }; }
 }
