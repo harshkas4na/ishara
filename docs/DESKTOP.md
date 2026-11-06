@@ -52,9 +52,9 @@ The overlay needs no permission.
 ## Push-to-talk (any app except a browser)
 **Hold Right Option alone for about a second to talk, release to send.** The daemon starts a take only after Right Option
 has been held 350 ms with no other key, click or scroll in between, so a tap, Option+letter (typing a symbol), Left
-Option, Option-click and any chord with another modifier do nothing. At the 350 ms mark the overlay shows the Listening
-bubble with a level meter; release, and it shows "Transcribing…", "I heard: “…” …thinking", then streams the answer
-(cursor, marker, bubble, voice). Pressing the key again at any time cuts the voice and the running answer off.
+Option, Option-click and any chord with another modifier do nothing. The pill shows PREPARING ("Getting ready…") until the mic is live,
+then LISTENING ("Speak now") with level bars; release, and it shows "Transcribing…", "I heard: “…”", then the sentence being
+spoken (cursor, boundary or highlighter, voice). Pressing the key again at any time cuts the voice and the running answer off.
 No right Option on your keyboard? `ISHARA_PTT_KEY=ctrl+opt+cmd+space` (any modifiers plus one key; at least one
 modifier). Do not use Ctrl+Option+Space: if the macOS input-source shortcuts (System Settings > Keyboard > Keyboard
 Shortcuts > Input Sources) are enabled, macOS handles it first.
@@ -82,22 +82,32 @@ sleep 3; node scripts/desktop-demo.ts "where is the search box"         # real t
 curl -s 127.0.0.1:7777/desktop/ask -d '{"question":"what is this window for"}'   # same, through the helper
 echo '{"cmd":"say","text":"Hello.","append":false}' | desktop/ishara-overlay
 ```
-Overlay commands (one JSON per line on stdin; coordinates are screen points, top-left origin):
-- `point{x,y,text,rect?,keep?}`: the cursor glides (0.75 s ease-out) to x,y, two saffron ripples, then, with `rect`, a
-  hand-drawn marker (loop, or wavy underline for wide targets). `keep:true` leaves the streamed bubble text alone and only
-  moves the bubble next to the target.
-- `think{text}`: bubble plus the cursor tracing a figure-eight at 55% of the screen height (idempotent: repeated calls,
-  e.g. the Listening meter, only update the text). Auto-hides after 30 s.
-- `say{text,append}`: one streamed sentence; `append:false` starts a fresh answer. The bubble keeps the newest sentences
-  when it outgrows its height.
-- `step{n,m}`: header "Step n of m". `done`: linger 15 s, then fade; a cursor that never pointed goes away.
-- `ask{text}`: bubble. `stop{text,sub}`: red bubble (safe-stop, refused). `clear`: hide everything.
+Overlay commands (one JSON per line on stdin; coordinates are screen points, top-left origin). The design is
+docs/UI-PILL.md: the whole answer is NOT drawn, only a pill with the sentence being spoken.
+- `state{state,text?,sub?}`: the pill. `preparing` (amber pulse, "Getting ready…"), `listening` (blue bars, "Speak now"),
+  `thinking` (dancing dots, text = what was heard; the cursor also traces a figure-eight), `speaking`, `refused` (red,
+  `sub` on a second line), `idle` (hide). `level{rms}` moves the listening bars. `speaking{text}`: the voice STARTED this
+  sentence, the pill shows exactly it (long sentences are paged, two lines at a time); `text:""` = the voice went quiet.
+  `say{text,append}`: a streamed sentence, queued and shown at least 1.5 s each; ignored once `speaking` events arrive
+  (muted voice or no events: this is the fallback). `steps{n,m}`: guide chip "n/m" plus the buttons; `m<=1` hides them.
+- `point{x,y,rect?,kind?,keep?,text?}`: the cursor glides (0.75 s) to x,y, ripples, then marks `rect`: `kind:"control"`
+  (default) a rounded boundary, 2.5 pt #3b82f6 with a glow, drawn like a pen stroke over 0.5 s; `kind:"block"` a #fde047
+  band at 35% sweeping in left to right. A second point in the same answer dims the first (two marks at most). The pill
+  hops to the top edge when a mark would be under it.
+- `done`: linger (7 s, 180 s in a guide), a cursor that never pointed goes away. `clear`: hide everything.
+- Old commands still work: `think{text}` (= thinking; its "Getting ready…" and "Listening…▮▮" texts map to preparing and
+  listening), `ask{text}` (neutral pill), `stop{text,sub}` (= refused), `step{n,m}` (= steps), `point` without `keep`
+  (its `text` goes in the pill).
 
-Look: needle cursor, saffron ripples and ink, bubble #1f1147 (stop #7f1d1d) with a small "Ishara" label, 420 pt wide,
-wrapping. Placement: next to the pointed target (below it, above it at the screen edge, beside it for a tall target,
-never over it), else bottom-centre about 120 pt above the screen bottom; on the screen that holds the target or the
-frontmost window. Click-through, never takes focus. With Reduce Motion on there is no dance, glide, ripple, pen stroke
-or bob: the final state just appears.
+The pill lives in its OWN borderless non-activating panel (never key, never takes focus, all Spaces, above full-screen
+chrome); the big drawing window stays `ignoresMouseEvents`. In a guide a second tiny panel covers only the three
+buttons ‹ › ✕ (the only place a click is taken). A press prints `{"ev":"walk","cmd":"back|next|stop"}` on the overlay's
+stdout; `helper/src/desktop.ts` reads it and runs `desktopAsk("back"|"next"|"stop")`, the same utterance the voice words
+produce, so the router's walk for `desktop:<bundle id>` handles it. Voice commands keep working.
+
+Look: needle cursor, pill #1f1147 at 92% (refused #7f1d1d), 15 pt text, 2 lines, up to 520 pt wide, 16 pt corners.
+Placement: bottom-centre, about 120 pt above the bottom edge of the screen that holds the target or the frontmost window.
+With Reduce Motion on there is no pulse, dance, glide, ripple, pen stroke or sweep: the final state just appears.
 
 ## Measured (M-series, macOS 27, 1470x956 points)
 - AX walk: System Settings 39 controls in about 0.2 s; context incl. window-only OCR 0.5 s. Finder with no window: 0.
@@ -108,7 +118,7 @@ or bob: the final state just appears.
 
 ## Known limits
 - Apps with no AX tree (some Electron/canvas/games) fall back to OCR: text blocks only, no controls.
-- Several displays: the bubble and cursor go on the screen with the target or the frontmost window (code path; not
+- Several displays: the pill and cursor go on the screen with the target or the frontmost window (code path; not
   tested with two monitors). The overlay window is sized at launch: a display attached later needs an overlay restart.
 - Full-screen apps and other Spaces: the overlay joins all Spaces; not tested over every full-screen app.
 - Elements outside the visible window, scrolled-off rows and the menu bar are skipped on purpose (text areas keep
