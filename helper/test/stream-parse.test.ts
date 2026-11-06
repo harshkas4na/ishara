@@ -88,8 +88,8 @@ test("guide: steps, points and waits come out in order, capped at MAX_STEPS (12)
   const steps = ev.filter((e) => e.type === "step") as Extract<ParseEvent, { type: "step" }>[];
   assert.deepEqual(steps.map((s) => s.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   assert.ok(steps.every((s) => s.m <= 12));
-  assert.equal(ev.filter((e) => e.type === "wait").length, 6);
-  assert.equal(says(ev).length, 6);
+  assert.equal(ev.filter((e) => e.type === "wait").length, 12);
+  assert.equal(says(ev).length, 12);
   assert.deepEqual(ev.slice(0, 4).map((e) => e.type), ["step", "say", "point", "wait"]);
 });
 test("step markers outside guide mode are swallowed", () => {
