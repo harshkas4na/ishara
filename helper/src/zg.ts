@@ -313,3 +313,21 @@ export async function* askTutorStream(messages: ChatMessage[], o: ZgOpts & { fir
 export async function warm(baseUrl = routerOverride() ?? DEFAULT_BASE): Promise<void> {
   try { await fetch(baseUrl + "/models", { signal: AbortSignal.timeout(6000) }); } catch { /* best effort */ }
 }
+
+// laya check for tutor pointers (explain / guide): the user's question is often not ABOUT one control ("walk me through
+// this"), so asking "is this what the user asked for?" wrongly vetoes correct pointers (measured p=0.26 on a right
+// guide step). Instead ask whether the highlighted control is the one the tutor's sentence refers to. Still an
+// independent sealed model checking every pointer; the sentence is the model's own output, never page text.
+export async function askVerifyRef(question: string, sentence: string, el: OutlineElement, o: ZgOpts = {}): Promise<VerifyResult> {
+  try {
+    const r = await post("/decisions", {
+      model: LAYA_MODEL,
+      state: `The user asked: "${question}"\nThe tutor is saying: "${sentence.slice(0, 300)}"\nHighlighted control: ${el.role} "${el.label}"`,
+      questions: { right: { type: "noul", instructions: "Is the highlighted control the one the tutor's sentence refers to?" } },
+    }, baseFor(o), o.timeoutMs ?? LAYA_TIMEOUT_MS);
+    if (r.status !== 200) return { ok: false, cause: "unavailable", ...testFlag() };
+    const p = r.json?.answers?.right?.noul;
+    if (typeof p !== "number") return { ok: false, cause: "unavailable", ...testFlag() };
+    return { ok: true, p, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms, ...testFlag() };
+  } catch (e) { return { ok: false, cause: failCause(e, "laya"), ...testFlag() }; }
+}
