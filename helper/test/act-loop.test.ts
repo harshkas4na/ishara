@@ -235,3 +235,15 @@ test("testRouter propagates to the end event and the episode entry", async () =>
   const { events } = await t.run();
   assert.equal((events.at(-1)!.data as any).testRouter, true); assert.equal(t.log.records[0].testRouter, true);
 });
+
+test("act-form regression: 'Create account' needs approval; with 'don't submit' it never reaches approval or the executor", async () => {
+  const f = page([["b1", "input", "Full name"], ["b2", "button", "Create account"]]);
+  const a = make({ script: [A({ type: "click", id: "b2" }), A({ type: "done", say: "ok" })], approve: false });
+  const r1 = await a.run(req("fill in my details and create the account", { context: f }));
+  assert.deepEqual(names(r1.events).slice(0, 4), ["thinking", "action", "approval", "result"]); assert.equal(a.log.executed.length, 0);
+  const b = make({ script: [A({ type: "click", id: "b2" }), A({ type: "done", say: "ok" })], approve: true });
+  const r2 = await b.run(req("fill in my details but don't submit", { context: f }));
+  assert.equal(b.log.approvals.length, 0); assert.equal(b.log.executed.length, 0);
+  assert.match((r2.events[1].data as any).detail, /You said not to submit/);
+  assert.match(b.log.asks[1][1].content, /REFUSED, nothing was done: You said not to submit/);
+});

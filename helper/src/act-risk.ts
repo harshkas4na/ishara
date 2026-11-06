@@ -13,9 +13,20 @@ export type Classified = { risk: ActRisk; why: string };
 // common icon names are here too. This list is deliberately wide: a needless Approve tap costs a second, a missed one costs money.
 export const HIGH_LABEL = new RegExp(String.raw`\b(` + [
   "submit", "send", "post", "publish", "pay", "buy", "purchase", "order", "confirm", "delete", "remove", "sign ?out", "log ?out", "sign ?off",
-  "transfer", "approve", "allow", "authori[sz]e", "install", "connect(?:ing)? (?:your |a )?wallet", "checkout", "check ?out", "withdraw",
+  "transfer", "approve", "allow", "authori[sz]e", "install", "connect(?:ing)?(?: (?:your |a )?wallet)?", "checkout", "check ?out", "withdraw",
   "sign (?:the )?(?:transaction|tx|message)", "trash", "paper ?plane", "swap", "place (?:the )?order", "subscribe", "unsubscribe", "grant access",
+  "create (?:an? |my |your )?account", "sign ?up", "register", "join", "enrol+", "book", "reserve", "apply", "save changes", "update", "upload",
+  "continue to payment", "next: ?payment", "donate", "finish", "complete (?:order|purchase|payment)", "go live", "deploy", "mint",
+  // Hinglish, Roman letters: the common commit verbs
+  "bhejo", "bhej do", "bhejna", "jama karo", "jama kare", "kharido", "khareedo", "kharid", "bhugtan", "payment karo", "hatao", "mita do", "mitao", "pushti", "panjikaran", "register karo", "sign up karo", "submit karo", "order karo", "post karo",
 ].join("|") + String.raw`)\b`, "i");
+
+// Labels that only look around. A button NOT in this list, on a page you can type into, is treated as a possible commit.
+export const SAFE_LABEL = /^\s*(cancel|close|back|previous|prev|return|reset|clear|show|hide|expand|collapse|menu|search|play|pause|mute|unmute|next|dismiss|toggle|filter|sort|copy|help|home|open|more|less|zoom|skip|tab)\b/i;
+const SUBMIT_FAMILY = /\b(submit|send|post|publish|pay|buy|purchase|order|confirm|create|sign ?up|register|join|book|reserve|apply|save|update|upload|checkout|check ?out|finish|complete|continue|deploy|mint|bhejo|jama|kharid|submit karo)\b/i;
+const DESTRUCTIVE = /\b(delete|remove|sign ?out|log ?out|logout|trash|hatao|mita)\b/i;
+const NO_SUBMIT = /(\b(don'?t|do not|dont|never|without|not to)\b[^.;,]{0,20}\b(submit|submitting|send|sending|post|posting|publish|publishing|pay|paying)\b)|(\bsubmit\b[^.;,]{0,12}\b(mat|nahi|nahin|na)\b)|(\bmat\b[^.;,]{0,12}\bsubmit\b)/i;
+export const NO_SUBMIT_SAY = "You said not to submit, so I will not press that.";
 
 // ("connect wallet" is not here: a dApp's ordinary connect button is already HIGH by its label, and flagging the whole page would make every action on it HIGH.)
 // A page that is a wallet signature / approval / seed flow: everything on it that is not reading is HIGH.
@@ -54,6 +65,15 @@ export function secretShaped(value: string): boolean {
   return B.phraseRunMask([v])[0] === true;
 }
 
+const BUTTONISH = /^(button|submit|btn|menuitem|push ?button|default button)$/i;
+const EDITABLE = (c: { role: string }) => /^(input|textarea|textbox|searchbox|text ?field|select|combobox|checkbox|radio|switch)$/i.test(c.role);
+/** The structural rule: a button on a page you can type into, whose label is not a known harmless one, may commit the form. */
+function structuralHigh(label: string, role: string, ctx: PageContext, task: string): boolean {
+  if (!BUTTONISH.test(role.trim())) return false;
+  if (!ctx.controls.some(EDITABLE)) return false;
+  if (SAFE_LABEL.test(label)) return false;
+  return !taskNames(task, label);
+}
 const norm = (s: string): string => s.toLowerCase().replace(/\s+/g, " ").trim();
 const hasWords = (hay: string, needle: string): boolean => norm(hay).includes(norm(needle));
 
@@ -138,6 +158,13 @@ export function classify(action: Action, ctx: PageContext, task: string): Classi
         if (secretShaped(action.text) && !hasWords(task, action.text)) return R("refused", "that value looks like a secret and you did not give it to me in the task");
       }
       const w = inWallet(); if (w) return w;
+      if (action.type === "click") {
+        const byLabel = HIGH_LABEL.test(label) || HIGH_LABEL.test(role);
+        const byShape = !byLabel && structuralHigh(label, role, ctx, task);
+        // "don't submit": any click that would submit is refused outright, not even approvable. Deleting is a different act.
+        if ((byLabel || byShape) && NO_SUBMIT.test(task) && !DESTRUCTIVE.test(label) && (byShape || SUBMIT_FAMILY.test(label) || /submit/i.test(role))) return R("refused", NO_SUBMIT_SAY);
+        if (byShape) return R("high", `"${label.slice(0, 40)}" is a button on a form and could submit it`);
+      }
       if (action.type === "click" && (HIGH_LABEL.test(label) || HIGH_LABEL.test(role))) return R("high", `"${label.slice(0, 40)}" commits something (${(label.match(HIGH_LABEL) ?? role.match(HIGH_LABEL))?.[0].toLowerCase()})`);
       return R("medium", `${action.type} on "${label.slice(0, 40)}"`);
     }
@@ -150,10 +177,13 @@ export function classify(action: Action, ctx: PageContext, task: string): Classi
         const fRole = focused?.kind === "control" ? focused.role : "";
         // Enter in a multi-line box is a newline, and space in a text box is a space: neither submits.
         if (/textarea/i.test(fRole) && action.combo !== "cmd+enter" && action.combo !== "cmd+return") return R("medium", "a new line in a text box");
-        if (focused && /button|link|submit/i.test(fRole) && HIGH_LABEL.test(focused.label)) return R("high", `${action.combo} would press "${focused.label.slice(0, 40)}"`);
+        if (focused && /button|link|submit/i.test(fRole) && HIGH_LABEL.test(focused.label)) return R(NO_SUBMIT.test(task) ? "refused" : "high", `${action.combo} would press "${focused.label.slice(0, 40)}"`);
         if (action.combo === "space" && focused && !/button|checkbox|link/i.test(fRole)) return R("medium", "typing a space");
         // Enter in a field submits the form. If the page has a submit-like button we cannot tell which form, so ask.
-        if (action.combo !== "space" && ctx.controls.some((c) => submitLike(c))) return R("high", "Enter could submit the form on this page");
+        if (action.combo !== "space" && ctx.controls.some((c) => submitLike(c))) {
+          if (NO_SUBMIT.test(task)) return R("refused", NO_SUBMIT_SAY);
+          return R("high", "Enter could submit the form on this page");
+        }
         return R("medium", `${action.combo} key`);
       }
       if (LOW_KEYS.has(action.combo)) return R("low", `${action.combo} only moves around`);
