@@ -162,3 +162,22 @@ test("tutor relay defaults are unchanged", async () => {
   assert.deepEqual(out.map((m) => m.event), ["say", "done"]);
   assert.equal(out[1].data.outcome, "cutoff");
 });
+
+test("search / tab / read_file in the browser executor's validator", () => {
+  const { validate: v, searchUrl, describe: d } = act;
+  assert.deepEqual(v({ type: "search", query: " a  b " }).action, { type: "search", query: "a b", engine: "brave" });
+  assert.equal(v({ type: "search", query: "x", engine: "bing" }).ok, false);
+  assert.equal(v({ type: "search", query: "x", engine: "__proto__" }).ok, false);
+  assert.equal(v({ type: "search", query: "" }).ok, false);
+  assert.equal(v({ type: "search", query: "x".repeat(201) }).ok, false);
+  assert.equal(searchUrl("a b&c", "google"), "https://www.google.com/search?q=a%20b%26c");
+  assert.equal(searchUrl("x"), "https://search.brave.com/search?q=x");
+  assert.equal(searchUrl("x", "duckduckgo"), "https://duckduckgo.com/?q=x");
+  assert.deepEqual(v({ type: "tab", op: "switch", match: " Docs " }).action, { type: "tab", op: "switch", match: "Docs" });
+  assert.deepEqual(v({ type: "tab", op: "back", match: "ignored" }).action, { type: "tab", op: "back", match: "" });
+  assert.equal(v({ type: "tab", op: "switch" }).ok, false);
+  assert.equal(v({ type: "tab", op: "teleport" }).ok, false);
+  assert.match(v({ type: "read_file", path: "~/a.txt" }).detail, /desktop action/);
+  assert.equal(d({ type: "tab", op: "close", match: "mail" }, "", { question: true }), "Close the tab “mail”?");
+  assert.equal(d({ type: "search", query: "cats" }, ""), "Searching for “cats”");
+});

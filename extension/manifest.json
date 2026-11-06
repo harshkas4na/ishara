@@ -6,6 +6,7 @@
   "description": "A sealed screen tutor: hold a key, ask where something is, and a pointer shows you.",
   "permissions": [
     "activeTab",
+    "tabs",
     "storage",
     "offscreen",
     "alarms",

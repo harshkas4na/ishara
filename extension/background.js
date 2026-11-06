@@ -161,9 +161,23 @@ async function actTab(msg, sender) {
         if (r[stateKey(tab.id)] && nt.id != null) { await chrome.storage.session.set({ [stateKey(nt.id)]: { ...r[stateKey(tab.id)], awaiting: true } }); await chrome.storage.session.remove(stateKey(tab.id)); }
         return { ok: true };
       }
+      // After `tab new`: the blank tab is where this page should load, so the task carries on there.
+      const blankKey = "act:blank:" + tab.id;
+      const blank = (await chrome.storage.session.get(blankKey))[blankKey];
+      if (blank != null) {
+        await chrome.storage.session.remove(blankKey);
+        const bt = await chrome.tabs.get(blank).catch(() => null);
+        if (bt) {
+          await chrome.tabs.update(bt.id, { url: u.href, active: true });
+          const r = await chrome.storage.session.get(stateKey(tab.id));
+          if (r[stateKey(tab.id)]) { await chrome.storage.session.set({ [stateKey(bt.id)]: { ...r[stateKey(tab.id)], awaiting: true } }); await chrome.storage.session.remove(stateKey(tab.id)); }
+          return { ok: true, moved: true };
+        }
+      }
       await chrome.tabs.update(tab.id, { url: u.href });
       return { ok: true };
     }
+    case "tab_op": return actTabOp(msg, tab);
     case "new_tab": { const nt = await chrome.tabs.create({ active: true }); return nt ? { ok: true, detail: "opened a new tab" } : { ok: false, detail: "could not open a tab" }; }
     case "close_tab": await chrome.storage.session.remove(stateKey(tab.id)); setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 300); return { ok: true, detail: "closing this tab" };
     case "reload": await chrome.tabs.reload(tab.id); return { ok: true, detail: "reloading" };
@@ -190,6 +204,45 @@ async function actTab(msg, sender) {
     }
   }
   return { error: "unknown tab command" };
+}
+
+// Agent mode tab actions: switch / close by match, and new. `tab` is the tab the task runs in (sender.tab).
+function tabsMatching(all, selfId, match) {
+  const m = String(match || "").toLowerCase();
+  return all.filter((t) => t.id !== selfId && ((t.title || "").toLowerCase().includes(m) || (t.url || "").toLowerCase().includes(m)));
+}
+const tabName = (t) => "“" + String(t.title || t.url || "untitled").replace(/\s+/g, " ").slice(0, 40) + "”";
+async function actTabOp(msg, tab) {
+  const op = msg.op, match = typeof msg.match === "string" ? msg.match.trim() : "";
+  if (op === "new") {
+    const nt = await chrome.tabs.create({ active: true });
+    if (!nt) return { ok: false, detail: "could not open a tab" };
+    await chrome.storage.session.set({ ["act:blank:" + tab.id]: nt.id });
+    return { ok: true, detail: "opened a new blank tab; use search or open_url next and it will load there" };
+  }
+  if (op !== "switch" && op !== "close") return { error: "unknown tab op" };
+  if (op === "close" && !match) return { ok: false, detail: "refused: that would close the tab I am working in; say which other tab to close" };
+  const all = await chrome.tabs.query({ windowId: tab.windowId });
+  const mine = all.find((t) => t.id === tab.id);
+  // Closing the tab Ishara is running in is refused, by id and also when the match can only mean it.
+  const hits = tabsMatching(all, tab.id, match);
+  if (op === "close" && mine && !hits.length && ((mine.title || "").toLowerCase().includes(match.toLowerCase()) || (mine.url || "").toLowerCase().includes(match.toLowerCase()))) {
+    return { ok: false, detail: "refused: that is the tab I am working in, and I do not close it" };
+  }
+  if (!hits.length) return { ok: false, detail: "no other tab matches “" + match.slice(0, 40) + "”" };
+  if (hits.length > 1) return { ok: false, detail: hits.length + " tabs match “" + match.slice(0, 40) + "”: " + hits.slice(0, 3).map(tabName).join(", ") + ". Use a more specific word." };
+  const target = hits[0];
+  if (op === "close") { await chrome.tabs.remove(target.id); return { ok: true, detail: "closed the tab " + tabName(target) }; }
+  await chrome.tabs.update(target.id, { active: true });
+  await chrome.windows.update(target.windowId, { focused: true }).catch(() => {});
+  // The task moves with the person's attention: copy its state to the target tab and wake that tab's script.
+  const r = await chrome.storage.session.get(stateKey(tab.id));
+  if (r[stateKey(tab.id)]) {
+    await chrome.storage.session.set({ [stateKey(target.id)]: { ...r[stateKey(tab.id)], awaiting: true } });
+    await chrome.storage.session.remove(stateKey(tab.id));
+    setTimeout(() => chrome.tabs.sendMessage(target.id, { type: "act-resume" }).catch(() => {}), 400);
+  }
+  return { ok: true, detail: "switched to the tab " + tabName(target) };
 }
 
 // The same relay as /tutor, for POST /act: the content script posts {type:"start", body}; events come back as {event, data}. The task

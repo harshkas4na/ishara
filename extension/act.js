@@ -50,8 +50,12 @@
 
   // ---- Action validation (the helper validates too; this is the guard at the door of the executor) ----
   const ID_RE = /^[bt]\d{1,5}$/;
-  const SIMPLE = new Set(["click", "type", "select", "check", "key", "scroll", "open_url", "copy", "screenshot", "wait"]);
-  const NOT_BROWSER = new Set(["open_app", "quit_app"]);
+  const SIMPLE = new Set(["click", "type", "select", "check", "key", "scroll", "open_url", "search", "tab", "copy", "screenshot", "wait"]);
+  const NOT_BROWSER = new Set(["open_app", "quit_app", "read_file"]); // read_file is the helper's, desktop only: a page never reads the disk
+  // Same three engines and addresses as the helper's searchUrl (helper/src/act.ts). https only, the query URL-encoded.
+  const ENGINES = { brave: "https://search.brave.com/search?q=", google: "https://www.google.com/search?q=", duckduckgo: "https://duckduckgo.com/?q=" };
+  const TAB_OPS = ["switch", "close", "back", "forward", "new"];
+  function searchUrl(query, engine) { return (ENGINES[engine || "brave"] || ENGINES.brave) + encodeURIComponent(String(query).replace(/\s+/g, " ").trim()); }
   const MAX_TEXT = 2000, MAX_COPY = 20000;
 
   // -> { ok: true, action } | { ok: false, detail }. `action` is a clean copy holding only the known fields.
@@ -90,6 +94,20 @@
         if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, detail: "only http and https links can be opened" };
         // newTab is NOT in the frozen schema; honoured when present so "open it in a new tab" can be expressed.
         return { ok: true, action: { type: t, url: u.href, newTab: a.newTab === true || a.new_tab === true } };
+      }
+      case "search": {
+        const q = typeof a.query === "string" ? a.query.replace(/\s+/g, " ").trim() : "";
+        if (!q || q.length > 200 || /[\u0000-\u001f\u007f]/.test(q)) return { ok: false, detail: "query must be 1 to 200 characters of plain words" };
+        if (a.engine !== undefined && !Object.prototype.hasOwnProperty.call(ENGINES, a.engine)) return { ok: false, detail: "engine must be brave, google or duckduckgo" };
+        return { ok: true, action: { type: t, query: q, engine: a.engine || "brave" } };
+      }
+      case "tab": {
+        if (!TAB_OPS.includes(a.op)) return { ok: false, detail: "op must be one of " + TAB_OPS.join(", ") };
+        let match = typeof a.match === "string" ? a.match.replace(/\s+/g, " ").trim() : "";
+        if (match.length > 100 || /[\u0000-\u001f\u007f]/.test(match)) return { ok: false, detail: "match must be a short piece of the tab title or address" };
+        if (a.op === "switch" && !match) return { ok: false, detail: "switch needs a match: part of the tab title or address" };
+        if (a.op !== "switch" && a.op !== "close") match = "";
+        return { ok: true, action: { type: t, op: a.op, match } };
       }
       case "copy":
         if (typeof a.text !== "string" || !a.text || a.text.length > MAX_COPY) return { ok: false, detail: "text must be a non-empty string" };
@@ -167,6 +185,13 @@
       key: () => (o.question ? "Press " + a.combo + "?" : "Pressing " + a.combo),
       scroll: () => "Scrolling " + a.direction,
       open_url: () => (o.question ? "Open " + host(a.url) + "?" : "Opening " + host(a.url)),
+      search: () => (o.question ? "Search the web for “" + String(a.query).slice(0, 40) + "”?" : "Searching for “" + String(a.query).slice(0, 40) + "”"),
+      tab: () => {
+        const m = String(a.match || "").slice(0, 30);
+        const w = { switch: ["Switching to the tab “" + m + "”", "Switch to the tab “" + m + "”?"], close: a.match ? ["Closing the tab “" + m + "”", "Close the tab “" + m + "”?"] : ["Closing a tab", "Close a tab?"],
+          back: ["Going back", "Go back?"], forward: ["Going forward", "Go forward?"], new: ["Opening a new tab", "Open a new tab?"] }[a.op] || ["Changing tabs", "Change tabs?"];
+        return o.question ? w[1] : w[0];
+      },
       copy: () => (o.question ? "Copy text to the clipboard?" : "Copying to the clipboard"),
       screenshot: () => (o.question ? "Take a screenshot?" : "Taking a screenshot"),
       wait: () => "Waiting",
@@ -181,7 +206,7 @@
     return task + "\n\n(Already done on earlier pages: " + history.slice(-10).join("; ") + ". Carry on from the page that is open now; do not repeat finished steps.)";
   }
 
-  const pure = { isTask, validate, parseCombo, codeFor, browserShortcut, describe, continuation };
+  const pure = { isTask, validate, searchUrl, parseCombo, codeFor, browserShortcut, describe, continuation };
   if (typeof document === "undefined") return pure; // node: the DOM parts below are not needed
 
   // =====================================================================================================================
@@ -437,6 +462,8 @@
         case "wait": await sleep(a.ms); return ok("waited " + a.ms + " ms");
         case "scroll": return await doScroll(a.direction, a.amount);
         case "open_url": return await env.openUrl(a.url, a.newTab);
+        case "search": return await env.openUrl(searchUrl(a.query, a.engine), false); // the next planning step reads the results page
+        case "tab": return a.op === "back" || a.op === "forward" ? await env.tab(a.op) : await env.tabOp(a.op, a.match);
         case "copy": return await env.copy(a.text);
         case "screenshot": return await env.shot(a.to);
         case "key": return await doKey(a.combo, env);
@@ -526,6 +553,7 @@
         if (runState) { runState.expectNav = true; await saveState({ awaiting: true }); }
         const r = await T.tab({ cmd: "open_url", url, newTab: !!newTab });
         if (r.error) return fail(r.error);
+        if (r.moved) return ok("opened in the new tab");
         if (newTab) return ok("opened in a new tab");
         await sleep(8000); // the page is about to unload and take this script with it; if we are still here, the navigation did not happen
         return fail("the page did not open");
@@ -536,6 +564,12 @@
         if (r.error) return fail(r.error);
         if (cmd === "back" || cmd === "forward" || cmd === "reload") { await sleep(8000); return fail("the page did not change"); }
         return r.ok === false ? fail(r.detail || "not possible") : ok(r.detail || cmd);
+      },
+      // switch / close (by match) / new: the service worker does it with chrome.tabs. It refuses to close the tab this task runs in.
+      tabOp: async (op, match) => {
+        const r = await T.tab({ cmd: "tab_op", op, match });
+        if (r.error) return fail(r.error);
+        return r.ok === false ? fail(r.detail || "not possible") : ok(r.detail || op);
       },
       copy: async (text) => {
         const r = await copyText(text);
@@ -804,6 +838,13 @@
     if (o.getSessionId) cfg.getSessionId = o.getSessionId;
     return api;
   }
+
+  // A tab switch hands the task to another, already loaded tab: no page load happens there, so the worker nudges it to pick the task up.
+  try {
+    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage && window === window.top) {
+      chrome.runtime.onMessage.addListener((m, sender) => { if (m && m.type === "act-resume" && sender && sender.id === chrome.runtime.id && !runState) resume(); });
+    }
+  } catch { /* not an extension page */ }
 
   const api = Object.assign({}, pure, {
     run, settle, init, start, stop, handleKey, setAgent, resume, installDevHook, secretReason, compile,
