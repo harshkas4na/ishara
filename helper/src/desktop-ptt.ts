@@ -1,12 +1,12 @@
-// Desktop push-to-talk: hold a chord anywhere on the Mac, speak, release. ishara-ptt (Swift) watches the keys and
-// records the mic; this file turns its JSON lines into the same flow the browser has: a live level meter, a refusal
-// for silence, Whisper, a noise-phrase filter, then desktopAsk() (read the front window, sealed 0G calls, draw).
+// Desktop push-to-talk: hold Right Option (350 ms) anywhere on the Mac, speak, release. ishara-ptt (Swift) watches the keys
+// and records the mic; this file turns its JSON lines into the same flow the browser has: a live level meter, a refusal
+// for silence, Whisper, a noise-phrase filter, then desktopAsk() (read the front window, the streaming tutor turn, draw
+// and speak). A new key-down cuts the old answer off (voice and turn) so the user can always interrupt.
 // Every outside effect is injected (`PttDeps`) so the pipeline is tested with fakes.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { desktopAsk, overlay, type OverlayCmd } from "./desktop.ts";
-import { decide } from "./decide.ts";
+import { desktopAsk, frontApp, isBrowserBundle, overlay, BROWSER_HINT, type FrontApp, type OverlayCmd } from "./desktop.ts";
 import { transcribe } from "./whisper.ts";
 import { minRms, transcribeGuarded } from "./transcript-guard.ts";
 import { interrupt } from "./speech.ts";
@@ -28,7 +28,8 @@ export type DaemonHandle = { kill(): void };
 export type PttDeps = {
   send: (c: OverlayCmd) => void;
   transcribe: (wav: Uint8Array) => Promise<{ text: string }>;
-  ask: (question: string) => Promise<unknown>;
+  ask: (question: string, signal: AbortSignal) => Promise<unknown>;
+  front: () => Promise<FrontApp | null>;   // which app is in front, read without reading its window
   spawnDaemon: (onLine: (l: string) => void, onExit: (code: number | null) => void) => DaemonHandle;
   now: () => number;
   setTimer: (fn: () => void, ms: number) => unknown;
@@ -49,16 +50,20 @@ export function createPtt(d: PttDeps) {
   let startedAt = 0;
   let restartTimer: unknown = null;
   let lastMeterAt = -Infinity, lastMeterText = "";
-  let busy = false;         // a take is being transcribed or answered; a second one must not race it
+  let gen = 0;              // bumped on every key-down; a take from an older generation is dropped, never answered late
+  let turnAbort: AbortController | null = null;
+  let skipTake = false;     // the front app is a browser: the extension owns it, this take is ignored
+  let frontCheck: Promise<void> = Promise.resolve();
 
   const stopBubble = (text: string, sub?: string) => d.send({ cmd: "stop", text, sub });
 
   async function onUp(ev: any): Promise<void> {
-    if (busy) return stopBubble("Still answering the last question.", "Ask again when it is done.");
-    busy = true;
-    try { await take(ev); } finally { busy = false; }
+    const mine = gen;
+    await frontCheck;                 // the browser check started at key-down; it is ~30 ms, usually long done
+    if (skipTake) return;             // nothing was recorded for anyone: the hint stays on screen
+    await take(ev, mine);
   }
-  async function take(ev: any): Promise<void> {
+  async function take(ev: any, mine: number): Promise<void> {
     const samples = Number(ev.samples) || 0, maxRms = Number(ev.maxRms) || 0;
     if (samples < MIN_SAMPLES) return stopBubble("Too short.", "Hold the keys while you speak, then release.");
     if (maxRms < MIN_RMS) return stopBubble("I could not hear any sound from the microphone.", "Check the input device and the Microphone permission.");
@@ -69,11 +74,14 @@ export function createPtt(d: PttDeps) {
     } catch (e: any) {
       return stopBubble("I could not transcribe that.", String(e?.message ?? e)); // never fake a transcript
     }
+    if (mine !== gen) return;         // the user pressed the key again while this was transcribing: that is the live question now
     if (!text) return stopBubble("I heard nothing. Try again."); // the helper guard returns "" for noise, blank and wrong-script output
     // Show what was understood before the (slow) sealed calls: a wrong transcript is then visible, not mysterious.
     d.send({ cmd: "think", text: `I heard: “${text}” …thinking` });
-    try { await d.ask(text); }
-    catch (e: any) { stopBubble("Something went wrong.", String(e?.message ?? e)); } // e.g. the Accessibility message
+    turnAbort = new AbortController();
+    const mySignal = turnAbort.signal;
+    try { await d.ask(text, mySignal); }
+    catch (e: any) { if (mine === gen) stopBubble("Something went wrong.", String(e?.message ?? e)); } // e.g. the Accessibility message
   }
 
   function onLine(line: string): void {
@@ -81,8 +89,19 @@ export function createPtt(d: PttDeps) {
     try { ev = JSON.parse(line); } catch { return; } // the daemon only prints JSON; anything else is ignorable noise
     switch (ev?.ev) {
       case "ready": ready = true; chord = ev.chord; lastError = undefined; break;
-      case "down": interrupt(); /* silence the voice before the mic is live: no echo into the recording */ lastMeterAt = -Infinity; lastMeterText = ""; d.send({ cmd: "think", text: "Listening… release to send" }); break;
+      case "down": {
+        gen++; turnAbort?.abort(); turnAbort = null;   // cut off the running turn, not only its voice
+        interrupt(); /* silence the voice before the mic is live: no echo into the recording */
+        lastMeterAt = -Infinity; lastMeterText = ""; skipTake = false;
+        d.send({ cmd: "think", text: "Listening… release to send" }); // instant feedback at the 350 ms mark
+        // A browser is the extension's: say so and ignore this take. Checked after the bubble so feedback is never late.
+        frontCheck = d.front().then((f) => {
+          if (f && isBrowserBundle(f.bundleId)) { skipTake = true; d.send({ cmd: "ask", text: BROWSER_HINT }); }
+        }, () => {});
+        break;
+      }
       case "level": {
+        if (skipTake) break;
         const t = d.now(), text = meter(Number(ev.rms) || 0);
         // Throttle, and skip repeats: an unchanged bar needs no redraw.
         if (t - lastMeterAt < METER_EVERY_MS || text === lastMeterText) break;
@@ -93,6 +112,9 @@ export function createPtt(d: PttDeps) {
       case "up": void onUp(ev); break;
       case "error":
         lastError = String(ev.message ?? "ishara-ptt failed");
+        // A runtime microphone failure (device vanished, engine would not start) says fatal:false: tell the user, keep
+        // the daemon, let the next hold try again.
+        if (ev.fatal === false) { stopBubble("The microphone did not work.", lastError); break; }
         // Permission errors are final: show once, do not restart (the daemon exits 2 right after this line).
         if (ev.code === "input-monitoring" || ev.code === "microphone" || ev.code === "config") {
           fatal = true;
@@ -137,7 +159,8 @@ export function createPtt(d: PttDeps) {
 const real = createPtt({
   send: (c) => overlay.send(c),
   transcribe: (wav) => transcribeGuarded(wav, undefined, transcribe), // same guard as POST /transcribe
-  ask: (q) => desktopAsk(q, decide),
+  ask: (q, signal) => desktopAsk(q, { signal, alreadyThinking: true }),
+  front: frontApp,
   spawnDaemon(onLine, onExit) {
     // stdout carries events; stderr is inherited so the daemon's own diagnostics reach the helper log.
     const p = spawn(PTT_BIN, [], { stdio: ["ignore", "pipe", "inherit"] });

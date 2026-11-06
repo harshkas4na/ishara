@@ -15,6 +15,7 @@ function rig(over: Partial<PttDeps> = {}) {
     send: (c) => sent.push(c),
     transcribe: async (w) => { transcribed.push(w); return { text: "Where is the search box?" }; },
     ask: async (q) => { asked.push(q); },
+    front: async () => ({ app: "Notes", bundleId: "com.apple.Notes" }),
     spawnDaemon: (l, e) => { spawns++; line = l; exit = e; return { kill: () => { killed++; } }; },
     now: () => clock,
     setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
@@ -99,13 +100,55 @@ test("stop kills the daemon and cancels a pending restart", () => {
   r.exit(0); assert.equal(r.timers.length, 0); assert.equal(r.ptt.status().running, false);
 });
 
-test("a second take while the first is still answering is refused, not raced", async () => {
-  let release!: () => void;
-  const r = rig({ ask: async (q) => { await new Promise<void>((res) => (release = res)); } });
+test("a new key-down cuts off the running turn and the old take never answers late", async () => {
+  let signal!: AbortSignal; let release!: () => void;
+  const r = rig({ ask: async (q, sig) => { signal = sig; await new Promise<void>((res) => (release = res)); } });
   r.line(up()); await tick(); await tick();
-  r.line(up()); await tick();
-  assert.match((r.sent.at(-1) as any).text, /Still answering/);
+  assert.equal(signal.aborted, false);
+  r.line('{"ev":"down"}');                              // the user presses again while it is answering
+  assert.equal(signal.aborted, true, "the turn is aborted, not just its voice");
+  assert.match((r.sent.at(-1) as any).text, /Listening/);
   release(); await tick(); await tick();
   r.line(up()); await tick(); await tick();
-  assert.match((r.sent.at(-1) as any).text, /I heard/, "accepted again once the first answer is done");
+  assert.match((r.sent.at(-1) as any).text, /I heard/, "the next take is accepted");
+});
+test("a take that was still transcribing when the key went down again is dropped", async () => {
+  let finish!: () => void;
+  const r = rig({ transcribe: async () => { await new Promise<void>((res) => (finish = res)); return { text: "old question" }; } });
+  r.line(up()); await tick();
+  r.line('{"ev":"down"}');
+  finish(); await tick(); await tick();
+  assert.deepEqual(r.asked, [], "the stale transcript is not asked");
+});
+
+// ---- the new key: events as the daemon emits them (the key logic itself is exercised with synthetic CGEvents) ----
+test("a 200 ms tap makes the daemon print nothing, so nothing happens at all", async () => {
+  const r = rig(); r.line('{"ev":"ready","chord":"rightoption","holdMs":350}'); await tick();
+  assert.deepEqual(r.sent, []); assert.deepEqual(r.asked, []); assert.equal(r.transcribed.length, 0);
+  assert.equal(r.ptt.status().chord, "rightoption"); assert.equal(r.ptt.status().running, true);
+});
+test("a 400 ms hold: down at the 350 ms mark, levels, up with audio, then the question is asked", async () => {
+  const r = rig(); r.line('{"ev":"ready","chord":"rightoption","holdMs":350}');
+  r.line('{"ev":"down"}'); assert.deepEqual(r.sent, [{ cmd: "think", text: "Listening… release to send" }]);
+  r.line('{"ev":"level","rms":0.02}');
+  r.line(up({ samples: 0.4 * 16000 })); await tick(); await tick();
+  assert.deepEqual(r.asked, ["Where is the search box?"]);
+});
+test("in a browser the take is ignored: hint shown, nothing recorded, transcribed or asked", async () => {
+  const r = rig({ front: async () => ({ app: "Brave Browser", bundleId: "com.brave.Browser" }) });
+  r.line('{"ev":"down"}'); await tick();
+  assert.deepEqual(r.sent.at(-1), { cmd: "ask", text: "In the browser, use Option+Space" });
+  r.sent.length = 0;
+  r.line('{"ev":"level","rms":0.05}'); r.advance(500); r.line('{"ev":"level","rms":0.01}');
+  r.line(up()); await tick(); await tick();
+  assert.deepEqual(r.sent, [], "the level meter and the transcription bubbles stay off");
+  assert.equal(r.transcribed.length, 0); assert.deepEqual(r.asked, []);
+});
+test("a runtime microphone error (fatal:false) is shown but never stops the daemon being restarted", () => {
+  const r = rig();
+  r.line('{"ev":"error","code":"microphone","fatal":false,"message":"Microphone failed: no usable microphone input"}');
+  assert.equal(r.sent.filter((c) => c.cmd === "stop").length, 1);
+  assert.match(r.ptt.status().lastError!, /no usable microphone/);
+  r.exit(1);                                            // a later crash still earns a restart
+  assert.equal(r.timers.length, 1); assert.equal(r.timers[0].ms, 1000);
 });

@@ -1,5 +1,10 @@
 // ishara-ax: turn the frontmost window of ANY macOS app into the same Outline the browser path produces
 // (docs/INTERFACES.md), so the gate and both sealed 0G calls work unchanged.
+//   ishara-ax outline   the old pointing outline (controls and text lines, ids b0..)
+//   ishara-ax context   the tutor's raw material: controls with state, text blocks, selection, focus, alerts. The helper
+//                       (helper/src/desktop.ts) redacts, neutralizes and trims it into a PageContext; this program
+//                       only reads, it decides nothing about what may leave the machine.
+//   ishara-ax front     just the frontmost app's name and bundle id (no permission, no walk): the browser guard.
 //
 // Privacy contract: the only things this program emits are label text and rectangles. The OCR fallback
 // screenshots the window IN MEMORY, reads it with Apple's on-device Vision framework and drops the pixels;
@@ -40,7 +45,14 @@ while !args.isEmpty {
     default: break
     }
 }
-guard command == "outline" else { die(1, "usage: ishara-ax outline [--ocr auto|always|never] [--ocr-level accurate|fast] [--app Name | --pid N]") }
+if command == "front" { // cheap and permission-free: lets the helper refuse browsers BEFORE anything reads a window
+    let f = NSWorkspace.shared.frontmostApplication
+    let o: [String: Any] = ["app": f?.localizedName ?? "", "bundleId": f?.bundleIdentifier ?? ""]
+    FileHandle.standardOutput.write((try! JSONSerialization.data(withJSONObject: o, options: [.sortedKeys])) + "\n".data(using: .utf8)!)
+    exit(0)
+}
+guard command == "outline" || command == "context" else { die(1, "usage: ishara-ax outline|context|front [--ocr auto|always|never] [--ocr-level accurate|fast] [--app Name | --pid N]") }
+let ctxMode = command == "context"
 
 // ---------- permission ----------
 // AXIsProcessTrusted is about the process that is RESPONSIBLE for us: when run from a terminal that is the
@@ -56,7 +68,18 @@ guard AXIsProcessTrusted() else {
 }
 
 // ---------- model ----------
-struct El { var role: String; var label: String; var x: Double; var y: Double; var w: Double; var h: Double; var ctl: String = "" }
+struct El {
+    var role: String; var label: String; var x: Double; var y: Double; var w: Double; var h: Double; var ctl: String = ""
+    var elem: AXUIElement? = nil          // context mode: to match the focused element
+    var state: [String: Any] = [:]        // context mode: checked / value / selectedOption / disabled / filledChars / empty / invalid
+}
+// A text block for the tutor (context mode). cells is set for table rows ("row: a | b" is built by the reader core).
+struct Blk { var kind: String; var text: String; var cells: [String] = []; var x = 0.0, y = 0.0, w = 0.0, h = 0.0; var hasRect = false; var inView = true; var error = false }
+var blocks: [Blk] = []
+final class RowAcc { var parts: [String] = []; var cellOpen: Int? = nil }
+var rowStack: [RowAcc] = []
+struct WalkCtx { var alert = false; var heading = false }
+var focusedEl: AXUIElement? = nil
 
 func axAttr(_ e: AXUIElement, _ k: String) -> CFTypeRef? {
     var v: CFTypeRef?
@@ -127,7 +150,73 @@ var visited = 0
 let maxNodes = 4000, maxDepth = 14
 let deadline = Date().addingTimeInterval(3.0) // AX gets 3 s; the rest of the 6 s is OCR and process start
 
-func walk(_ e: AXUIElement, _ depth: Int) {
+func isSecure(_ role: String, _ sub: String) -> Bool { role == "AXSecureTextField" || sub == "AXSecureTextField" }
+
+// ---- context mode helpers ----
+// Text area content as paragraph blocks. In-view paragraphs (AXVisibleCharacterRange) come with a screen rect from
+// AXBoundsForRange, so "point at this paragraph" can land. A huge buffer (Terminal scrollback) is cut to the visible
+// part plus a margin before it is even split.
+func textAreaBlocks(_ e: AXUIElement, _ area: CGRect) {
+    guard let v = axAttr(e, kAXValueAttribute) as? String, !v.isEmpty else { return }
+    let ns = v as NSString
+    var vis = NSRange(location: 0, length: ns.length)
+    if let rv = axAttr(e, "AXVisibleCharacterRange"), CFGetTypeID(rv) == AXValueGetTypeID() {
+        var r = CFRange(); if AXValueGetValue(rv as! AXValue, .cfRange, &r), r.length > 0 { vis = NSRange(location: r.location, length: r.length) }
+    }
+    let lo = max(0, vis.location - 2000), hi = min(ns.length, vis.location + vis.length + 2000)
+    var made = 0
+    ns.enumerateSubstrings(in: NSRange(location: lo, length: hi - lo), options: [.byParagraphs]) { sub, range, _, stop in
+        guard let sub = sub else { return }
+        let t = clean(sub)
+        if t.count < 2 { return }
+        if made >= 80 { stop.pointee = true; return }
+        let inV = NSIntersectionRange(range, vis).length > 0
+        var b = Blk(kind: "p", text: t, inView: inV)
+        if inV {
+            var cr = CFRange(location: range.location, length: min(range.length, 400))
+            if let arg = AXValueCreate(.cfRange, &cr) {
+                var out: CFTypeRef?
+                if AXUIElementCopyParameterizedAttributeValue(e, "AXBoundsForRange" as CFString, arg, &out) == .success, let o = out, CFGetTypeID(o) == AXValueGetTypeID() {
+                    var r = CGRect.zero
+                    if AXValueGetValue(o as! AXValue, .cgRect, &r), r.width > 1, r.height > 1, visibleWin.intersects(r) { b.x = r.minX; b.y = r.minY; b.w = r.width; b.h = r.height; b.hasRect = true }
+                }
+            }
+            if !b.hasRect { b.inView = false } // visible per AX but no usable box: do not claim it can be pointed at
+        }
+        blocks.append(b); made += 1
+    }
+}
+
+func controlState(_ e: AXUIElement, role: String, sub: String, mapped: String) -> [String: Any] {
+    var st: [String: Any] = [:]
+    if let en = axAttr(e, kAXEnabledAttribute) as? Bool, !en { st["disabled"] = true }
+    if let inv = axAttr(e, "AXInvalid") as? Bool, inv { st["invalid"] = true }
+    // A secure field is NEVER read: not its value, not even through a different attribute. Only how many characters
+    // it holds (AXNumberOfCharacters is a count, not content) so "filled" can be said.
+    if isSecure(role, sub) {
+        if let n = (axAttr(e, "AXNumberOfCharacters") as? NSNumber)?.intValue { st["filledChars"] = n; st["empty"] = n == 0 }
+        return st
+    }
+    switch mapped {
+    case "checkbox", "radio":
+        if let n = axAttr(e, kAXValueAttribute) as? NSNumber { st["checked"] = n.intValue != 0 }
+    case "select":
+        let v = clean(axStr(e, kAXValueAttribute)); if !v.isEmpty { st["selectedOption"] = clip(v) }
+    case "input":
+        let isArea = role == "AXTextArea"
+        if let n = (axAttr(e, "AXNumberOfCharacters") as? NSNumber)?.intValue ?? (axAttr(e, kAXValueAttribute) as? String)?.count {
+            st["filledChars"] = n; st["empty"] = n == 0
+            if !isArea, n > 0, n <= 120 { st["value"] = clean(axStr(e, kAXValueAttribute)) }
+        }
+    case "button":
+        if let sel = axAttr(e, kAXSelectedAttribute) as? Bool, sel { st["checked"] = true }
+        else if role == "AXRadioButton" || role == "AXTab", let n = axAttr(e, kAXValueAttribute) as? NSNumber, n.intValue != 0 { st["checked"] = true }
+    default: break
+    }
+    return st
+}
+
+func walk(_ e: AXUIElement, _ depth: Int, _ c: WalkCtx = WalkCtx()) {
     if depth > maxDepth || visited > maxNodes || Date() > deadline { return }
     visited += 1
     let role = axStr(e, kAXRoleAttribute), sub = axStr(e, kAXSubroleAttribute)
@@ -135,27 +224,60 @@ func walk(_ e: AXUIElement, _ depth: Int) {
     // menu bar take 1.4 s in the lab. We never enter AXMenuBar, and skip AXMenu unless it is open on screen.
     if role == "AXMenuBar" { return }
     if let h = axAttr(e, "AXHidden") as? Bool, h { return }
+    var c = c
+    if ctxMode {
+        if role == "AXSheet" || role == "AXAlert" || sub == "AXSystemDialog" || sub == "AXDialog" { c.alert = true }
+        if role == "AXHeading" { c.heading = true }
+    }
     let fr = frame(e)
+    var row: RowAcc? = nil
+    if ctxMode && role == "AXRow" { row = RowAcc(); rowStack.append(row!) }
+    if ctxMode && role == "AXCell", let r = rowStack.last { r.cellOpen = r.parts.count; r.parts.append("") }
     if let mapped = mapRole(role, sub), let fr = fr, fr.width >= 2, fr.height >= 2, visibleWin.intersects(fr) {
-        let c = CGPoint(x: fr.midX, y: fr.midY)
-        if visibleWin.contains(c) { // centre must be inside the on-screen part: a half-scrolled-off row is not clickable
+        let cpt = CGPoint(x: fr.midX, y: fr.midY)
+        if visibleWin.contains(cpt) { // centre must be inside the on-screen part: a half-scrolled-off row is not clickable
             let title = clean(axStr(e, kAXTitleAttribute)), desc = clean(axStr(e, kAXDescriptionAttribute))
             let ph = clean(axStr(e, "AXPlaceholderValue")), help = clean(axStr(e, kAXHelpAttribute))
-            let val = clean(axStr(e, kAXValueAttribute))
+            // Never read the value of a secure field, not even to use it as a label.
+            let secure = isSecure(role, sub)
+            let val = secure ? "" : clean(axStr(e, kAXValueAttribute))
             var label = title.isEmpty ? (desc.isEmpty ? ph : desc) : title
             // A text field's value is what the user typed, not its name; only use value as a label for static text and short control values.
             if label.isEmpty && (mapped == "text" || mapped == "select" || mapped == "checkbox") && !val.isEmpty { label = val }
             if label.isEmpty && !help.isEmpty { label = help }
-            let ctl = (role == "AXSecureTextField" || sub == "AXSecureTextField") ? "password" : (role == "AXSearchField" ? "search" : (mapped == "input" ? "text" : ""))
-            let el = El(role: mapped, label: clip(label), x: fr.minX, y: fr.minY, w: fr.width, h: fr.height, ctl: ctl)
-            if mapped == "text" { if !el.label.isEmpty { statics.append(el) } } else { found.append(el) }
+            let ctl = secure ? "password" : (role == "AXSearchField" ? "search" : (mapped == "input" ? "text" : ""))
+            var el = El(role: mapped, label: clip(label), x: fr.minX, y: fr.minY, w: fr.width, h: fr.height, ctl: ctl)
+            if mapped == "text" {
+                if !el.label.isEmpty { statics.append(el) }
+                if ctxMode && !val.isEmpty || ctxMode && !el.label.isEmpty {
+                    let full = val.isEmpty ? label : val
+                    if let r = rowStack.last {
+                        if let ci = r.cellOpen { r.parts[ci] += (r.parts[ci].isEmpty ? "" : " ") + full } else { r.parts.append(full) }
+                    } else if full.count >= 2 {
+                        blocks.append(Blk(kind: c.alert ? "error" : (c.heading ? "h" : (full.count > 80 ? "p" : "text")), text: full, x: fr.minX, y: fr.minY, w: fr.width, h: fr.height, hasRect: true, inView: true, error: c.alert))
+                    }
+                }
+            } else {
+                if ctxMode { el.elem = e; el.state = controlState(e, role: role, sub: sub, mapped: mapped) }
+                found.append(el)
+                if ctxMode && role == "AXTextArea" { textAreaBlocks(e, fr) }
+            }
         }
     }
     // Do not recurse into the value of text areas (their children are every line of a document).
-    if role == "AXTextArea" { return }
-    if let kids = axAttr(e, kAXChildrenAttribute) as? [AXUIElement] { for k in kids { walk(k, depth + 1) } }
+    if role != "AXTextArea", let kids = axAttr(e, kAXChildrenAttribute) as? [AXUIElement] { for k in kids { walk(k, depth + 1, c) } }
+    if ctxMode && role == "AXCell", let r = rowStack.last { r.cellOpen = nil }
+    if let r = row {
+        rowStack.removeLast()
+        let parts = r.parts.map { clean($0) }.filter { !$0.isEmpty }
+        if let fr = fr, !parts.isEmpty, visibleWin.contains(CGPoint(x: fr.midX, y: fr.midY)) {
+            if parts.count == 1 { blocks.append(Blk(kind: c.alert ? "error" : "li", text: parts[0], x: fr.minX, y: fr.minY, w: fr.width, h: fr.height, hasRect: true, inView: true, error: c.alert)) }
+            else { blocks.append(Blk(kind: "cell", text: parts.joined(separator: " | "), cells: parts, x: fr.minX, y: fr.minY, w: fr.width, h: fr.height, hasRect: true, inView: true, error: c.alert)) }
+        }
+    }
 }
-walk(window, 0)
+walk(window, 0, WalkCtx(alert: ctxMode && (axStr(window, kAXSubroleAttribute) == "AXSystemDialog" || axStr(window, kAXSubroleAttribute) == "AXDialog")))
+if ctxMode { focusedEl = axAttr(axApp, kAXFocusedUIElementAttribute).map { $0 as! AXUIElement } }
 let axMs = ms()
 
 // Label controls that have none from the nearest static text to their left, or just above them.
@@ -178,10 +300,16 @@ for i in found.indices where found[i].label.isEmpty && ["input", "select", "chec
 found = found.filter { !$0.label.isEmpty || ["input", "select", "checkbox"].contains($0.role) }
 
 // ---------- OCR fallback ----------
-let axLabelled = found.filter { !$0.label.isEmpty }.count + statics.count
+let axLabelled = found.filter { !$0.label.isEmpty }.count + statics.count + blocks.count
 var ocrEls: [El] = []
 var ocrNote = "skipped"
 
+// Why a WINDOW capture and not a display crop: cropping the display to the window's rectangle also photographs whatever
+// is drawn over it (another app's window, a notification, a floating panel), and that text would be read and sent as if
+// it were this app's. A desktop-independent window filter captures only this app's window, even when it is partly
+// covered, and ishara-overlay's own windows can never appear in it.
+var capRect = CGRect.zero // the screen rect (AX space) the captured image covers
+func overlapArea(_ a: CGRect, _ b: CGRect) -> Double { let i = a.intersection(b); return i.isNull ? 0 : Double(i.width * i.height) }
 func captureWindow() -> CGImage? {
     guard CGPreflightScreenCaptureAccess() else {
         err("ishara-ax: OCR skipped, Screen Recording permission is missing. Grant it to the app that launched this (System Settings > Privacy & Security > Screen & System Audio Recording).")
@@ -190,21 +318,20 @@ func captureWindow() -> CGImage? {
     }
     var out: CGImage?
     let sem = DispatchSemaphore(value: 0)
+    let pid = app.processIdentifier
     Task {
         defer { sem.signal() }
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            let mid = CGPoint(x: visibleWin.midX, y: visibleWin.midY)
-            guard let disp = content.displays.first(where: { $0.frame.contains(mid) }) ?? content.displays.first else { return }
-            // Never photograph our own pointer overlay: its ring would be "read" as part of the app.
-            let mine = content.applications.filter { $0.applicationName.contains("ishara-overlay") }
-            let filter = SCContentFilter(display: disp, excludingApplications: mine, exceptingWindows: [])
+            let mine = content.windows.filter { $0.owningApplication?.processID == pid && $0.frame.width > 50 }
+            guard let w = mine.max(by: { overlapArea($0.frame, winFrame) < overlapArea($1.frame, winFrame) }),
+                  overlapArea(w.frame, winFrame) > 0.5 * Double(winFrame.width * winFrame.height) else { ocrNote = "no-window"; return }
+            let filter = SCContentFilter(desktopIndependentWindow: w)
             let cfg = SCStreamConfiguration()
-            let rect = visibleWin.intersection(disp.frame)
-            cfg.sourceRect = CGRect(x: rect.minX - disp.frame.minX, y: rect.minY - disp.frame.minY, width: rect.width, height: rect.height)
             let scale = Double(filter.pointPixelScale)
-            cfg.width = Int(rect.width * scale); cfg.height = Int(rect.height * scale)
+            cfg.width = Int(w.frame.width * scale); cfg.height = Int(w.frame.height * scale)
             cfg.showsCursor = false
+            capRect = w.frame
             out = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg)
         } catch { err("ishara-ax: screen capture failed: \(error.localizedDescription)"); ocrNote = "capture-failed" }
     }
@@ -224,15 +351,19 @@ func runOCR() {
         let text = clean(cand.string)
         if text.count < 2 { continue }
         // Vision boxes are normalised with a BOTTOM-left origin inside the captured image; the image
-        // covers visibleWin exactly, so flip y and scale to screen points (top-left, same as AX).
+        // covers capRect (the window) exactly, so flip y and scale to screen points (top-left, same as AX).
         let b = o.boundingBox
-        let x = visibleWin.minX + Double(b.minX) * visibleWin.width
-        let y = visibleWin.minY + Double(1 - b.maxY) * visibleWin.height
-        ocrEls.append(El(role: "text", label: clip(text), x: x, y: y, w: Double(b.width) * visibleWin.width, h: Double(b.height) * visibleWin.height))
+        let x = capRect.minX + Double(b.minX) * capRect.width
+        let y = capRect.minY + Double(1 - b.maxY) * capRect.height
+        let el = El(role: "text", label: clip(text), x: x, y: y, w: Double(b.width) * capRect.width, h: Double(b.height) * capRect.height)
+        if visibleWin.contains(CGPoint(x: el.x + el.w / 2, y: el.y + el.h / 2)) { ocrEls.append(el) } // part of the window that is off every screen is not "in view"
     }
     ocrNote = "ran:\(ocrLevel):\(ocrEls.count)"
 }
-if ocrMode == "always" || (ocrMode == "auto" && axLabelled < 25) { runOCR() }
+// Context mode also reads the pixels when the tree gave almost no PROSE (System Settings: dozens of labelled buttons but
+// the description text lives in one opaque field): a tutor that only knows control names cannot explain a window.
+let axProse = blocks.reduce(0) { $0 + $1.text.count }
+if ocrMode == "always" || (ocrMode == "auto" && (axLabelled < 25 || (ctxMode && axProse < 300))) { runOCR() }
 let ocrMs = ms()
 
 // ---------- merge ----------
@@ -244,7 +375,10 @@ func overlap(_ a: El, _ b: El) -> Double {
 }
 // An OCR line is a duplicate when it sits on an AX element (>50% of the smaller box) and the texts agree
 // (either contains the other), or when it repeats an AX label that is within a text-height of it.
-var all = found + statics
+// Context mode: AX text blocks count as "already seen" too, so OCR does not repeat a paragraph the tree gave us.
+let blockEls: [El] = ctxMode ? blocks.filter { $0.hasRect }.map { El(role: "text", label: $0.text, x: $0.x, y: $0.y, w: $0.w, h: $0.h) } : []
+var all = found + statics + blockEls
+let baseCount = all.count
 for o in ocrEls {
     let n = norm(o.label)
     let dup = all.contains { a in
@@ -253,6 +387,62 @@ for o in ocrEls {
         return (overlap(a, o) > 0.5 && (same || a.label.isEmpty || a.role == "text")) || (same && abs(a.y - o.y) < max(a.h, o.h) && abs(a.x - o.x) < 40)
     }
     if !dup && !n.isEmpty { all.append(o) }
+}
+
+// ---------- context mode: emit controls with state, blocks, selection, focus ----------
+func byReading(_ a: (x: Double, y: Double), _ b: (x: Double, y: Double)) -> Bool {
+    let ra = Int(a.y / 8), rb = Int(b.y / 8)
+    return ra != rb ? ra < rb : a.x < b.x
+}
+if ctxMode {
+    var ctls = found.sorted { byReading(($0.x, $0.y), ($1.x, $1.y)) }
+    if ctls.count > 150 { ctls = Array(ctls.prefix(150)) }
+    var controlsJSON: [[String: Any]] = []
+    var focusedId: String? = nil
+    for (i, e) in ctls.enumerated() {
+        let id = "b\(i)"
+        var o: [String: Any] = ["id": id, "label": e.label, "role": e.role,
+                                "rect": ["x": Int(e.x.rounded()), "y": Int(e.y.rounded()), "w": Int(e.w.rounded()), "h": Int(e.h.rounded())]]
+        if !e.ctl.isEmpty { o["ctl"] = e.ctl }
+        if !e.state.isEmpty { o["state"] = e.state }
+        controlsJSON.append(o)
+        if let f = focusedEl, let ee = e.elem, CFEqual(f, ee) { focusedId = id }
+    }
+    for o in all[baseCount...] where !o.label.isEmpty { // OCR survivors: plain text lines
+        blocks.append(Blk(kind: "text", text: o.label, x: o.x, y: o.y, w: o.w, h: o.h, hasRect: true, inView: true))
+    }
+    let withRect = blocks.filter { $0.hasRect }.sorted { byReading(($0.x, $0.y), ($1.x, $1.y)) }
+    let ordered = withRect + blocks.filter { !$0.hasRect }
+    var blocksJSON: [[String: Any]] = []
+    for b in ordered.prefix(500) {
+        var o: [String: Any] = ["kind": b.kind, "text": b.text, "inView": b.inView]
+        if !b.cells.isEmpty { o["cells"] = b.cells }
+        if b.error { o["error"] = true }
+        if b.hasRect { o["rect"] = ["x": Int(b.x.rounded()), "y": Int(b.y.rounded()), "w": Int(b.w.rounded()), "h": Int(b.h.rounded())] }
+        blocksJSON.append(o)
+    }
+    var selection = ""
+    if let f = focusedEl, !isSecure(axStr(f, kAXRoleAttribute), axStr(f, kAXSubroleAttribute)) {
+        selection = clean(axStr(f, kAXSelectedTextAttribute))
+    }
+    let mid = CGPoint(x: visibleWin.midX, y: visibleWin.midY)
+    let disp = screenRects.first { $0.contains(mid) } ?? screenRects.first ?? winFrame
+    var out: [String: Any] = [
+        "mode": "context",
+        "app": app.localizedName ?? "app", "bundleId": app.bundleIdentifier ?? "",
+        "title": clean(axStr(window, kAXTitleAttribute)),
+        "viewport": ["w": Int(winFrame.width.rounded()), "h": Int(winFrame.height.rounded())],
+        "origin": ["x": Int(winFrame.minX.rounded()), "y": Int(winFrame.minY.rounded())],
+        "display": ["x": Int(disp.minX.rounded()), "y": Int(disp.minY.rounded()), "w": Int(disp.width.rounded()), "h": Int(disp.height.rounded())],
+        "controls": controlsJSON, "blocks": blocksJSON, "ocr": ocrNote, "axNodes": visited,
+    ]
+    if !selection.isEmpty { out["selection"] = selection }
+    if let f = focusedId { out["focused"] = f }
+    err("ishara-ax: \(app.localizedName ?? "app") | context | \(controlsJSON.count) controls, \(blocksJSON.count) blocks | ax \(axMs) ms | ocr \(ocrNote) (+\(ocrMs - axMs) ms) | total \(ms()) ms")
+    let data = try! JSONSerialization.data(withJSONObject: out, options: [.sortedKeys])
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write("\n".data(using: .utf8)!)
+    exit(0)
 }
 
 // Reading order: rows top to bottom (8 pt buckets), then left to right.

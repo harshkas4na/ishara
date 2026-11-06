@@ -142,14 +142,15 @@ const server = createServer(async (req, res) => {
       const b = JSON.parse((await readBody(req)).toString("utf8"));
       return send(res, 200, await episodeLog.endSession(String(b.sessionId)));
     }
-    // Desktop path: read the frontmost app's window (accessibility tree + local OCR), decide with the same sealed
-    // calls as the browser, and draw the answer in a click-through overlay. Nothing but text leaves the laptop.
+    // Desktop path: read the frontmost app's window (accessibility tree + local OCR) into a redacted PageContext, run
+    // the same streaming tutor turn as /tutor (explain, point, guide, follow-ups), draw it in a click-through overlay and
+    // speak it. Nothing but text leaves the laptop. Body: { question, sessionId?, speak? }. Browsers answer with the hint.
     if (req.method === "POST" && path === "/desktop/ask") {
       const b = JSON.parse((await readBody(req)).toString("utf8"));
       if (typeof b?.question !== "string" || !b.question.trim()) return send(res, 400, { error: "need { question }" });
       try {
-        const r = await desktopAsk(b.question.trim(), decide, { sessionId: String(b.sessionId ?? "desktop") });
-        return send(res, 200, { decision: r.decision, ms: r.ms, elements: r.outline.elements.length });
+        const r = await desktopAsk(b.question.trim(), { sessionId: String(b.sessionId ?? "desktop"), speak: b.speak !== false });
+        return send(res, 200, r);
       } catch (e: any) { return send(res, 503, { error: String(e?.message ?? e) }); } // e.g. the Accessibility permission message
     }
     // Push-to-talk daemon state (desktop-ptt.ts): running, the chord, and the last error (e.g. a missing permission).

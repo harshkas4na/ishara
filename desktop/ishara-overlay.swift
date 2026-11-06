@@ -6,6 +6,11 @@
 //   {"cmd":"ask","text":".."}                   bubble only
 //   {"cmd":"stop","text":"..","sub":".."}       red bubble (safe-stop)
 //   {"cmd":"clear"}                             hide everything
+// Tutor commands (the streaming path, helper/src/desktop.ts eventToOverlay):
+//   {"cmd":"say","text":"..","append":true|false}   one streamed sentence; append:false starts a fresh answer
+//   {"cmd":"step","n":2,"m":4}                      bubble header "Step 2 of 4"
+//   {"cmd":"point",...,"keep":true}                 like point, but the bubble text is left as streamed and only moves
+//   {"cmd":"done"}                                  the turn ended: linger, then fade; a cursor that never pointed goes away
 // x,y are SCREEN POINTS with a top-left origin (what the Accessibility API reports and what ishara-ax emits).
 // Look mirrors extension/overlay.js (.ptr, inkPath, drawInk, thinking) so the tutor feels the same in every app:
 // needle cursor, saffron ripple + marker, bubble #1f1147, stop bubble #7f1d1d. Reduce Motion: final state only.
@@ -145,7 +150,9 @@ func currentTip() -> CGPoint {
     let oy = fy.presentation()?.value(forKeyPath: "transform.translation.y") as? CGFloat ?? 0
     return CGPoint(x: hp.x + ox, y: hp.y + oy)
 }
+var thinking = false // the figure-eight is running: a repeated think (the Listening meter ticks at 8 Hz) only updates text
 func stopMotion() {
+    thinking = false
     fx.removeAllAnimations(); fy.removeAllAnimations()
     ripples.forEach { $0.removeAllAnimations() }
     ink.removeAllAnimations()
@@ -222,13 +229,15 @@ func arrive(rect: CGRect?) {
 // Thinking: a figure-eight around 55% of the screen height on the active window's screen. x sweeps +-46 over
 // 3.6 s (alternating) while y sweeps +-22 over 1.8 s, which is a Lissajous 1:2 figure-eight.
 func think() {
+    if thinking && !host.isHidden { return }
     let sr = activeScreenRect()
     let c = toCanvas(Double(sr.midX), Double(sr.minY + sr.height * 0.55))
     let from = host.isHidden ? c : currentTip()
     stopMotion()
     ink.isHidden = true
     setNoImplicit { host.position = c; host.isHidden = false }
-    if reduceMotion { return } // static cursor, no dance
+    if reduceMotion { thinking = true; return } // static cursor, no dance
+    thinking = true
     if from != c { // a visible cursor eases to the dance centre instead of jumping there
         let a = CABasicAnimation(keyPath: "position")
         a.fromValue = NSValue(point: from); a.toValue = NSValue(point: c); a.duration = 0.5
@@ -248,6 +257,11 @@ func think() {
 }
 
 // ---- bubble ----
+// Layout: a small "Ishara" label (and "Step n of m" on the right), then the answer. It wraps at 420 pt, keeps the NEWEST
+// sentences when the text outgrows its height, sits next to the pointed target (below it, flipping above at the screen
+// edge, beside it for a tall target, never on top of it) or, with no target, bottom-centre above the Dock. It lives on
+// the screen that holds the target or the frontmost window. Click-through like the rest of the window.
+let BUBBLE_W: CGFloat = 420, BODY_MAX_H: CGFloat = 230, PAD: CGFloat = 12
 let bubble = NSView()
 bubble.wantsLayer = true
 bubble.layer!.cornerRadius = 10
@@ -255,13 +269,26 @@ bubble.layer!.shadowOpacity = 0.3
 bubble.layer!.shadowRadius = 9
 bubble.layer!.shadowOffset = CGSize(width: 0, height: -3)
 bubble.isHidden = true
+func smallLabel(_ s: String, _ color: NSColor, _ weight: NSFont.Weight) -> NSTextField {
+    let t = NSTextField(labelWithString: s)
+    t.font = NSFont.systemFont(ofSize: 11, weight: weight); t.textColor = color
+    return t
+}
+let brand = smallLabel("Ishara", saffron, .bold)
+let stepTag = smallLabel("", NSColor(white: 1, alpha: 0.72), .medium)
 let label = NSTextField(wrappingLabelWithString: "")
 label.textColor = .white
 label.font = NSFont.systemFont(ofSize: 14)
 label.maximumNumberOfLines = 0
-label.preferredMaxLayoutWidth = 296
-bubble.addSubview(label)
+bubble.addSubview(brand); bubble.addSubview(stepTag); bubble.addSubview(label)
 canvas.addSubview(bubble)
+
+// What the bubble shows now. `sentences` is the streamed answer; think/ask/stop put a single message in it.
+var sentences: [String] = []
+var bubbleStop = false
+var stepText = ""
+var anchor: CGRect? = nil        // canvas coords of the pointed target; nil = bottom-centre of the active screen
+var pointedThisTurn = false
 
 var hideTimer: Timer?
 // Auto-hide so a stale pointer never lingers over someone's work; any new command re-arms it. Thinking waits
@@ -278,28 +305,73 @@ func clearAll() {
     host.isHidden = true
     ink.isHidden = true
     bubble.isHidden = true
+    sentences = []; anchor = nil; stepText = ""; pointedThisTurn = false
 }
 
-// near: a spot to hang the bubble from. With a target rect, below it (clear of the underline), else above it.
-func showBubble(_ text: String, sub: String?, stop: Bool, near: CGPoint?, rect: CGRect? = nil) {
-    let full = (sub?.isEmpty == false) ? text + "\n" + sub! : text
-    label.stringValue = full
-    bubble.layer!.backgroundColor = (stop ? rgb(0x7f1d1d) : rgb(0x1f1147)).cgColor
-    let pad: CGFloat = 12, padV: CGFloat = 8
-    label.preferredMaxLayoutWidth = 296
-    let sz = label.sizeThatFits(NSSize(width: 296, height: 2000))
-    let bw = min(320, sz.width + pad * 2), bh = sz.height + padV * 2
-    label.frame = NSRect(x: pad, y: padV, width: bw - pad * 2, height: sz.height)
-    var x = union.width / 2 - bw / 2, y: CGFloat = 40
-    if let p = near {
-        x = min(max(8, p.x - bw / 2), union.width - bw - 8)
-        let below = rect.map { $0.maxY + 36 } ?? p.y + 40
-        let above = rect.map { $0.minY - 36 - bh } ?? p.y - 40 - bh
-        // Below unless there is no room, same flip rule as placeBubble() in the browser overlay.
-        y = below + bh < union.height ? below : max(8, above)
+// A screen rect in canvas coordinates (flipped, union-local) from an AX-space rect.
+func canvasRect(_ r: CGRect) -> CGRect { CGRect(origin: toCanvas(Double(r.minX), Double(r.minY)), size: r.size) }
+// The screen (AX space) that holds a canvas point.
+func screenRectAX(containingCanvas p: CGPoint) -> CGRect? {
+    for s in screens {
+        let r = CGRect(x: s.frame.minX, y: primaryH - s.frame.maxY, width: s.frame.width, height: s.frame.height)
+        if canvasRect(r).contains(p) { return r }
     }
-    bubble.frame = NSRect(x: x, y: y, width: bw, height: bh)
+    return nil
+}
+
+func placeBubble(_ bw: CGFloat, _ bh: CGFloat) -> CGPoint {
+    let m: CGFloat = 8
+    if let t = anchor {
+        let scr = canvasRect(screenRectAX(containingCanvas: CGPoint(x: t.midX, y: t.midY)) ?? activeScreenRect())
+        let gap: CGFloat = 26 // clears the marker loop (pad 9 + stroke) and the cursor needle below the tip
+        let x = min(max(scr.minX + m, t.midX - bw / 2), scr.maxX - bw - m)
+        let below = t.maxY + gap
+        if below + bh <= scr.maxY - m { return CGPoint(x: x, y: below) }
+        let above = t.minY - gap - bh
+        if above >= scr.minY + m { return CGPoint(x: x, y: above) }
+        let y = min(max(scr.minY + m, t.midY - bh / 2), scr.maxY - bh - m)
+        if t.maxX + gap + bw <= scr.maxX - m { return CGPoint(x: t.maxX + gap, y: y) }
+        if t.minX - gap - bw >= scr.minX + m { return CGPoint(x: t.minX - gap - bw, y: y) }
+        return CGPoint(x: x, y: max(scr.minY + m, scr.maxY - 120 - bh)) // a target that fills the screen: bottom, as with none
+    }
+    let scr = canvasRect(activeScreenRect())
+    return CGPoint(x: scr.midX - bw / 2, y: max(scr.minY + m, scr.maxY - 120 - bh)) // ~120 pt above the bottom edge (Dock area)
+}
+
+func renderBubble() {
+    guard !sentences.isEmpty else { bubble.isHidden = true; return }
+    // Keep the newest sentences: drop from the front until the body fits its maximum height.
+    var start = 0
+    var body = sentences.joined(separator: " ")
+    var sz = NSSize.zero
+    label.preferredMaxLayoutWidth = BUBBLE_W - PAD * 2
+    while true {
+        label.stringValue = body
+        sz = label.sizeThatFits(NSSize(width: BUBBLE_W - PAD * 2, height: 4000))
+        if sz.height <= BODY_MAX_H || start >= sentences.count - 1 { break }
+        start += 1
+        body = "… " + sentences[start...].joined(separator: " ")
+    }
+    if sz.height > BODY_MAX_H { sz.height = BODY_MAX_H } // one enormous sentence: clipped by the frame, newest end not guaranteed
+    let headH: CGFloat = 16
+    let bw = min(BUBBLE_W, max(sz.width, 150) + PAD * 2), bh = PAD + headH + 4 + sz.height + PAD - 2
+    bubble.layer!.backgroundColor = (bubbleStop ? rgb(0x7f1d1d) : rgb(0x1f1147)).cgColor
+    // bubble is a plain (non-flipped) NSView inside a flipped canvas: its own subviews use bottom-left origin
+    label.frame = NSRect(x: PAD, y: PAD - 2, width: bw - PAD * 2, height: sz.height)
+    brand.frame = NSRect(x: PAD, y: bh - PAD - 13, width: 90, height: 14)
+    stepTag.stringValue = stepText
+    let tw = stepTag.sizeThatFits(NSSize(width: 200, height: 14)).width
+    stepTag.frame = NSRect(x: bw - PAD - tw, y: bh - PAD - 13, width: tw, height: 14)
+    let o = placeBubble(bw, bh)
+    bubble.frame = NSRect(x: o.x, y: o.y, width: bw, height: bh)
     bubble.isHidden = false
+}
+
+func showMessage(_ text: String, stop: Bool) {
+    sentences = text.isEmpty ? [] : [text]
+    bubbleStop = stop
+    stepText = ""
+    renderBubble()
 }
 
 func handle(_ obj: [String: Any]) {
@@ -317,19 +389,34 @@ func handle(_ obj: [String: Any]) {
         }
         glide(to: p)
         arrive(rect: rect)
-        showBubble(text, sub: obj["sub"] as? String, stop: false, near: p, rect: rect)
-        armHide()
+        pointedThisTurn = true
+        anchor = rect ?? CGRect(x: p.x - 1, y: p.y - 1, width: 2, height: 2)
+        if (obj["keep"] as? Bool) == true && !sentences.isEmpty { renderBubble() }
+        else { var t = text; if let sub = obj["sub"] as? String, !sub.isEmpty { t += "\n" + sub }; showMessage(t, stop: false) }
+        armHide((obj["keep"] as? Bool) == true ? 25 : 12)
     case "think":
+        anchor = nil; pointedThisTurn = false
         think()
-        showBubble(text.isEmpty ? "Thinking…" : text, sub: nil, stop: false, near: nil)
+        showMessage(text.isEmpty ? "Thinking…" : text, stop: false)
         armHide(30)
-    case "ask":
+    case "say":
+        if (obj["append"] as? Bool) != true {
+            sentences = []; stepText = ""; bubbleStop = false; anchor = nil; pointedThisTurn = false
+        }
+        if !text.isEmpty { sentences.append(text) }
+        renderBubble()
+        armHide(25)
+    case "step":
+        if let n = (obj["n"] as? NSNumber)?.intValue, let m = (obj["m"] as? NSNumber)?.intValue { stepText = "Step \(n) of \(m)"; renderBubble() }
+        armHide(25)
+    case "done":
+        if !pointedThisTurn { clearCursor() } // an explanation with no pointer: the figure-eight stops with the answer
+        armHide(15)
+    case "ask", "stop":
         clearCursor()
-        showBubble(text, sub: obj["sub"] as? String, stop: false, near: nil)
-        armHide()
-    case "stop":
-        clearCursor()
-        showBubble(text, sub: obj["sub"] as? String, stop: true, near: nil)
+        anchor = nil
+        var t = text; if let sub = obj["sub"] as? String, !sub.isEmpty { t += "\n" + sub }
+        showMessage(t, stop: cmd == "stop")
         armHide()
     case "clear":
         clearAll()

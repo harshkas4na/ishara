@@ -1,7 +1,7 @@
 // Pure parts of the desktop adapter, with fakes. Real AX/OCR can only be checked by running ishara-ax.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { axErrorMessage, decisionToOverlay, normalizeOutline, desktopAsk } from "../src/desktop.ts";
+import { axErrorMessage, decisionToOverlay, normalizeOutline } from "../src/desktop.ts";
 import type { Decision, Outline } from "../src/types.ts";
 
 const outline: Outline = {
@@ -59,24 +59,4 @@ test("normalizeOutline caps at 150 and keeps controls over plain text", () => {
   assert.equal(o.elements.length, 150);
   assert.ok(o.elements.some((e) => e.label === "Go"));
 });
-test("desktopAsk wires outline -> decide -> overlay and reports timings", async () => {
-  const sent: unknown[] = [];
-  const r = await desktopAsk("where is save", async (_s, q, o) => {
-    assert.equal(q, "where is save"); assert.equal(o, outline);
-    return dec({ outcome: "point", targetId: "b0", say: "Save is here." });
-  }, { outline: async () => outline, send: (c) => sent.push(c) });
-  // The think command goes out first, before the outline is even read.
-  assert.deepEqual(sent, [
-    { cmd: "think", text: "Thinking…" },
-    { cmd: "point", x: 130, y: 210, text: "Save is here.", rect: { x: 100, y: 200, w: 60, h: 20 } },
-  ]);
-  assert.ok(r.ms.total >= 0);
-});
-test("desktopAsk sends think before the outline is read", async () => {
-  const order: string[] = [];
-  await desktopAsk("q", async () => dec({ outcome: "ask", say: "Which?" }), {
-    outline: async () => { order.push("outline"); return outline; },
-    send: (c) => order.push(c.cmd),
-  });
-  assert.deepEqual(order, ["think", "outline", "ask"]);
-});
+// desktopAsk (the streaming tutor path) is tested in desktop-tutor.test.ts.
