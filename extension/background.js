@@ -160,8 +160,15 @@ async function actTab(msg, sender) {
     case "forward": try { await chrome.tabs.goForward(tab.id); return { ok: true, detail: "went forward" }; } catch { return { ok: false, detail: "there is no page to go forward to" }; }
     case "screenshot": {
       // The picture is returned to the asking page only (to place on the clipboard) and is never sent to the helper or 0G.
-      try { const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }); return { ok: true, dataUrl }; }
-      catch (e) { return { ok: false, detail: "the browser would not take a screenshot of this page" }; }
+      try {
+        // captureVisibleTab takes whatever tab is showing in the window: make sure that is the task's tab (a task may have opened another).
+        if (!tab.active) { await chrome.tabs.update(tab.id, { active: true }); await new Promise((r) => setTimeout(r, 250)); }
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }); return { ok: true, dataUrl }; }
+      catch (e) {
+        // Most likely cause: the user's Site access for this extension is "on click", which withholds <all_urls>. Say so plainly.
+        const all = await chrome.permissions.contains({ origins: ["<all_urls>"] }).catch(() => false);
+        return { ok: false, detail: all ? "the browser would not take a screenshot of this page (" + String(e?.message ?? e).slice(0, 100) + ")" : "screenshots need Site access set to On all sites (chrome://extensions, Ishara, Details)" };
+      }
     }
     case "download": {
       if (typeof msg.dataUrl !== "string" || !msg.dataUrl.startsWith("data:image/png;base64,")) return { error: "not a png" };

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Create account | Act form</title>
+<!-- Agent mode test page (docs/AGENT-MODE.md). Every executor action has a target here:
+       type (name, email, notes, the CONTROLLED referral box), refuse (password, card number), select (country), radio (plan),
+       checkbox (newsletter), custom div button (Add a coupon), submit (Create account), danger (Delete account), scroll (long terms),
+       a link (page 2) and a paragraph to copy. Nothing is ever sent anywhere: submit and delete only write a line in #status.
+     The "Referral code" box imitates React: it wraps `value` on the element so a plain `el.value = x` is ignored until a real
+     `input` event arrives with a value the wrapper did not set. Whatever the page "believes" is shown next to it (#cstate).
+     Dev driver (extension content script, only on http://127.0.0.1:7777/test/ pages): dispatch
+       window.dispatchEvent(new CustomEvent("ishara-dev-act", {detail: JSON.stringify({type:"type", label:"Full name", text:"Harsh"})}))
+     and read document.documentElement.dataset.isharaActResult. A control can be named by `label` instead of `id` there. -->
+<style>
+  body{font:16px/1.5 system-ui,sans-serif;margin:0;color:#1f2430;background:#f6f7fb}
+  main{max-width:640px;margin:24px auto 0;padding:0 18px 40px}
+  h1{margin:0 0 4px}.sub{color:#5b6477;margin:0 0 18px}
+  label.f{display:block;margin-top:14px;font-weight:600}
+  input[type=text],input[type=email],input[type=password],select,textarea{display:block;width:100%;font-size:16px;padding:9px 10px;margin-top:5px;border:1px solid #b9c0d0;border-radius:8px;background:#fff;color:#111}
+  .row{display:flex;gap:16px;margin-top:6px;flex-wrap:wrap}.row label{font-weight:400}
+  .btns{display:flex;gap:12px;margin-top:22px;flex-wrap:wrap}
+  button,.fancy{font-size:16px;padding:10px 18px;border-radius:9px;border:1px solid #4f46e5;background:#4f46e5;color:#fff;cursor:pointer}
+  button.danger{background:#b91c1c;border-color:#b91c1c}
+  .fancy{display:inline-block;background:#fff;color:#4f46e5;user-select:none}
+  #status{margin-top:16px;padding:10px 12px;background:#e8f3ec;border-radius:8px;min-height:1.4em}
+  #cstate{font:13px ui-monospace,monospace;color:#5b6477;margin-top:4px}
+  #terms p{margin:0 0 14px}
+  a{color:#4f46e5}
+  .gap{height:260px}
+</style></head>
+<body><main>
+<h1>Create your account</h1>
+<p class="sub">A test form for Ishara's Agent mode. Nothing here is sent anywhere.</p>
+<form id="f" onsubmit="document.getElementById('status').textContent='SUBMITTED: '+JSON.stringify({name:name.value,email:email.value,country:country.value,plan:(document.querySelector('input[name=plan]:checked')||{}).value,newsletter:news.checked,notes:notes.value,referral:cstate_value()});return false">
+  <label class="f" for="name">Full name</label><input id="name" name="name" type="text" autocomplete="name">
+  <label class="f" for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email">
+  <label class="f" for="pw">Password</label><input id="pw" name="password" type="password" autocomplete="new-password">
+  <label class="f" for="cc">Card number</label><input id="cc" name="cardnumber" type="text" autocomplete="cc-number" inputmode="numeric">
+  <label class="f" for="country">Country</label>
+  <select id="country" name="country"><option value="">Choose a country</option><option value="IN">India</option><option value="US">United States</option><option value="DE">Germany</option><option value="JP">Japan</option></select>
+  <div class="f" style="margin-top:14px;font-weight:600">Plan</div>
+  <div class="row"><label><input type="radio" name="plan" value="free"> Free</label><label><input type="radio" name="plan" value="pro"> Pro</label><label><input type="radio" name="plan" value="team"> Team</label></div>
+  <label class="f" style="font-weight:400"><input id="news" type="checkbox"> Send me the newsletter</label>
+  <label class="f" for="notes">Notes</label><textarea id="notes" rows="3"></textarea>
+  <label class="f" for="ref">Referral code</label><input id="ref" type="text">
+  <div id="cstate">controlled state: ""</div>
+  <div class="btns">
+    <div class="fancy" id="coupon" role="button" tabindex="0">Add a coupon</div>
+    <button type="submit" id="submit">Create account</button>
+    <button type="button" class="danger" id="del" onclick="document.getElementById('status').textContent='DELETED the account'">Delete account</button>
+  </div>
+  <div id="status" role="status">Nothing happened yet.</div>
+</form>
+<p><a href="/test/act-form.html?page=2" id="p2">Go to page 2</a></p>
+<h2>Terms</h2>
+<div id="terms">
+  <p id="para1">First paragraph. By creating an account you agree to the terms of this imaginary service, which asks very little of you.</p>
+  <p id="para2">Second paragraph: the quick brown fox jumps over the lazy dog, twice, on purpose, so there is a sentence to copy.</p>
+  <p>Third paragraph. Nothing in these terms is real.</p>
+  <div class="gap"></div>
+  <p>Fourth paragraph, far below the form.</p>
+  <div class="gap"></div>
+  <p id="end">The end of the page.</p>
+</div>
+</main>
+<script>
+  // The coupon: a div with a click handler, no button element (a "custom control").
+  document.getElementById("coupon").addEventListener("click", () => { document.getElementById("status").textContent = "COUPON field opened"; });
+  // The React-style controlled input (see the header comment).
+  const ref = document.getElementById("ref"), nativeVal = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  let tracked = "", reactState = "";
+  Object.defineProperty(ref, "value", { configurable: true, get() { return nativeVal.get.call(ref); }, set(v) { tracked = String(v); nativeVal.set.call(ref, v); } });
+  const paint = () => { nativeVal.set.call(ref, reactState); tracked = reactState; document.getElementById("cstate").textContent = "controlled state: " + JSON.stringify(reactState); };
+  ref.addEventListener("input", () => { const cur = nativeVal.get.call(ref); if (cur === tracked) { /* the value tracker saw no change: ignored, like React */ paint(); return; } reactState = cur; paint(); });
+  function cstate_value() { return reactState; }
+  paint();
+  if (new URLSearchParams(location.search).get("page") === "2") { document.title = "Page 2 | Act form"; document.querySelector("h1").textContent = "Page two"; document.getElementById("status").textContent = "You are on page 2."; }
+</script></body></html>
