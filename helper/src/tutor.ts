@@ -102,7 +102,8 @@ async function* turnCore(o: CoreOpts): AsyncGenerator<TutorEvent> {
     if (!step) return;
     const s = step; step = null;
     const say = s.says.join(" ").trim();
-    plan.push({ n: s.n, m: s.m, say, ...(s.point ? { targetId: s.point.id, kind: s.point.kind } : {}) });
+    const lab = s.point ? lookupTarget(ctx, s.point.id)?.label : undefined; // kept so a later page read can find it again
+    plan.push({ n: s.n, m: s.m, say, ...(s.point ? { targetId: s.point.id, kind: s.point.kind } : {}), ...(lab !== undefined ? { label: lab } : {}) });
     if (s.n === 1) {
       // step 1's `step` event follows its point event, so the UI sees say, point, step in that order
       const pp = step1Point ?? Promise.resolve();

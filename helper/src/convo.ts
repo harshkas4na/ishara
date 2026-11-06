@@ -54,6 +54,8 @@ export class ConvoStore {
     return s.turns.slice();
   }
   record(tabId: string, url: string, turn: Turn): void {
+    // Every page load is a new session id, so idle slots of closed tabs are swept here or they would pile up forever.
+    for (const [k, s] of this.slots) if (this.now() - s.last > IDLE_MS) this.slots.delete(k);
     const page = pageKey(url);
     const live = this.turns(tabId, url);
     this.slots.set(tabId, { page, turns: trimTurns([...live, turn]), last: this.now() });

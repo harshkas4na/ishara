@@ -7,7 +7,7 @@ import type { PageContext, WalkCmd } from "./types.ts";
 export const WALK_IDLE_MS = 10 * 60 * 1000;
 export const MAX_REPLANS = 3;
 
-export type PlanStep = { n: number; m: number; say: string; targetId?: string; kind?: "control" | "block" };
+export type PlanStep = { n: number; m: number; say: string; targetId?: string; kind?: "control" | "block"; label?: string };
 export type Walk = { question: string; steps: PlanStep[]; index: number; replans: number; last: number; context?: PageContext };
 
 /** What a walk command resolves to; tutor.ts turns it into events. */
@@ -29,12 +29,25 @@ export function lookupTarget(ctx: PageContext | undefined, id: string): Target |
 }
 export function contextIds(ctx: PageContext): string[] { return [...ctx.controls.map((c) => c.id), ...ctx.blocks.map((b) => b.id)]; }
 
+/** The id of the ONE control (or block) in `ctx` that carries the step's original label, when the step's id no longer does. */
+function relocate(ctx: PageContext | undefined, step: PlanStep): string | undefined {
+  if (!ctx || !step.targetId || step.label === undefined) return undefined;
+  const t = lookupTarget(ctx, step.targetId);
+  if (t && t.label === step.label) return undefined;
+  const hits = step.kind === "block"
+    ? ctx.blocks.filter((b) => b.text === step.label).map((b) => b.id)
+    : ctx.controls.filter((c) => c.label === step.label).map((c) => c.id);
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
 export class WalkStore {
   private walks = new Map<string, Walk>();
   private now: () => number;
   constructor(now: () => number = Date.now) { this.now = now; }
 
   start(tabId: string, question: string, steps: PlanStep[], context?: PageContext, replans = 0): Walk {
+    // Each walk holds a whole page context (~20 KB); sweep the idle ones of tabs that were closed mid-walk.
+    for (const [k, x] of this.walks) if (this.now() - x.last > WALK_IDLE_MS) this.walks.delete(k);
     const m = steps.length;
     const w: Walk = { question, steps: steps.map((s, i) => ({ ...s, n: i + 1, m })), index: 0, replans, last: this.now(), ...(context ? { context } : {}) };
     this.walks.set(tabId, w);
@@ -69,7 +82,16 @@ export class WalkStore {
   private show(tabId: string, w: Walk, lead?: string): WalkMove {
     const step = w.steps[w.index];
     if (!step.targetId) return { type: "show", step, ...(lead ? { lead } : {}) };
+    // Ids are positions in ONE page read ("b4" = the fifth control). A spoken "next" arrives with a fresh read, where a
+    // control that appeared or left shifts every id after it. So the step's target is found again by the label it had
+    // when the plan was written; an id whose label changed is never trusted.
+    const moved = relocate(w.context, step);
+    if (moved) step.targetId = moved;
     const t = lookupTarget(w.context, step.targetId);
+    if (t && step.label !== undefined && t.label !== step.label) { // not the same thing any more and not found by label
+      if (w.replans >= MAX_REPLANS) { this.walks.delete(tabId); return { type: "end", text: "The page has changed too much for me to keep following these steps. Ask me again and I will start fresh." }; }
+      return { type: "replan", walk: w };
+    }
     if (t) return { type: "show", step, targetId: step.targetId, kind: t.kind, label: t.kind === "block" ? t.label : (t.role ? `${t.role} "${t.label}"` : t.label), ...(lead ? { lead } : {}) };
     // The target left the page. Re-plan with one fresh call, but only a few times.
     if (w.replans >= MAX_REPLANS) { this.walks.delete(tabId); return { type: "end", text: "The page has changed too much for me to keep following these steps. Ask me again and I will start fresh." }; }

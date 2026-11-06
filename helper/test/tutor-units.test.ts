@@ -145,3 +145,19 @@ test("prompt: vague hint asks one short question; Hinglish questions are tagged 
   assert.equal(detectLanguage("what does this mean"), "English");
   assert.equal(detectLanguage("यह क्या है"), "Hindi (Devanagari)");
 });
+
+// Audit 3: a spoken "next" carries a fresh page read in which ids may have shifted.
+test("walk: a step's target is found again by label when the ids shift, and an id whose label changed is not trusted", async () => {
+  const { WalkStore } = await import("../src/walk.ts");
+  const ctl = (id: string, label: string) => ({ id, role: "input", label, rect: { x: 0, y: 0, w: 1, h: 1 } });
+  const ctx1: any = { url: "http://x/", title: "", viewport: { w: 1, h: 1 }, blocks: [], errors: [], controls: [ctl("b0", "Address"), ctl("b1", "Version")] };
+  const w = new WalkStore();
+  w.start("t", "q", [{ n: 1, m: 2, say: "Paste it.", targetId: "b0", kind: "control", label: "Address" }, { n: 2, m: 2, say: "Pick the version.", targetId: "b1", kind: "control", label: "Version" }], ctx1);
+  const ctx2: any = { ...ctx1, controls: [ctl("b0", "Address"), ctl("b1", "Clear"), ctl("b2", "Version")] }; // a new button appeared
+  const mv: any = w.command("t", "next", ctx2);
+  assert.equal(mv.type, "show"); assert.equal(mv.targetId, "b2");
+  const w2 = new WalkStore();
+  w2.start("t", "q", [{ n: 1, m: 2, say: "a", targetId: "b0", kind: "control", label: "Address" }, { n: 2, m: 2, say: "b", targetId: "b1", kind: "control", label: "Version" }], ctx1);
+  const ctx3: any = { ...ctx1, controls: [ctl("b0", "Address"), ctl("b1", "Search")] }; // Version is gone, b1 is something else
+  assert.equal((w2.command("t", "next", ctx3) as any).type, "replan");
+});
