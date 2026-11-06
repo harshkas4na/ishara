@@ -152,3 +152,21 @@ test("a runtime microphone error (fatal:false) is shown but never stops the daem
   r.exit(1);                                            // a later crash still earns a restart
   assert.equal(r.timers.length, 1); assert.equal(r.timers[0].ms, 1000);
 });
+
+// Audit 3: a replaced daemon's late exit must not clear the new handle and launch a second daemon (two key taps).
+test("ptt: a stale daemon's exit and a double error+exit never start an extra daemon", async () => {
+  const { createPtt } = await import("../src/desktop-ptt.ts");
+  const spawned: Array<{ exit: (c: number | null) => void; killed: boolean }> = [];
+  const timers: Array<() => void> = [];
+  const p = createPtt({
+    send: () => {}, transcribe: async () => ({ text: "" }), ask: async () => {}, front: async () => null,
+    spawnDaemon: (_l, onExit) => { const s = { exit: onExit, killed: false }; spawned.push(s); return { kill: () => { s.killed = true; } }; },
+    now: () => 0, setTimer: (fn) => { timers.push(fn); return timers.length; }, clearTimer: () => {},
+  });
+  p.start(); p.stop(); p.start();               // daemon 0 replaced by daemon 1
+  assert.equal(spawned.length, 2);
+  spawned[0].exit(0);                            // daemon 0's late exit
+  assert.equal(timers.length, 0, "no restart for a stale daemon");
+  spawned[1].exit(1); spawned[1].exit(1);        // "error" then "exit" for the same process
+  assert.equal(timers.length, 1, "one restart, not two");
+});

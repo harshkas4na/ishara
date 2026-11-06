@@ -139,7 +139,16 @@ export function createPtt(d: PttDeps) {
     restartTimer = null;
     if (!wanted || handle) return;
     startedAt = d.now();
-    handle = d.spawnDaemon(onLine, onExit);
+    // Events count only while THIS daemon is the current one, and its exit counts once. Before, a daemon that was
+    // stopped and replaced reported its exit late, cleared the new handle and launched a second daemon (two key taps,
+    // two recorders); and a process can emit both "error" and "exit", which scheduled two restarts.
+    let live = true;
+    const h: DaemonHandle = d.spawnDaemon((l) => { if (live && handle === h) onLine(l); }, (code) => {
+      if (!live) return;
+      live = false;
+      if (handle === h) onExit(code);
+    });
+    handle = h;
   }
 
   return {
