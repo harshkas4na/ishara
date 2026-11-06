@@ -35,7 +35,7 @@ export async function runCase(c: ActCase, driver: Driver, now: () => number = ()
   const term = terminal(events);
   // An exception or a refusal that was NOT expected means the router/loop was unavailable: infrastructure, not a verdict.
   const err = !!threw || (term?.kind === "refused" && !c.planner_down);
-  return { row: { id: c.id, class: c.class, pass: res.pass && !err, err, fails: err && !res.fails.length ? ["refused_unexpectedly"] : res.fails, say: term?.say ?? "", actions: sim.execCalls, stepMs, totalMs }, events, sim };
+  return { row: { id: c.id, class: c.class, pass: res.pass && !err, err, fails: err ? [threw ? "exception:" + threw.slice(0, 80) : "router_unavailable (refused): not a product verdict"] : res.fails, say: term?.say ?? "", actions: sim.execCalls, stepMs, totalMs }, events, sim };
 }
 
 export async function pool<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {

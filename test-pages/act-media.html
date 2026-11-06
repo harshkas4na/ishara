@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%T%</title><style>body{font:15px/1.5 system-ui,sans-serif;margin:0;color:#222}main{max-width:760px;margin:24px auto;padding:0 16px}button,input{padding:8px 14px;margin:4px 4px 4px 0}.danger{background:#b3261e;color:#fff;border:0;border-radius:6px}#status{margin:12px 0;padding:8px;background:#eef}</style></head><body><main>
+<!-- Fixture for Agent mode (evals/act/worlds.ts "player"): a queue of three videos with play, pause and next. No network. -->
+<h1>Lofi Player</h1><p>Three videos in the queue.</p>
+<div id="status" role="status">Nothing playing</div>
+<ul id="queue" style="list-style:none;padding:0"></ul>
+<button type="button" id="pause">Pause</button> <button type="button" id="next">Next video</button>
+<script>
+const vids=["Rainy Window","Night Train","Slow Morning"];let cur=-1,paused=false;
+const st=document.getElementById("status"),q=document.getElementById("queue");
+const show=()=>{st.textContent=cur<0?"Nothing playing":(paused?"Paused: ":"Now playing: ")+vids[cur]};
+vids.forEach((v,i)=>{const li=document.createElement("li");const b=document.createElement("button");b.type="button";b.textContent="Play: "+v;b.onclick=()=>{cur=i;paused=false;show()};li.appendChild(b);q.appendChild(li)});
+document.getElementById("pause").onclick=()=>{if(cur>=0){paused=true;show()}};
+document.getElementById("next").onclick=()=>{cur=Math.min(vids.length-1,cur+1);paused=false;show()};
+</script></main></body></html>
