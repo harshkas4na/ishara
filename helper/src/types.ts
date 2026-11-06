@@ -81,3 +81,38 @@ export type TutorDeps = {
   checkPointer: (question: string, target: { id: string; kind: "control" | "block"; label: string; role?: string; sentence?: string }) => Promise<PointerVerdict>;
   now?: () => number;
 };
+
+// ---- Agent mode types (docs/AGENT-MODE.md). Act core only.
+export type Action =
+  | { type: "click"; id: string }
+  | { type: "type"; id: string; text: string; clear?: boolean }
+  | { type: "select"; id: string; option: string }
+  | { type: "check"; id: string; checked: boolean }
+  | { type: "key"; combo: string }
+  | { type: "scroll"; direction: "up" | "down"; amount?: "line" | "page" }
+  | { type: "open_url"; url: string }
+  | { type: "open_app"; name: string }
+  | { type: "quit_app"; name: string }
+  | { type: "copy"; text: string }
+  | { type: "screenshot"; to: "clipboard" | "file" }
+  | { type: "wait"; ms: number }
+  | { type: "done"; say: string } | { type: "ask"; say: string } | { type: "fail"; say: string };
+export type ActionType = Action["type"];
+export type ActRisk = "low" | "medium" | "high" | "refused";
+export type ActExecutor = "client" | "helper";
+export type ActRequest = {
+  sessionId: string; tabId?: string; task: string; context: PageContext; executor: ActExecutor; armed: boolean;
+  actId?: string;      // the client may choose it (8 to 64 of [A-Za-z0-9_-]); otherwise the helper makes one and sends it in `thinking`
+  answer?: string;     // a follow-up POST for a task that ended with `ask`: the person's reply
+};
+export type ActPoint = { status: PointStatus; layaP?: number };
+export type ActIds = { brain: string[]; laya: string[] };
+export type ActEnd = { say: string; steps: number; requestIds: ActIds; ms: number; testRouter?: true };
+export type ActEvent =
+  | { event: "thinking"; data: { n: number; actId?: string } }
+  | { event: "action"; data: { n: number; action: Action; risk: ActRisk; say: string; needsApproval: boolean; targetLabel?: string; point?: ActPoint; rehearsal?: true } }
+  | { event: "approval"; data: { n: number; action: Action; risk: ActRisk; why: string } }
+  | { event: "result"; data: { n: number; ok: boolean; detail: string; refused?: true } }
+  | { event: "done" | "failed" | "stopped"; data: ActEnd }
+  | { event: "ask"; data: ActEnd }   // the task is paused for the person's answer (POST /act again with the same actId and `answer`)
+  | { event: "refused"; data: { cause: Cause | "disarmed"; say: string } };

@@ -68,6 +68,33 @@ export function layaP(score: number): number {
   return Math.round((score >= 0.99 ? 0.9 : score >= 0.5 ? 0.35 + score * 0.5 : 0.1 + score * 0.3) * 100) / 100;
 }
 
+// ---- tool calling (Agent mode, tests only) ----
+// A request that carries `tools` gets a SCRIPTED tool call, keyed by the task text and by how many steps the prompt's history
+// already lists ("1. click b6 -> ok"). Deterministic on purpose: it exercises the loop's mechanics, it is not a planner.
+// FAKE_ACT_STYLE=content returns the same JSON as plain content (the shape some models fall back to).
+export type ActStep = { action: Record<string, unknown>; say: string } | { raw: string };
+export const ACT_SCRIPTS: Array<{ match: RegExp; steps: ActStep[] }> = [
+  { match: /contract address/i, steps: [
+    { action: { type: "type", id: "b6", text: "0x1234567890123456789012345678901234567890" }, say: "Typing the contract address" },
+    { action: { type: "select", id: "b8", option: "v0.8.26" }, say: "Choosing the compiler version" },
+    { action: { type: "check", id: "b10", checked: true }, say: "Ticking the terms box" },
+    { action: { type: "done", say: "Filled in the form and left it unsubmitted." }, say: "All filled in" },
+  ] },
+  { match: /verify and publish/i, steps: [
+    { action: { type: "click", id: "b17" }, say: "Pressing Verify and Publish" },
+    { action: { type: "done", say: "Pressed Verify and Publish." }, say: "Done" },
+  ] },
+  { match: /malformed/i, steps: [{ raw: "I think I should maybe click something" }] },
+];
+export function actReply(user: string): { name: "act"; args: Record<string, unknown> } | { raw: string } {
+  const task = user.match(/The person's task:\s*(.*)$/m)?.[1] ?? "";
+  const done = (user.match(/^\d+\. /gm) ?? []).length;
+  const script = ACT_SCRIPTS.find((s) => s.match.test(task));
+  const step = script?.steps[done];
+  if (!step) return { name: "act", args: { action: { type: "ask", say: "I am a test router with no script for this task." }, say: "Asking" } };
+  return "raw" in step ? step : { name: "act", args: step };
+}
+
 // ---- server ----
 const mode = (): Mode => ((process.env.FAKE_ROUTER_MODE as Mode) || "ok");
 let calls = 0;
@@ -110,6 +137,14 @@ export function createFakeRouter() {
       }
 
       const user: string = String((b?.messages ?? []).filter((x: any) => x.role === "user").pop()?.content ?? "");
+      if (Array.isArray(b?.tools) && b.tools.length) {
+        const r = actReply(user);
+        const h = headers();
+        const message = "raw" in r ? { role: "assistant", content: r.raw }
+          : process.env.FAKE_ACT_STYLE === "content" ? { role: "assistant", content: JSON.stringify(r.args) }
+          : { role: "assistant", content: null, tool_calls: [{ id: "call_" + randomUUID().slice(0, 8), type: "function", function: { name: r.name, arguments: JSON.stringify(r.args) } }] };
+        return json(res, 200, { id: h["zg-res-key"], object: "chat.completion", model: b?.model, choices: [{ index: 0, message, finish_reason: "tool_calls" in message ? "tool_calls" : "stop" }], x_0g_trace: { request_id: h["x-request-id"], tee_verified: false }, note: "FAKE ROUTER scripted tool call (development only)" }, h);
+      }
       const question = user.match(/Question:\s*(.*)$/m)?.[1] ?? "";
       const { el } = pick(question, parseOutline(user));
       const text = el ? `That would be the ${el.label.slice(0, 40)} ${el.role}. [POINT:${el.id}]` : "I cannot find that on this page. [POINT:none]";

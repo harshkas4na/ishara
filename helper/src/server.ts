@@ -5,6 +5,8 @@ import { extname } from "node:path";
 import { HELPER_PORT } from "./config.ts";
 import { decide, recordsFor, tutorTurn, tutorWalk } from "./decide.ts";
 import { handleTutorRoute } from "./tutor-route.ts";
+import { handleActRoute } from "./act-route.ts";
+import { realBaseDeps } from "./act-loop.ts";
 import { hasKey, warm, testRouterActive } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
 import { desktopAsk, warmDesktop } from "./desktop.ts";
@@ -78,6 +80,19 @@ const tutorSpeech = {
   onEnd: () => speechMod.then((m) => m?.speaker.flush()).catch(() => {}),
 };
 
+// Agent mode (act-route.ts): the sealed planning loop behind "Ishara does it for me". The helper executor is the desktop
+// module (ACT-DESKTOP), loaded lazily so this server runs before it exists; missing means the action fails honestly.
+const actDeps = {
+  base: realBaseDeps(),
+  helperExecute: async (action: any, ctx: any) => {
+    const m = await optional("./desktop-act.ts");
+    if (typeof m?.executeAct !== "function") return { ok: false, detail: "the desktop executor is not installed" };
+    return m.executeAct(action, ctx);
+  },
+  // One episode-log entry per task, so the replay shows the action receipts with the 0G request ids.
+  record: (sid: string, d: any) => { episodeLog.record(sid, d); },
+};
+
 const server = createServer(async (req, res) => {
   const t0 = Date.now();
   cors(req, res);
@@ -110,6 +125,8 @@ const server = createServer(async (req, res) => {
     if (path === "/tutor" || path === "/tutor/walk") {
       return void await handleTutorRoute(req, res, path, { turn: tutorTurn, walk: tutorWalk, ...tutorSpeech });
     }
+    // Agent mode (act-route.ts): POST /act (SSE), /act/result, /act/approve, /act/stop and GET /act. Armed or nothing.
+    if (path === "/act" || path.startsWith("/act/")) return void await handleActRoute(req, res, path, actDeps);
     // Personal memory (memory.ts): view, pause/resume, forget, and the "accepted" feedback from the extension.
     // Behind the same Host/Origin guard as everything above. DELETE has no body; the others are small JSON.
     if (path === "/memory" || path.startsWith("/memory/")) {

@@ -335,3 +335,27 @@ export async function askVerifyRef(question: string, sentence: string, el: Outli
     return { ok: true, p, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms, ...testFlag() };
   } catch (e) { return { ok: false, cause: failCause(e, "laya"), ...testFlag() }; }
 }
+
+// ---- Agent mode planner (docs/AGENT-MODE.md). One non-streaming 0GM-1.0 call with native tool calling in Private mode:
+// the answer is a single small tool call (~2 s measured), so there is nothing to stream. Added beside, never inside, the
+// measured pointing and tutor calls. Never throws; a failure is a cause and the loop STOPS (no local planner, ever).
+export const ACT_FIRST_TOKEN_MS = 8000;
+export const ACT_MAX_TOKENS = 300;
+export type AskActResult =
+  | { ok: true; args: { action: unknown; say?: string } | null; raw: string; requestId?: string; chatId?: string; provider?: string; ms: number; testRouter?: boolean }
+  | { ok: false; cause: Cause; testRouter?: boolean };
+export async function askAct(messages: ChatMessage[], o: ZgOpts & { tools: unknown[]; toolChoice?: unknown } = { tools: [] }): Promise<AskActResult> {
+  try {
+    const r = await post("/chat/completions", {
+      model: BRAIN_MODEL, messages, max_tokens: ACT_MAX_TOKENS, temperature: 0.1,
+      tools: o.tools, tool_choice: o.toolChoice ?? "auto",
+      chat_template_kwargs: { enable_thinking: false }, // measured: with thinking on the budget goes to reasoning
+    }, baseFor(o), o.timeoutMs ?? ACT_FIRST_TOKEN_MS);
+    if (r.status !== 200) { console.error(`[zg] act HTTP ${r.status}`, JSON.stringify(r.json)?.slice(0, 200)); return { ok: false, cause: "unavailable", ...testFlag() }; }
+    const msg = r.json?.choices?.[0]?.message;
+    // Imported here, not at the top, so zg.ts keeps no dependency on the act modules for the pointing path.
+    const { parseActMessage } = await import("./act.ts");
+    const raw = JSON.stringify({ content: msg?.content ?? null, tool_calls: msg?.tool_calls ?? null }).slice(0, 600);
+    return { ok: true, args: parseActMessage(msg), raw, requestId: requestId(r), ...callMeta(r.headers), ms: r.ms, ...testFlag() };
+  } catch (e) { return { ok: false, cause: failCause(e, "act"), ...testFlag() }; }
+}
