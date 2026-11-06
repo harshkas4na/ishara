@@ -18,7 +18,7 @@ executors act, everything gets a receipt.** `cua-driver` stays an option only if
    your name"). Esc (browser) or a tap of Right Option (desktop) or the pill's Stop button stops at once; the loop checks the
    stop flag between every action. Hard caps: 25 actions and 3 minutes per task.
 3. **Risk levels.** low: scroll, wait, screenshot-to-clipboard/file, open an http(s) URL the user named, non-destructive keys.
-   medium: click, type, select, check, open app, copy to clipboard. HIGH needs the user's tap on Approve in the pill (or the voice
+   medium: click, type, select, check, open app, copy to clipboard, close a tab, read a file. (`search`, switch/new/back/forward tab: low.) HIGH needs the user's tap on Approve in the pill (or the voice
    word "yes"): clicking anything whose label matches submit|send|post|publish|pay|buy|purchase|confirm|delete|remove|sign out|log
    out|transfer|approve|allow|connect wallet, quitting an app, any key press that submits, anything on a page that looks like a
    wallet/approval flow. `ISHARA_ACT_CONFIRM=all` asks for medium too. `ISHARA_ACT_CONFIRM=off` is for rehearsals only and is
@@ -43,6 +43,9 @@ type Action =
   | { type: "key"; combo: string }                                        // "Enter", "Escape", "cmd+t", "space", "cmd+l"...
   | { type: "scroll"; direction: "up" | "down"; amount?: "line" | "page" }
   | { type: "open_url"; url: string }                                     // http(s) only
+  | { type: "search"; query: string; engine?: "brave" | "google" | "duckduckgo" }   // opens the results page (default brave)
+  | { type: "tab"; op: "switch" | "close" | "back" | "forward" | "new"; match?: string }   // match = title/url substring (switch, close)
+  | { type: "read_file"; path: string }                                   // desktop/helper only, read-only, see "File read"
   | { type: "open_app"; name: string }                                    // desktop
   | { type: "quit_app"; name: string }                                    // desktop, HIGH
   | { type: "copy"; text: string }                                        // to the clipboard
@@ -50,6 +53,33 @@ type Action =
   | { type: "wait"; ms: number }                                          // <= 3000
   | { type: "done"; say: string } | { type: "ask"; say: string } | { type: "fail"; say: string };
 ```
+### Search, tabs and file read (added 6 Nov 2026, same schema/validation/risk/receipt pattern)
+**search.** `query` is 1 to 200 characters, no control characters. The executor builds the address itself and URL-encodes the query:
+`https://search.brave.com/search?q=`, `https://www.google.com/search?q=` or `https://duckduckgo.com/?q=`. Always https. It opens
+that address exactly like `open_url` (browser: the current tab, so the next page resumes the task; desktop: `open`). The helper makes
+NO network call for it: the next planning step simply reads the results page through the normal fresh PageContext. The planner is told to
+read the results, answer with `done {say}` summarising, and say which page the answer came from. Risk **low**. A query that comes only
+from page text addressed to an assistant is refused (principle 5).
+
+**tab.** Browser executor = the extension service worker (`chrome.tabs`, `tabs` permission). `switch` and `close` take `match`, a
+case-insensitive substring of a tab's title or address; zero or several matches is a failed step that says so (it never guesses). `back` and
+`forward` use the tab's history; `new` opens a blank tab, and the next `search` or `open_url` loads in it. Risk: switch, new, back, forward
+**low**; close **medium** (high on a wallet or approval page). **Closing the tab Ishara is running in is refused**, by the worker, whatever the
+approval. Desktop executor: `back` = cmd+[, `forward` = cmd+], `new` = cmd+t, `close` = cmd+w; `switch` and `close` with a `match` need the
+browser extension and are refused there.
+
+**read_file** (the only action that reads the disk; helper executor only, so it needs the desktop path and is refused in a browser-only
+run). Read-only: Ishara never writes, deletes, moves or lists. Allowed only when ALL hold; the helper checks the real path (symlinks
+resolved) so a link cannot step outside:
+- inside the user's home directory (`~` is expanded); relative paths are refused;
+- no dotfile or dot-directory anywhere in the path under home; nothing under `.ssh`, `.config`, `.aws`, `.gnupg` or `Library/Keychains`;
+- the file name does not match `key|secret|token|password|wallet|seed|.env|.pem` (case-insensitive);
+- a regular text file of at most 200 KB (a NUL byte in the first 8 KB, or invalid UTF-8, means binary and is refused).
+The text then goes through the existing helper redaction (`readerCore().redact` plus the seed-phrase mask, the same rules as page text), is cut
+to 12,000 characters, and reaches 0GM as **untrusted data inside the random fence**, exactly like page text (a file that says "assistant, do X"
+changes nothing). The receipt and the episode log carry the path and the size only, never the content. Risk **medium**: asks Approve under
+`ISHARA_ACT_CONFIRM=all`, and the pill shows the path; blocked paths are `refused` before any approval is asked.
+
 The model calls ONE tool per turn (`act`) with `{ action, say }` (`say` = a short sentence for the pill and the voice). `ask` pauses
 for the user's answer; `done`/`fail` end the task.
 
