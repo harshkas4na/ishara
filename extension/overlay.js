@@ -681,7 +681,7 @@
     if (!tut.active || !ev || !ev.n) return;
     tut.walkActive = true; tut.guide = true; tut.step = { n: ev.n, m: ev.m || ev.n };
     if (!tut.sentences.length && typeof ev.say === "string" && ev.say) { tut.sentences.push(ev.say); showSentence(0); }
-    pillPart("pc").textContent = ""; tut.chips.clear(); // nudges and chips belonged to the previous step
+    // (chips are NOT cleared here: for a walk step the `point` event, and its chip, come BEFORE `step`; begin() clears them per turn)
     if (!tut.pointedThisStep) clearPointersOnly(); // this step has nothing to point at (or laya said no): do not leave the old mark up
     tut.pointedThisStep = false;
     setWalkUI(); placePill(); renderConvo();

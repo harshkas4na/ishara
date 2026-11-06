@@ -111,3 +111,22 @@ Real flow (helper on 7777, `/test/etherscan-verify.html`): press Alt+Shift+Space
 Expect: dancing cursor and "You/I heard" line at once, then sentences fading in, the ring only after a confirmed pointer,
 a muted chip for rejected/suppressed pointers, red bubble with the cause when 0G is unreachable, "(cut off, ask again)" on a
 cut stream. Guide mode shows "Step n of m", dots and Back / Next / Stop once the helper sends `step` events.
+
+## UI v2: the pill (docs/UI-PILL.md)
+The tutor no longer prints the answer on the page. One dark pill sits bottom-centre (it hops to the top edge when the
+pointed target is under it) and shows the sentence being spoken; the full answer is in the conversation panel (Alt+Shift+C).
+- Dot: amber pulse = getting ready, blue bars = listening (level), dancing dots = thinking (shows "I heard: ..."),
+  purple bars = speaking, red = refused. Karaoke: the text changes on each `speaking {seq}` event; with no such event within
+  1 s of the first `say` (muted voice) each sentence shows for at least 1.5 s.
+- Marks: CONTROLS get a blue rounded boundary drawn like a pen stroke; TEXT gets a yellow highlighter band per line.
+  A second pointer in one answer dims the first. Rejected/suppressed pointers get no mark, only a short chip on the pill.
+- Guide: the pill shows `n/m` and ‹ › ✕ buttons (the only clickable part). Keys: Option+Shift+Right / Left / Escape.
+  Controls appear from the first `step` event, or from `done.plan` when the helper sent no `step`. They are greyed while a
+  stream is still in flight (the helper starts the walk only when the stream ends).
+- `Ishara.overlay.setListening("preparing" | "listening" | null)` drives the pill for push-to-talk.
+- Preview without 0G: `http://127.0.0.1:7777/test/tutor-preview.html?state=preparing|listening|thinking|speaking|boundary|highlight|multiline|hop|two|guide|plan|refused|...`
+  plus `&dark=1` (dark host page) and `&novoice=1` (no `speaking` events: tests the 1.5 s fallback).
+- Real check: Alt+Shift+Space (a REAL key press), type "walk me through verifying my contract step by step" on
+  `/test/etherscan-verify.html`, wait ~8 s, click ›, three times. Expect `1/6`, `2/6`, `3/6` and the sentence changing.
+- A tab only renders its own turn: the relay port is per tab and per turn, and the overlay ignores `say`/`speaking`
+  without an active turn.
