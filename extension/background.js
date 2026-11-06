@@ -36,6 +36,8 @@ ensureOffscreen().catch(() => {});
 
 // The tab that is recording, so live mic levels go back to it.
 let recTab = null;
+let recAt = 0; // when that take started: a tab that vanished mid-take must not block every other tab forever
+chrome.tabs.onRemoved.addListener((id) => { if (id === recTab) recTab = null; });
 
 async function handle(msg, sender) {
   switch (msg.type) {
@@ -46,7 +48,16 @@ async function handle(msg, sender) {
       if (recTab != null) chrome.tabs.sendMessage(recTab, { type: "mic-live", ms: msg.ms, warm: msg.warm }).catch(() => {});
       return {};
     case "rec-start": {
-      recTab = sender?.tab?.id ?? null;
+      // Only the tab the user is looking at may record, and only one tab at a time. Without this, a background tab that
+      // somehow got a chord (e.g. through a frame relay) could start a take and its pill and answer appeared alongside
+      // the real one (reported with 3-4 tabs open on 6 Nov).
+      const tabId = sender?.tab?.id ?? null;
+      try {
+        const [act] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        if (act && tabId != null && act.id !== tabId) { console.debug("[ishara] rec-start refused: tab", tabId, "is not the active tab", act.id); return { error: "not the active tab" }; }
+      } catch { /* no tab info: fall through to the single-recorder rule */ }
+      if (recTab != null && recTab !== tabId && Date.now() - recAt < 30000) { console.debug("[ishara] rec-start refused: tab", recTab, "is already recording"); return { error: "another tab is recording" }; }
+      recTab = tabId; recAt = Date.now();
       await ensureOffscreen(); // already there after the first use or the startup call below, so this is a cheap check
       return chrome.runtime.sendMessage({ target: "offscreen", cmd: "start" });
     }

@@ -311,6 +311,9 @@
   }
 
   async function onKeyDown(e) {
+    // A tab the user is not looking at never reacts to a chord, however the event reached it (frame relays, forwarded
+    // messages): one press must start ONE question, in the visible, focused tab.
+    if (document.visibilityState !== "visible" || !document.hasFocus()) return;
     if (NS.act && NS.act.handleKey(e)) return; // Y / N answer an approval prompt
     // Ctrl or Cmd held means it is some other chord (e.g. the desktop push-to-talk Control+Option+Space): not ours.
     // Without this, one press started a browser recording AND the desktop recording at the same time.
