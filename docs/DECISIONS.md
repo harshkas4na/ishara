@@ -56,3 +56,40 @@ word overlap, so it tests mechanics only and says nothing about 0G's accuracy. T
 the real key to it, and marks every result `testRouter: true`: an amber banner and "(test router)" in the extension,
 a TEST ROUTER chip in the replay, `/health`, and a banner in `scripts/eval.ts`. Eval numbers may be quoted only from
 a run against the real router; a test-router run writes to `helper/.data/eval-test-router.json`, not the results file.
+
+## 9. From "find this field" to a tutor (6 Nov)
+Harsh tested the real build and said it was not a tutor. The audit (`docs/audit/product-gap.md`) measured it: of 20 real
+questions on 4 pages, 7 pointed, 13 got "which step do you mean?", and 0 explained anything. The model only ever saw controls
+and headings, was told to write one short sentence plus exactly one pointer, and had no conversation memory.
+What changed: a new streaming route `POST /tutor` (contract: `docs/TUTOR-INTERFACE.md`) with four modes (point, explain, guide,
+follow-up), a page reader that sends visible text, field state and error messages, and conversation memory per page. The old
+`/decide` pointing path is untouched: its eval (11/12 clear, 0 wrong points, 6/6 vague) must not regress and has not.
+
+## 10. Page text now goes to the sealed model, with secrets removed first
+Explaining a page needs its text. So the "only the question and a control list leave the laptop" claim changed to: the
+question plus the page's visible text, only to sealed providers, after redaction in the tab (password fields, seed/key/token
+fields, anything shaped like a secret, inputs reported as "filled, 38 chars" instead of their value). Still no audio and no
+screenshot. Page text is untrusted data: fenced with a random delimiter, marker look-alikes neutralized, the model has no tools
+and can only speak and request a pointer. Residual risk, stated plainly: a hostile page can still make the tutor say something
+wrong. It cannot act.
+
+## 11. laya checks each pointer against the sentence that carries it
+In explain and guide the user's question is not about one control, so asking laya "is this what the user asked for?" vetoed
+correct pointers (a right guide step scored p=0.32). Asking whether the highlighted control is the one the spoken sentence
+refers to scored 0.91 for the right target and 0.00-0.05 for wrong ones. Cost: laya now confirms whatever the model's sentence
+says, so a prompt-injected "click Sign in" depends on the model not repeating it (6/6 injection cases pass, enforced by the
+prompt, not the gate). Threshold stays 0.4. Open item for review.
+
+## 12. Hinglish voice input
+Whisper was pinned to English, so Hindi mixed with English came out as plausible wrong English. A local Hinglish model with
+`-l en -ac 512` cut word error on synthetic Hinglish from 67% to 28% (English stays 0%) at about 0.4 s per clip. Measured on
+synthetic voices only; Harsh's own recordings are the real test (`voice-samples/README.md`).
+
+## 13. Spoken answers are local
+Kokoro-82M (voice af_heart) on the laptop, first audio about 0.3 s for a short answer, played by the helper so browser and
+desktop both speak. Nothing leaves the machine. Mute with Option+Shift+M.
+
+## 14. Still no screenshots; tool calling parked
+A screenshot to the sealed end-to-end encrypted model fixed visual questions the text path got wrong (+1.2 s), but changing the
+privacy claim is Harsh's call and is deferred. Tool calling and web search are parked (0GM supports tools in Private mode:
+verified), because a search leaves the sealed boundary.
