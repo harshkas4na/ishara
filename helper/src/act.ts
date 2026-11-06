@@ -235,8 +235,9 @@ export function normalizeArgs(v: unknown): ActArgs | null {
     const j = tryJson(action);
     if (j !== undefined) action = j;
     else { // measured on the real 0GM: {"action":"type","id":"b0","text":"Harsh","clear":"true"}, the type name in "action" and the fields beside it
-      const { action: _a, say: _s, ...rest } = o;
+      const { action: _a, ...rest } = o; // say stays: done, ask and fail carry their sentence in it
       for (const k of ["clear", "checked"]) if (rest[k] === "true" || rest[k] === "false") rest[k] = rest[k] === "true";
+      if (!["done", "ask", "fail"].includes(action)) delete rest.say; // only the terminal actions carry their sentence inside the action
       action = { type: action, ...rest };
     }
   }

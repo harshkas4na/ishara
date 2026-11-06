@@ -8,8 +8,8 @@ import { decidePointer, checkPointer, type PointerCheck, type PointerTarget } fr
 import { validateAction, TERMINAL, lookup } from "./act.ts";
 import { classify } from "./act-risk.ts";
 import { ACT_TOOL_CHOICE, actTools, buildActMessages, describeAction, type HistoryItem } from "./act-prompt.ts";
-import { askAct as realAskAct, BRAIN_MODEL, LAYA_MODEL, type AskActResult } from "./zg.ts";
-import type { Action, ActEvent, ActIds, ActRequest, ActRisk, Cause, ChatMessage, PageContext } from "./types.ts";
+import { askAct as realAskAct, askVerifyRef, BRAIN_MODEL, LAYA_MODEL, type AskActResult } from "./zg.ts";
+import type { OutlineElement, Action, ActEvent, ActIds, ActRequest, ActRisk, Cause, ChatMessage, PageContext } from "./types.ts";
 
 export const MAX_ACTIONS = 25;
 export const MAX_MS = 3 * 60 * 1000;
@@ -20,6 +20,7 @@ export const APPROVAL_MS = 60_000;
 
 export type ExecResult = { ok: boolean; detail: string; context?: PageContext; data?: string };
 export type CallRec = { role: "brain" | "laya"; model: string; requestId?: string; chatId?: string; provider?: string };
+const FIELD_MIN_P = 0.25;
 export type ActDeps = {
   askAct: (messages: ChatMessage[]) => Promise<AskActResult>;
   /** laya: is this control the one the step's sentence refers to? */
@@ -72,7 +73,12 @@ export const confirmFromEnv = (): "all" | "off" | undefined => (process.env.ISHA
 export function realBaseDeps(): Pick<ActDeps, "askAct" | "checkTarget"> {
   return {
     askAct: (messages) => realAskAct(messages, { tools: actTools(), toolChoice: ACT_TOOL_CHOICE }),
-    checkTarget: (task, say, target) => checkPointer(task, { ...target, sentence: say }),
+    checkTarget: async (task, say, target) => {
+      // laya's 4 s cut-off is tuned for the tutor; on a slow router it tripped on correct targets. A step can wait longer, and one retry.
+      const verify = (q: string, el: OutlineElement) => askVerifyRef(q, say, el, { timeoutMs: 10000 });
+      const first = await checkPointer(task, { ...target, sentence: say }, verify);
+      return first.ok ? first : checkPointer(task, { ...target, sentence: say }, verify);
+    },
   };
 }
 
@@ -204,7 +210,11 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
         if (chk.testRouter) state.testRouter = true;
       }
       if (deps.stopped()) { yield stopEnd(); return; }
-      const status = decidePointer(chk, VERIFY_MIN_P);
+      // Measured on the real laya (6 Nov): right text fields score 0.37-0.45 and a wrong text field can score 0.72, so for
+      // filling a field laya cannot tell fields apart well. Typing, choosing and ticking are visible and reversible
+      // (medium), so they take a lower bar; clicks and anything HIGH keep the full bar.
+      const fieldEntry = (action.type === "type" || action.type === "select" || action.type === "check") && c.risk !== "high";
+      const status = decidePointer(chk, fieldEntry ? FIELD_MIN_P : VERIFY_MIN_P);
       point = { status, ...(chk.ok ? { layaP: chk.p } : {}) };
       if (status === "suppressed") {
         // laya is the independent check; without it nothing is touched. Ask the person instead of guessing.
