@@ -26,7 +26,11 @@ export function collect(events: TutorEventLike[]): Rec {
     if (e.event === "say") r.says.push(String(e.data.text ?? ""));
     else if (e.event === "point") r.points.push(e.data);
     else if (e.event === "step") r.steps.push(e.data);
-    else if (e.event === "done") r.done = e.data;
+    else if (e.event === "done") {
+      r.done = e.data;
+      // Guide mode streams only step 1 as a live event; the rest of the plan is held for the walk and listed in done.plan.
+      if (Array.isArray(e.data?.plan) && e.data.plan.length > r.steps.length) r.steps = e.data.plan;
+    }
     else if (e.event === "refused") r.refused = e.data;
   }
   return r;
