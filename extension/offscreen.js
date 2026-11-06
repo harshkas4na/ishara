@@ -53,7 +53,7 @@ async function open() {
     const rms = Math.sqrt(sum / data.length);
     rec.maxRms = Math.max(rec.maxRms, rms);
     if (!rec.live) { // the first buffer of this take: the microphone is really delivering. The page switches PREPARING -> LISTENING.
-      rec.live = true;
+      rec.live = true; if (rec.onLive) rec.onLive();
       chrome.runtime.sendMessage({ type: "mic-live", ms: Math.round(performance.now() - rec.t0), warm: rec.warm }).catch(() => {});
     }
     // Levels go out about every 128 ms (every second 64 ms chunk): the page redraws bars, no need for more.
@@ -80,6 +80,9 @@ async function teardown() {
 async function stop() {
   if (starting) await starting;
   if (!rec) return { error: "not recording" };
+  // A tap can release before the first buffer arrives (up to 64 ms). Give it up to 400 ms so the take reports `mic-live`
+  // (the latency measurement) and is never returned from a half-open graph.
+  if (!rec.live) await new Promise((res) => { rec.onLive = res; setTimeout(res, 400); });
   const { chunks, maxRms } = rec;
   rec = null;
   // Keep the graph warm for the next question; close it WARM_MS after the last use.
