@@ -204,7 +204,8 @@ export async function handleActRoute(req: IncomingMessage, res: ServerResponse, 
 
   const deps: ActDeps = {
     ...d.base,
-    execute: (action, n, c) => r.executor === "client" ? r.waitResult(n)
+    execute: (action, n, c) => action.type === "read_file" && r.executor !== "helper" ? Promise.resolve({ ok: false, detail: "reading a file works only in desktop Agent mode, not in the browser" })
+      : r.executor === "client" ? r.waitResult(n)
       : (d.helperExecute ? d.helperExecute(action, c) : Promise.resolve({ ok: false, detail: "the desktop executor is not installed" })),
     approve: (n, _a, _risk, _why, ms) => r.waitApproval(n, ms),
     stopped: () => r.stop,

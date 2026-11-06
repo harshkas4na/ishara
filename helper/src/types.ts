@@ -91,12 +91,17 @@ export type Action =
   | { type: "key"; combo: string }
   | { type: "scroll"; direction: "up" | "down"; amount?: "line" | "page" }
   | { type: "open_url"; url: string }
+  | { type: "search"; query: string; engine?: SearchEngine }
+  | { type: "tab"; op: TabOp; match?: string }
+  | { type: "read_file"; path: string }
   | { type: "open_app"; name: string }
   | { type: "quit_app"; name: string }
   | { type: "copy"; text: string }
   | { type: "screenshot"; to: "clipboard" | "file" }
   | { type: "wait"; ms: number }
   | { type: "done"; say: string } | { type: "ask"; say: string } | { type: "fail"; say: string };
+export type SearchEngine = "brave" | "google" | "duckduckgo";
+export type TabOp = "switch" | "close" | "back" | "forward" | "new";
 export type ActionType = Action["type"];
 export type ActRisk = "low" | "medium" | "high" | "refused";
 export type ActExecutor = "client" | "helper";

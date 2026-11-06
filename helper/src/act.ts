@@ -1,14 +1,14 @@
 // act.ts: the Action schema's guard rails (docs/AGENT-MODE.md). 0GM proposes, this file decides whether the proposal is even
 // well-formed. Pure functions, no network. The error strings are written for the MODEL to read and correct itself with,
 // so they say what is wrong and what would be right.
-import type { Action, ActionType, Control, PageContext } from "./types.ts";
+import type { Action, ActionType, Control, PageContext, SearchEngine, TabOp } from "./types.ts";
 
 export type { Action, ActRequest, ActEvent, ActRisk } from "./types.ts";
 
 export const MAX_TEXT = 2000;
 export const MAX_SAY = 300;
 export const MAX_WAIT_MS = 3000;
-export const ACTION_TYPES: readonly ActionType[] = ["click", "type", "select", "check", "key", "scroll", "open_url", "open_app", "quit_app", "copy", "screenshot", "wait", "done", "ask", "fail"];
+export const ACTION_TYPES: readonly ActionType[] = ["click", "type", "select", "check", "key", "scroll", "open_url", "search", "tab", "read_file", "open_app", "quit_app", "copy", "screenshot", "wait", "done", "ask", "fail"];
 export const TERMINAL: ReadonlySet<ActionType> = new Set(["done", "ask", "fail"]);
 
 export type Validated = { ok: true; action: Action } | { ok: false; error: string };
@@ -67,6 +67,21 @@ export function parseHttpUrl(raw: string): URL | null {
   return u;
 }
 
+export const MAX_QUERY = 200;
+export const SEARCH_ENGINES: readonly SearchEngine[] = ["brave", "google", "duckduckgo"];
+const ENGINE_URL: Record<SearchEngine, string> = {
+  brave: "https://search.brave.com/search?q=",
+  google: "https://www.google.com/search?q=",
+  duckduckgo: "https://duckduckgo.com/?q=",
+};
+/** The results address for a search action. https only, the query URL-encoded; pure, so no executor invents its own. */
+export function searchUrl(query: string, engine: SearchEngine = "brave"): string {
+  return ENGINE_URL[engine] + encodeURIComponent(query.replace(/\s+/g, " ").trim());
+}
+export const TAB_OPS: readonly TabOp[] = ["switch", "close", "back", "forward", "new"];
+export const MAX_MATCH = 100;
+export const MAX_PATH = 500;
+
 const needId = (a: Record<string, unknown>, ctx: PageContext, verb: string, want: (role: string) => boolean, wantText: string): Validated | { id: string; label: string; role: string } => {
   if (!str(a.id) || !a.id) return bad(`${verb} needs an "id" taken from the controls list.`);
   const hit = lookup(ctx, a.id);
@@ -122,6 +137,31 @@ export function validateAction(raw: unknown, ctx: PageContext): Validated {
       const u = str(a.url) ? parseHttpUrl(a.url) : null;
       if (!u) return bad('open_url needs a full http or https "url" with a hostname, for example "https://example.com/page".');
       return { ok: true, action: { type: "open_url", url: u.href } };
+    }
+    case "search": {
+      const q = str(a.query) ? a.query.replace(/\s+/g, " ").trim() : "";
+      if (!q) return bad('search needs a "query": the words to search for.');
+      if (q.length > MAX_QUERY) return bad(`query is over ${MAX_QUERY} characters; use a shorter one.`);
+      if (/[\u0000-\u001f\u007f]/.test(q)) return bad("query contains control characters; plain words only.");
+      if (a.engine !== undefined && !(SEARCH_ENGINES as readonly unknown[]).includes(a.engine)) return bad(`engine is one of: ${SEARCH_ENGINES.join(", ")} (default brave).`);
+      return { ok: true, action: { type: "search", query: q, ...(a.engine ? { engine: a.engine as SearchEngine } : {}) } };
+    }
+    case "tab": {
+      if (!(TAB_OPS as readonly unknown[]).includes(a.op)) return bad(`tab needs "op": one of ${TAB_OPS.join(", ")}.`);
+      const op = a.op as TabOp;
+      let match: string | undefined;
+      if (a.match !== undefined) {
+        match = str(a.match) ? a.match.replace(/\s+/g, " ").trim() : "";
+        if (!match || match.length > MAX_MATCH || /[\u0000-\u001f\u007f]/.test(match)) return bad(`match is a short piece of the tab's title or address (at most ${MAX_MATCH} characters).`);
+      }
+      if (op === "switch" && !match) return bad('tab switch needs "match": part of the title or address of the tab to switch to.');
+      return { ok: true, action: { type: "tab", op, ...(match && (op === "switch" || op === "close") ? { match } : {}) } };
+    }
+    case "read_file": {
+      const p = str(a.path) ? a.path.trim() : "";
+      if (!p) return bad('read_file needs a "path" to a text file, for example "~/Documents/notes.txt".');
+      if (p.length > MAX_PATH || /[\u0000-\u001f\u007f]/.test(p)) return bad("path is too long or has control characters.");
+      return { ok: true, action: { type: "read_file", path: p } };
     }
     case "open_app": case "quit_app": {
       const n = str(a.name) ? a.name.trim() : "";

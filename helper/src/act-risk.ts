@@ -5,6 +5,7 @@ import type { Action, ActRisk, PageContext } from "./types.ts";
 import { INSTRUCTION_TEXT, pageAskedFor } from "./pointer-gate.ts";
 import { lookup, parseHttpUrl } from "./act.ts";
 import { readerCore } from "./redact.ts";
+import { checkReadPath } from "./act-files.ts";
 
 export type Classified = { risk: ActRisk; why: string };
 
@@ -118,6 +119,14 @@ export function pageAskedAction(action: Action, ctx: PageContext, task: string):
       if (hasWords(task, host) || hasWords(task, host.replace(/^www\./, ""))) return null;
       return tainted(ctx).some((t) => hasWords(t, host)) ? `${PAGE_ASKED} (the address appears only in page text addressed to an assistant)` : null;
     }
+    case "search": {
+      // A query is the person's words turned into a search. One that only page text addressed to an assistant supplied is not theirs.
+      return action.query.length >= 4 && !hasWords(task, action.query) && tainted(ctx).some((t) => hasWords(t, action.query)) ? `${PAGE_ASKED} (that search comes from page text addressed to an assistant)` : null;
+    }
+    case "read_file": {
+      const base = action.path.split("/").pop() ?? "";
+      return base.length >= 3 && !hasWords(task, base) && tainted(ctx).some((t) => hasWords(t, base)) ? `${PAGE_ASKED} (the file is named only in page text addressed to an assistant)` : null;
+    }
     case "open_app": case "quit_app": {
       return !hasWords(task, action.name) && tainted(ctx).some((t) => hasWords(t, action.name)) ? `${PAGE_ASKED} (the app is named only in page text addressed to an assistant)` : null;
     }
@@ -204,6 +213,16 @@ export function classify(action: Action, ctx: PageContext, task: string): Classi
       return R("medium", `opens ${host}`);
     }
 
+    case "search": return R("low", `searches the web for your words (${action.engine ?? "brave"})`);
+    case "tab": {
+      if (action.op === "close") { const w = inWallet(); return w ?? R("medium", action.match ? `closes the tab matching "${action.match.slice(0, 40)}"` : "closes a tab"); }
+      return R("low", action.op === "switch" ? `switches to the tab matching "${(action.match ?? "").slice(0, 40)}"` : `tab ${action.op}`);
+    }
+    case "read_file": {
+      const c = checkReadPath(action.path);
+      if (!c.ok) return R("refused", c.why);
+      return R("medium", `reads ${action.path.slice(0, 60)} (read-only, secrets redacted)`);
+    }
     case "open_app": return R("medium", `opens ${action.name}`);
     case "quit_app": return R("high", `quits ${action.name}`);
     case "copy": {

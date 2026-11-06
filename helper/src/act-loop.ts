@@ -18,7 +18,7 @@ export const MAX_PLANS = 40;        // planning calls, including the ones whose 
 export const EXEC_TIMEOUT_MS = 15_000;
 export const APPROVAL_MS = 60_000;
 
-export type ExecResult = { ok: boolean; detail: string; context?: PageContext };
+export type ExecResult = { ok: boolean; detail: string; context?: PageContext; data?: string };
 export type CallRec = { role: "brain" | "laya"; model: string; requestId?: string; chatId?: string; provider?: string };
 export type ActDeps = {
   askAct: (messages: ChatMessage[]) => Promise<AskActResult>;
@@ -239,10 +239,12 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
       yield stopEnd(); return;
     }
     state.receipts.push(`#${n} ${describeAction(action)} (${c.risk}${approvedNote}) ${res.ok ? "ok" : "FAILED: " + clip(res.detail, 60)}`);
-    state.history.push({ n: state.history.length + 1, action: describeAction(action), result: res.ok ? `ok${res.detail ? ": " + clip(res.detail, 120) : ""}` : `FAILED: ${clip(res.detail, 120)}` });
+    // `data` (a file's text) goes to the model inside the fence and nowhere else: not the receipts, not the episode log, not the SSE result.
+    if (res.ok && res.data) for (const h of state.history) delete h.data; // only the newest file text is kept
+    state.history.push({ n: state.history.length + 1, action: describeAction(action), result: res.ok ? `ok${res.detail ? ": " + clip(res.detail, 120) : ""}` : `FAILED: ${clip(res.detail, 120)}`, ...(res.ok && res.data ? { data: res.data } : {}) });
     yield { event: "result", data: { n, ok: res.ok, detail: res.detail } };
     if (res.ok) state.failures = 0; else state.failures++;
     if (res.context) state.context = res.context;
-    else if (res.ok && action.type !== "wait" && action.type !== "screenshot" && action.type !== "copy") state.history.push({ n: state.history.length + 1, action: "(screen)", result: "no fresh screen came back; the data above may be out of date" });
+    else if (res.ok && action.type !== "wait" && action.type !== "screenshot" && action.type !== "copy" && action.type !== "read_file") state.history.push({ n: state.history.length + 1, action: "(screen)", result: "no fresh screen came back; the data above may be out of date" });
   }
 }

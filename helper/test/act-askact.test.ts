@@ -21,8 +21,8 @@ test("tool schemas: both shapes are one function `act` with action + say", () =>
     const [t]: any = actTools(shape);
     assert.equal(t.function.name, "act"); assert.deepEqual(t.function.parameters.required, ["action", "say"]);
   }
-  assert.equal(((actTools("flat")[0] as any).function.parameters.properties.action.properties.type.enum as string[]).length, 15);
-  assert.equal(((actTools("oneof")[0] as any).function.parameters.properties.action.oneOf as unknown[]).length, 15);
+  assert.equal(((actTools("flat")[0] as any).function.parameters.properties.action.properties.type.enum as string[]).length, 18);
+  assert.equal(((actTools("oneof")[0] as any).function.parameters.properties.action.oneOf as unknown[]).length, 18);
 });
 test("askAct parses a scripted tool call and carries the ids and the test flag", async () => {
   use();

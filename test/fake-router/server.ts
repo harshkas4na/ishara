@@ -84,6 +84,14 @@ export const ACT_SCRIPTS: Array<{ match: RegExp; steps: ActStep[] }> = [
     { action: { type: "click", id: "b17" }, say: "Pressing Verify and Publish" },
     { action: { type: "done", say: "Pressed Verify and Publish." }, say: "Done" },
   ] },
+  { match: /search the web for ishara/i, steps: [
+    { action: { type: "search", query: "ishara sealed screen tutor 0G" }, say: "Searching the web" },
+    { action: { type: "done", say: "Per the Ishara project page, it is a sealed screen tutor." }, say: "Done" },
+  ] },
+  { match: /read my notes file/i, steps: [
+    { action: { type: "read_file", path: "~/Documents/notes.txt" }, say: "Reading your notes file" },
+    { action: { type: "done", say: "Your notes say to buy milk." }, say: "Done" },
+  ] },
   { match: /malformed/i, steps: [{ raw: "I think I should maybe click something" }] },
 ];
 export function actReply(user: string): { name: "act"; args: Record<string, unknown> } | { raw: string } {

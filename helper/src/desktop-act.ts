@@ -19,6 +19,8 @@ import { readerCore } from "./redact.ts";
 import { parseWalkCommand } from "./router.ts";
 import { realSpeech } from "./desktop.ts";
 import { HELPER_PORT } from "./config.ts";
+import { searchUrl } from "./act.ts";
+import { readFileForAgent, type ReadOut } from "./act-files.ts";
 
 export const ACT_BIN = fileURLToPath(new URL("../../desktop/ishara-act", import.meta.url));
 export const ACT_TIMEOUT_MS = 5000;     // one action, as the plan says; ishara-act itself answers in well under 300 ms
@@ -30,12 +32,14 @@ export type DesktopAction =
   | { type: "click"; id: string } | { type: "type"; id: string; text: string; clear?: boolean }
   | { type: "select"; id: string; option: string } | { type: "check"; id: string; checked: boolean }
   | { type: "key"; combo: string } | { type: "scroll"; direction: "up" | "down"; amount?: "line" | "page" }
-  | { type: "open_url"; url: string } | { type: "open_app"; name: string } | { type: "quit_app"; name: string }
+  | { type: "open_url"; url: string } | { type: "search"; query: string; engine?: "brave" | "google" | "duckduckgo" }
+  | { type: "tab"; op: "switch" | "close" | "back" | "forward" | "new"; match?: string } | { type: "read_file"; path: string }
+  | { type: "open_app"; name: string } | { type: "quit_app"; name: string }
   | { type: "copy"; text: string } | { type: "screenshot"; to?: "clipboard" | "file" } | { type: "wait"; ms: number }
   | { type: "done"; say: string } | { type: "ask"; say: string } | { type: "fail"; say: string };
 export type ActInput = { type: string; [k: string]: unknown };
 export type ActRaw = { ok: boolean; detail: string; fallback?: string; x?: number; y?: number; permission?: string; path?: string };
-export type ExecOut = { ok: boolean; detail: string; context: PageContext };
+export type ExecOut = { ok: boolean; detail: string; context: PageContext; data?: string };
 
 // ---------- stop flags ----------
 // One desktop task runs at a time, so "stop all" is the normal case (a tap of Right Option, the pill's stop button, the word
@@ -111,6 +115,14 @@ export function toActInput(a: DesktopAction, ctx: PageContext, bundleId?: string
     case "key": return { type: "key", combo: a.combo };
     case "scroll": return { type: "scroll", direction: a.direction, amount: a.amount ?? "line" };
     case "open_url": return { type: "open_url", url: a.url };
+    case "search": return { type: "open_url", url: searchUrl(a.query, a.engine) }; // the same https address the browser builds; opened, never fetched
+    case "tab": {
+      // Keys only: the desktop cannot see tab titles, so anything that needs a match belongs to the browser extension.
+      const keys = { back: "cmd+[", forward: "cmd+]", new: "cmd+t", close: "cmd+w" } as const;
+      if (a.op === "switch" || (a.op === "close" && a.match)) return { refuse: "switching to or closing a tab by name needs the browser extension" };
+      return { type: "key", combo: keys[a.op] };
+    }
+    case "read_file": return { refuse: "read_file is handled by the helper, not ishara-act" };
     case "open_app": return { type: "open_app", name: a.name };
     case "quit_app": return { type: "quit_app", name: a.name };
     case "copy": return { type: "copy", text: a.text };
@@ -123,7 +135,7 @@ export function toActInput(a: DesktopAction, ctx: PageContext, bundleId?: string
 const DOM_ACTIONS: ReadonlySet<string> = new Set(["click", "type", "select", "check", "scroll"]);
 const TARGETED: ReadonlySet<string> = new Set(["click", "type", "select", "check"]);
 // Whether the screen is likely to change, so it is worth waiting for it to settle before re-reading.
-const CHANGES_SCREEN: ReadonlySet<string> = new Set(["click", "select", "key", "open_app", "open_url", "quit_app", "check"]);
+const CHANGES_SCREEN: ReadonlySet<string> = new Set(["click", "select", "key", "open_app", "open_url", "quit_app", "check", "search", "tab"]);
 
 /** Words for the pill or the approval prompt. Never includes the text of a copy or a typed secret beyond a short preview. */
 export function actionInWords(a: DesktopAction, ctx?: PageContext): string {
@@ -137,6 +149,9 @@ export function actionInWords(a: DesktopAction, ctx?: PageContext): string {
     case "key": return `Press ${a.combo}`;
     case "scroll": return `Scroll ${a.direction}`;
     case "open_url": return `Open ${clipT(a.url, 60)}`;
+    case "search": return `Search the web for “${clipT(a.query)}”`;
+    case "tab": return a.op === "new" ? "Open a new tab" : a.op === "back" ? "Go back" : a.op === "forward" ? "Go forward" : a.op === "close" ? "Close this tab" : "Switch tab";
+    case "read_file": return `Read the file ${clipT(a.path, 60)}`;
     case "open_app": return `Open ${a.name}`;
     case "quit_app": return `Quit ${a.name}`;
     case "copy": return `Copy ${a.text.length} characters to the clipboard`;
@@ -158,6 +173,8 @@ export type ActDeps = {
   /** Draw the action in the pill too (the task runner does that from the `action` event; a bare executor can ask for it). */
   pill?: (text: string, step: number) => void;
   step?: number;
+  /** read_file: injectable so tests never touch a disk. Default is the real, read-only reader (act-files.ts). */
+  readFile?: (path: string) => Promise<ReadOut>;
 };
 
 const homePath = (s: string) => s.split(homedir()).join("~"); // the path of a screenshot is for the person, not for the model's prompt
@@ -192,6 +209,13 @@ export async function executeDesktopAction(action: DesktopAction, context: PageC
     if (deps.stopped()) return done(false, "stopped");
     if (action.type === "done" || action.type === "ask" || action.type === "fail") return done(true, "");
     if (action.type === "wait") { await deps.sleep(Math.max(0, Math.min(3000, Number(action.ms) || 0))); return done(true, "waited", await deps.readContext().catch(() => context)); }
+
+    // read_file is the helper's own job (no screen, no ishara-act): the text goes back as `data`, never into detail or the pill.
+    if (action.type === "read_file") {
+      deps.pill?.(actionInWords(action, context), deps.step ?? 0);
+      const r = await (deps.readFile ?? readFileForAgent)(action.path);
+      return { ...done(r.ok, r.detail), ...(r.ok && r.data ? { data: r.data } : {}) };
+    }
 
     // 1. the browser guard: the extension executes DOM actions in browsers, never this path
     const front = await deps.front();
