@@ -1,10 +1,13 @@
-// Desktop push-to-talk: hold Right Option (350 ms) anywhere on the Mac, speak, release. ishara-ptt (Swift) watches the keys
+// Desktop push-to-talk: hold Right Option anywhere on the Mac, speak, release. The daemon captures from the KEY-DOWN
+// (pre-roll) and keeps the take only if the 350 ms hold is confirmed, so the first words are not lost. ishara-ptt (Swift) watches the keys
 // and records the mic; this file turns its JSON lines into the same flow the browser has: a live level meter, a refusal
 // for silence, Whisper, a noise-phrase filter, then desktopAsk() (read the front window, the streaming tutor turn, draw
 // and speak). A new key-down cuts the old answer off (voice and turn) so the user can always interrupt.
 // Every outside effect is injected (`PttDeps`) so the pipeline is tested with fakes.
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { desktopAsk, frontApp, isBrowserBundle, overlay, BROWSER_HINT, type FrontApp, type OverlayCmd } from "./desktop.ts";
 import { transcribe } from "./whisper.ts";
@@ -19,10 +22,10 @@ export const MIN_SAMPLES = 0.25 * 16000;
 export const MIN_RMS = minRms(); // ISHARA_MIN_RMS overrides; stock phrases and short words are judged by transcript-guard.ts
 export const METER_EVERY_MS = 150; // overlay is a JSON line to another process; 8 Hz is smooth enough, 120 ms floods
 
-export function meter(rms: number): string {
-  const n = Math.max(0, Math.min(10, Math.round(Math.sqrt(rms) * 28)));
-  return "Listening…\n" + "▮".repeat(n) + "▯".repeat(10 - n);
-}
+// Feedback timing. Capture has already started at the key-down; the pill appears FEEDBACK_AFTER_MS later so that a tap or an
+// Option+letter keystroke (cancelled within a few ms) flashes nothing. Until the microphone is live it says PREPARING,
+// then LISTENING "Speak now" with a soft tick (docs/UI-PILL.md), through the overlay's `state` command.
+export const FEEDBACK_AFTER_MS = 120;
 
 export type DaemonHandle = { kill(): void };
 export type PttDeps = {
@@ -32,6 +35,7 @@ export type PttDeps = {
   front: () => Promise<FrontApp | null>;   // which app is in front, read without reading its window
   spawnDaemon: (onLine: (l: string) => void, onExit: (code: number | null) => void) => DaemonHandle;
   now: () => number;
+  tick: () => void;                        // the short soft "speak now" sound (no-op when ISHARA_TICK=0)
   setTimer: (fn: () => void, ms: number) => unknown;
   clearTimer: (t: unknown) => void;
 };
@@ -49,12 +53,27 @@ export function createPtt(d: PttDeps) {
   let backoff = 1000;
   let startedAt = 0;
   let restartTimer: unknown = null;
-  let lastMeterAt = -Infinity, lastMeterText = "";
+  let lastMeterAt = -Infinity;
   let gen = 0;              // bumped on every key-down; a take from an older generation is dropped, never answered late
   let turnAbort: AbortController | null = null;
   let skipTake = false;     // the front app is a browser: the extension owns it, this take is ignored
   let frontCheck: Promise<void> = Promise.resolve();
+  let takeActive = false;   // between `down` and `up`/`cancel`
+  let liveSeen = false;     // the microphone has delivered its first buffer for this take
+  let feedbackDue = false;  // FEEDBACK_AFTER_MS has passed since the key-down
+  let pill: "none" | "preparing" | "listening" = "none"; // what the pill shows for this take
+  let feedbackTimer: unknown = null;
 
+  // Show the state that is true now: PREPARING until the mic is live, then LISTENING + tick (once per take).
+  function showFeedback(mine: number): void {
+    if (mine !== gen || !takeActive || skipTake || !feedbackDue) return;
+    if (liveSeen) {
+      if (pill === "listening") return;
+      pill = "listening"; lastMeterAt = -Infinity;
+      d.send({ cmd: "state", state: "listening" });
+      d.tick();
+    } else if (pill === "none") { pill = "preparing"; d.send({ cmd: "state", state: "preparing" }); }
+  }
   const stopBubble = (text: string, sub?: string) => d.send({ cmd: "stop", text, sub });
 
   async function onUp(ev: any): Promise<void> {
@@ -90,26 +109,46 @@ export function createPtt(d: PttDeps) {
     switch (ev?.ev) {
       case "ready": ready = true; chord = ev.chord; lastError = undefined; break;
       case "down": {
-        gen++; turnAbort?.abort(); turnAbort = null;   // cut off the running turn, not only its voice
-        interrupt(); /* silence the voice before the mic is live: no echo into the recording */
-        lastMeterAt = -Infinity; lastMeterText = ""; skipTake = false;
-        d.send({ cmd: "think", text: "Listening… release to send" }); // instant feedback at the 350 ms mark
-        // A browser is the extension's: say so and ignore this take. Checked after the bubble so feedback is never late.
+        const mine = ++gen; turnAbort?.abort(); turnAbort = null;
+        lastMeterAt = -Infinity; skipTake = false;
+        takeActive = true; liveSeen = false; feedbackDue = false; pill = "none";
+        if (feedbackTimer) d.clearTimer(feedbackTimer);
+        feedbackTimer = d.setTimer(() => { feedbackTimer = null; feedbackDue = true; void frontCheck.then(() => showFeedback(mine)); }, FEEDBACK_AFTER_MS);
+        // Which app is in front decides everything else. A browser is the extension's: this take is ignored and the daemon
+        // must not touch its answer (no interrupt: a stray Right-Option tap in the browser must not cut the extension's voice).
         frontCheck = d.front().then((f) => {
-          if (f && isBrowserBundle(f.bundleId)) { skipTake = true; d.send({ cmd: "ask", text: BROWSER_HINT }); }
+          if (mine !== gen) return;
+          if (f && isBrowserBundle(f.bundleId)) skipTake = true;
+          else interrupt(); /* silence the voice: no echo into the recording */
         }, () => {});
         break;
       }
-      case "level": {
-        if (skipTake) break;
-        const t = d.now(), text = meter(Number(ev.rms) || 0);
-        // Throttle, and skip repeats: an unchanged bar needs no redraw.
-        if (t - lastMeterAt < METER_EVERY_MS || text === lastMeterText) break;
-        lastMeterAt = t; lastMeterText = text;
-        d.send({ cmd: "think", text });
+      case "live": { liveSeen = true; const mine = gen; void frontCheck.then(() => showFeedback(mine)); break; }
+      case "confirmed": {
+        // A deliberate hold. Only now is the browser hint shown (a tap in a browser must not flash it).
+        const mine = gen;
+        void frontCheck.then(() => { if (mine === gen && takeActive && skipTake) d.send({ cmd: "ask", text: BROWSER_HINT }); });
         break;
       }
-      case "up": void onUp(ev); break;
+      case "cancel": { // released or interrupted inside the hold: a tap. The daemon dropped the audio; drop the pill.
+        takeActive = false;
+        if (feedbackTimer) { d.clearTimer(feedbackTimer); feedbackTimer = null; }
+        if (pill !== "none") d.send({ cmd: "state", state: "idle" });
+        pill = "none";
+        break;
+      }
+      case "level": {
+        if (skipTake || pill !== "listening") break; // bars exist only once the pill says "Speak now"
+        const t = d.now();
+        if (t - lastMeterAt < METER_EVERY_MS) break; // throttle: the overlay is a JSON line to another process
+        lastMeterAt = t;
+        d.send({ cmd: "level", rms: Math.max(0, Number(ev.rms) || 0) });
+        break;
+      }
+      case "up":
+        takeActive = false;
+        if (feedbackTimer) { d.clearTimer(feedbackTimer); feedbackTimer = null; }
+        void onUp(ev); break;
       case "error":
         lastError = String(ev.message ?? "ishara-ptt failed");
         // A runtime microphone failure (device vanished, engine would not start) says fatal:false: tell the user, keep
@@ -165,6 +204,30 @@ export function createPtt(d: PttDeps) {
 
 // ---------- the real thing ----------
 
+// The "speak now" tick: 40 ms of 880 Hz, 10 ms fade in and out, quiet. Played by afplay from a tiny WAV in the temp dir
+// (it is a sound we made, not microphone audio; recordings are never written to disk). It plays a moment BEFORE the user
+// speaks and a few dB below speech, and the transcript guard drops what Whisper might still make of it (see docs/DESKTOP.md).
+let tickPath: string | null = null;
+export function tickWav(): Buffer {
+  const rate = 16000, n = Math.round(rate * 0.04), fade = Math.round(rate * 0.01);
+  const b = Buffer.alloc(44 + n * 2);
+  b.write("RIFF", 0); b.writeUInt32LE(36 + n * 2, 4); b.write("WAVEfmt ", 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22); b.writeUInt32LE(rate, 24); b.writeUInt32LE(rate * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34);
+  b.write("data", 36); b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) {
+    const env = Math.min(1, i / fade, (n - 1 - i) / fade);
+    b.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 880 * i) / rate) * env * 0.5 * 32767), 44 + i * 2);
+  }
+  return b;
+}
+function playTick(): void {
+  if (process.env.ISHARA_TICK === "0") return;
+  try {
+    if (!tickPath) { tickPath = join(tmpdir(), `ishara-tick-${process.pid}.wav`); writeFileSync(tickPath, tickWav()); }
+    spawn("/usr/bin/afplay", ["-v", "0.35", tickPath], { stdio: "ignore" }).on("error", () => {});
+  } catch { /* a missing tick must never break a take */ }
+}
+
 const real = createPtt({
   send: (c) => overlay.send(c),
   transcribe: (wav) => transcribeGuarded(wav, undefined, transcribe), // same guard as POST /transcribe
@@ -183,6 +246,7 @@ const real = createPtt({
     p.on("exit", onExit);
     return { kill: () => p.kill("SIGTERM") }; // SIGTERM lets the daemon close the mic first
   },
+  tick: playTick,
   now: Date.now,
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as any),
