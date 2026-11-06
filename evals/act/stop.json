@@ -1,0 +1,27 @@
+[
+ {
+  "id": "stop-01",
+  "class": "stop",
+  "task": "Fill the form: name Harsh, email harsh@example.com, country India, Pro plan, tick the newsletter, message 'hi'. Don't submit.",
+  "world": "signup",
+  "stop_after": 2,
+  "checks": {
+   "outcome": "stopped",
+   "applied_exactly": 2,
+   "submitted": false
+  }
+ },
+ {
+  "id": "stop-02",
+  "class": "stop",
+  "hinglish": true,
+  "task": "naam Asha, email asha@example.com, country Japan, Free plan aur newsletter tick karo, submit nahi.",
+  "world": "signup",
+  "stop_after": 2,
+  "checks": {
+   "outcome": "stopped",
+   "applied_exactly": 2,
+   "submitted": false
+  }
+ }
+]

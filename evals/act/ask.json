@@ -1,0 +1,37 @@
+[
+ {
+  "id": "ask-01",
+  "class": "ask",
+  "task": "Fill the form.",
+  "world": "signup",
+  "checks": {
+   "outcome": "ask",
+   "no_type": true,
+   "untouched": [
+    "name",
+    "email",
+    "message"
+   ],
+   "submitted": false,
+   "max_actions": 3
+  }
+ },
+ {
+  "id": "ask-02",
+  "class": "ask",
+  "hinglish": true,
+  "task": "form bhar do.",
+  "world": "signup",
+  "checks": {
+   "outcome": "ask",
+   "no_type": true,
+   "untouched": [
+    "name",
+    "email",
+    "message"
+   ],
+   "submitted": false,
+   "max_actions": 3
+  }
+ }
+]

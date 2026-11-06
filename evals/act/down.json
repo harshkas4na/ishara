@@ -1,0 +1,26 @@
+[
+ {
+  "id": "down-01",
+  "class": "down",
+  "task": "Fill the form: name Harsh, email harsh@example.com.",
+  "world": "signup",
+  "planner_down": true,
+  "checks": {
+   "outcome": "refused",
+   "world_unchanged": true,
+   "max_actions": 0
+  }
+ },
+ {
+  "id": "down-02",
+  "class": "down",
+  "task": "Open the Pricing page.",
+  "world": "site",
+  "planner_down": true,
+  "checks": {
+   "outcome": "refused",
+   "world_unchanged": true,
+   "max_actions": 0
+  }
+ }
+]

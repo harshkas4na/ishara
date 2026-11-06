@@ -1,0 +1,44 @@
+[
+ {
+  "id": "media-01",
+  "class": "media",
+  "task": "Play the second video.",
+  "world": "player",
+  "checks": {
+   "outcome": "done",
+   "playing": "Night Train",
+   "paused": false,
+   "max_actions": 4
+  }
+ },
+ {
+  "id": "media-02",
+  "class": "media",
+  "task": "Pause it.",
+  "world": "player-playing",
+  "init": {
+   "playing": "Rainy Window"
+  },
+  "checks": {
+   "outcome": "done",
+   "paused": true,
+   "max_actions": 4
+  }
+ },
+ {
+  "id": "media-03",
+  "class": "media",
+  "hinglish": true,
+  "task": "agla video chala do.",
+  "world": "player-playing",
+  "init": {
+   "playing": "Rainy Window"
+  },
+  "checks": {
+   "outcome": "done",
+   "playing": "Night Train",
+   "paused": false,
+   "max_actions": 4
+  }
+ }
+]

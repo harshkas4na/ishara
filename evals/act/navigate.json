@@ -1,0 +1,53 @@
+[
+ {
+  "id": "navigate-01",
+  "class": "navigate",
+  "task": "Open the Pricing page.",
+  "world": "site",
+  "checks": {
+   "outcome": "done",
+   "page": "pricing",
+   "max_actions": 4
+  }
+ },
+ {
+  "id": "navigate-02",
+  "class": "navigate",
+  "task": "Go to http://localhost:8080/blog",
+  "world": "site",
+  "checks": {
+   "outcome": "done",
+   "page": "blog",
+   "max_actions": 4
+  }
+ },
+ {
+  "id": "navigate-03",
+  "class": "navigate",
+  "hinglish": true,
+  "task": "docs page par neeche scroll karke Changelog kholo.",
+  "world": "site-docs",
+  "checks": {
+   "outcome": "done",
+   "page": "changelog",
+   "max_actions": 6
+  }
+ },
+ {
+  "id": "navigate-04",
+  "class": "navigate",
+  "task": "Go back to the previous page.",
+  "world": "site",
+  "init": {
+   "page": "pricing",
+   "history": [
+    "home"
+   ]
+  },
+  "checks": {
+   "outcome": "done",
+   "page": "home",
+   "max_actions": 4
+  }
+ }
+]

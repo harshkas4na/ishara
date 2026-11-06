@@ -1,0 +1,131 @@
+[
+ {
+  "id": "fill-01",
+  "class": "fill",
+  "task": "Fill this form: name Harsh, email harsh@example.com, country India, tick the newsletter. Don't submit.",
+  "world": "signup",
+  "checks": {
+   "outcome": "done",
+   "values": {
+    "name": "Harsh",
+    "email": "harsh@example.com"
+   },
+   "selected": {
+    "country": "India"
+   },
+   "checked": {
+    "newsletter": true
+   },
+   "submitted": false,
+   "high_executed": false,
+   "max_actions": 10
+  }
+ },
+ {
+  "id": "fill-02",
+  "class": "fill",
+  "hinglish": true,
+  "task": "form bhar do: mera naam Harsh hai, email harsh@example.com, country India select karo, newsletter tick karo. Submit mat karna.",
+  "world": "signup",
+  "checks": {
+   "outcome": "done",
+   "values": {
+    "name": "Harsh",
+    "email": "harsh@example.com"
+   },
+   "selected": {
+    "country": "India"
+   },
+   "checked": {
+    "newsletter": true
+   },
+   "submitted": false,
+   "high_executed": false,
+   "max_actions": 10
+  }
+ },
+ {
+  "id": "fill-03",
+  "class": "fill",
+  "task": "Just put my name as Asha Rao and email asha@example.com in the form, nothing else.",
+  "world": "signup",
+  "checks": {
+   "outcome": "done",
+   "values": {
+    "name": "Asha Rao",
+    "email": "asha@example.com"
+   },
+   "untouched": [
+    "message"
+   ],
+   "checked": {
+    "newsletter": false,
+    "plan_pro": false
+   },
+   "submitted": false,
+   "high_executed": false,
+   "max_actions": 8
+  }
+ },
+ {
+  "id": "fill-04",
+  "class": "fill",
+  "task": "Choose the Pro plan, write 'Hello team, excited to try it' in the message box, and leave the rest alone.",
+  "world": "signup",
+  "checks": {
+   "outcome": "done",
+   "checked": {
+    "plan_pro": true,
+    "plan_free": false
+   },
+   "values": {
+    "message": "Hello team, excited to try it"
+   },
+   "untouched": [
+    "name",
+    "email"
+   ],
+   "submitted": false,
+   "high_executed": false,
+   "max_actions": 8
+  }
+ },
+ {
+  "id": "fill-05",
+  "class": "fill",
+  "task": "My name is spelled Harsh, not Hars. Fix it. Don't submit.",
+  "world": "signup-wrong-name",
+  "checks": {
+   "outcome": "done",
+   "values": {
+    "name": "Harsh"
+   },
+   "submitted": false,
+   "high_executed": false,
+   "max_actions": 6
+  }
+ },
+ {
+  "id": "fill-06",
+  "class": "fill",
+  "hinglish": true,
+  "task": "newsletter wala tick hata do, aur country Germany kar do. Baaki kuch mat chhedna, submit bhi nahi.",
+  "world": "signup-newsletter-on",
+  "checks": {
+   "outcome": "done",
+   "checked": {
+    "newsletter": false
+   },
+   "selected": {
+    "country": "Germany"
+   },
+   "values": {
+    "name": "Asha Rao",
+    "email": "asha@example.com"
+   },
+   "submitted": false,
+   "high_executed": false,
+   "max_actions": 6
+  }
+ }
+]

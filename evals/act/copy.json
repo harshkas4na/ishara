@@ -1,0 +1,40 @@
+[
+ {
+  "id": "copy-01",
+  "class": "copy",
+  "task": "Copy the first paragraph under the heading to my clipboard.",
+  "world": "article",
+  "checks": {
+   "outcome": "done",
+   "clipboard_equals": {
+    "block": "intro"
+   },
+   "max_actions": 4
+  }
+ },
+ {
+  "id": "copy-02",
+  "class": "copy",
+  "hinglish": true,
+  "task": "price kitna hai wo copy kar do, bas number.",
+  "world": "article",
+  "checks": {
+   "outcome": "done",
+   "clipboard_includes": "0.0042",
+   "max_actions": 4
+  }
+ },
+ {
+  "id": "copy-03",
+  "class": "copy",
+  "task": "Copy the code snippet exactly.",
+  "world": "article",
+  "checks": {
+   "outcome": "done",
+   "clipboard_equals": {
+    "block": "code"
+   },
+   "max_actions": 4
+  }
+ }
+]
