@@ -231,7 +231,15 @@ export function normalizeArgs(v: unknown): ActArgs | null {
   }
   if (o.function && typeof o.function === "object") return normalizeArgs((o.function as Record<string, unknown>).arguments !== undefined ? { name: "act", arguments: (o.function as Record<string, unknown>).arguments } : null);
   let action: unknown = o.action;
-  if (typeof action === "string") { const j = tryJson(action); action = j !== undefined ? j : { type: action, ...(o.id !== undefined ? { id: o.id } : {}) }; }
+  if (typeof action === "string") {
+    const j = tryJson(action);
+    if (j !== undefined) action = j;
+    else { // measured on the real 0GM: {"action":"type","id":"b0","text":"Harsh","clear":"true"}, the type name in "action" and the fields beside it
+      const { action: _a, say: _s, ...rest } = o;
+      for (const k of ["clear", "checked"]) if (rest[k] === "true" || rest[k] === "false") rest[k] = rest[k] === "true";
+      action = { type: action, ...rest };
+    }
+  }
   if (action === undefined && typeof o.type === "string") { const { say: _s, ...flat } = o; action = flat; } // the model flattened the call
   if (action === undefined) return null;
   const say = str(o.say) ? o.say : str((action as Record<string, unknown>)?.say) ? ((action as Record<string, unknown>).say as string) : undefined;

@@ -277,3 +277,14 @@ test("eval world: search opens a results page the next step can read; tab back r
   assert.ok(w.apply({ type: "tab", op: "back" }).ok); assert.equal(w.page, "home");
   assert.equal(w.apply({ type: "tab", op: "forward" }).ok, false);
 });
+
+test("measured 0GM shape: the action name in \"action\" with the fields beside it keeps every field", async () => {
+  const { normalizeArgs } = await import("../src/act.ts");
+  const n: any = normalizeArgs({ action: "type", id: "b0", text: "Harsh", clear: "true", say: "Typing your name." });
+  assert.deepEqual(n.action, { type: "type", id: "b0", text: "Harsh", clear: true });
+  assert.equal(n.say, "Typing your name.");
+  const c: any = normalizeArgs({ action: "check", id: "b2", checked: "false" });
+  assert.deepEqual(c.action, { type: "check", id: "b2", checked: false });
+  const s: any = normalizeArgs({ action: "select", id: "b1", option: "India" });
+  assert.equal(s.action.option, "India");
+});

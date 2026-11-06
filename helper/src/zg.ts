@@ -339,7 +339,7 @@ export async function askVerifyRef(question: string, sentence: string, el: Outli
 // ---- Agent mode planner (docs/AGENT-MODE.md). One non-streaming 0GM-1.0 call with native tool calling in Private mode:
 // the answer is a single small tool call (~2 s measured), so there is nothing to stream. Added beside, never inside, the
 // measured pointing and tutor calls. Never throws; a failure is a cause and the loop STOPS (no local planner, ever).
-export const ACT_FIRST_TOKEN_MS = 8000;
+export const ACT_FIRST_TOKEN_MS = 20000; // was 8000: measured 3-5 s for a trivial call on 6 Nov evening; a tool call with the whole page is slower
 export const ACT_MAX_TOKENS = 300;
 export type AskActResult =
   | { ok: true; args: { action: unknown; say?: string } | null; raw: string; requestId?: string; chatId?: string; provider?: string; ms: number; testRouter?: boolean }
