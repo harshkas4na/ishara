@@ -47,7 +47,9 @@ async function main() {
   console.log(`\n(${rows.filter((r) => r.pass).length}/${rows.length} passed overall: for orientation only; read the per-class rows above, never quote this total)`);
   if (testRouter) console.log("TEST ROUTER (not real 0G): numbers may not be quoted");
   mkdirSync("helper/.data", { recursive: true });
-  const out = testRouter ? "helper/.data/eval-act-test-router.json" : "helper/.data/eval-act-latest.json";
+  // A filtered run goes to its own file so a partial result can never replace the last full run.
+  const partial = !!(cl || one || lim > 0);
+  const out = testRouter ? "helper/.data/eval-act-test-router.json" : partial ? "helper/.data/eval-act-partial.json" : "helper/.data/eval-act-latest.json";
   writeFileSync(out, JSON.stringify({ at: new Date().toISOString(), testRouter, ...(testRouter ? { warning: "TEST ROUTER (not real 0G): do not quote" } : {}), rows, raw: done.map((d) => ({ id: d.row.id, events: d.events, world: d.sim.world.applied })) }, null, 2));
   console.log("saved", out);
 }
