@@ -361,7 +361,7 @@ test("SSE events -> overlay commands", () => {
   assert.deepEqual(actEventToCmds({ event: "thinking", data: { n: 2 } }, t), [{ cmd: "agent", text: "Thinking…", step: 2, risk: "low" }]);
   assert.deepEqual(actEventToCmds({ event: "action", data: { n: 3, action: { type: "click", id: "b1" }, risk: "medium", say: "Pressing Save" } }, t), [{ cmd: "agent", text: "Pressing Save", step: 3, risk: "medium" }]);
   assert.deepEqual(actEventToCmds({ event: "action", data: { n: 3, action: { type: "click", id: "b1" }, risk: "low", say: "" } }, t), [{ cmd: "agent", text: "Click “Save”", step: 3, risk: "low" }], "no say: the action in words");
-  assert.deepEqual(actEventToCmds({ event: "approval", data: { n: 4, action: { type: "quit_app", name: "TextEdit" }, risk: "high", why: "Quitting an app" } }, t), [{ cmd: "approval", text: "Quit TextEdit?", sub: "Quitting an app. Say yes to approve, no to cancel." }]);
+  assert.deepEqual(actEventToCmds({ event: "approval", data: { n: 4, action: { type: "quit_app", name: "TextEdit" }, risk: "high", why: "Quitting an app" } }, t), [{ cmd: "approval", text: "Quit TextEdit?", sub: "Say yes to approve, no to cancel." }]);
   assert.deepEqual(actEventToCmds({ event: "result", data: { n: 1, ok: true, detail: "x" } }, t), []);
   assert.equal((actEventToCmds({ event: "result", data: { n: 1, ok: false, detail: "no such button" } }, t)[0] as any).text, "That did not work: no such button");
   assert.deepEqual(actEventToCmds({ event: "stopped", data: {} }, t), [{ cmd: "agent", text: "Stopped.", step: 0, risk: "low" }]);

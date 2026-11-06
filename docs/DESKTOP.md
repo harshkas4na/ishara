@@ -136,3 +136,58 @@ Measured key-down -> `live`, 10 trials each: cold (engine idle) median 140 ms (1
 began ~350 ms + 115 ms after the key-down, so about 0.5 s of speech was lost. A Right-Option tap, Option+letter and Right
 Option + Space all give `down` then `cancel`; in a browser nothing is shown, no tick, and the voice is not interrupted.
 Synthetic check: `desktop/ptt-post roptSpace 600`.
+
+## Agent mode (the desktop does things, not only explains)
+Plan and contract: docs/AGENT-MODE.md. On the desktop the executor is `desktop/ishara-act` (Swift) driven by
+`helper/src/desktop-act.ts`; the sealed planning loop is `POST /act` with `executor:"helper"`. Browsers stay with the extension.
+
+**Arm it by voice (hold Right Option):** "agent mode on" / "agent mode off", Hinglish "agent mode chalu karo" / "agent mode band karo".
+Only a sentence that IS the command counts, so "what does agent mode do?" still reaches the tutor. It is OFF on every helper start
+(memory only, nothing is saved: an agent that wakes up armed is a safety bug). While armed the pill carries an "Agent" chip.
+Without a mouse over HTTP: `curl 127.0.0.1:7777/desktop/ask -d '{"question":"agent mode on"}'`, then the task the same way.
+
+**While armed**, a task sentence (open, go to, click, press, type, enter, fill, scroll, copy, play, pause, search, select, close, quit,
+take a screenshot; Hinglish kholo, bharo, likho, chalao, dabao, band karo) goes to the act loop. Questions keep going to the tutor.
+While it is OFF, a task sentence gets "Turn on Agent mode and I will do that." and nothing moves.
+
+**What each action does** (`desktop/ishara-act`, one JSON action on stdin, one `{ok, detail}` on stdout):
+| action | what happens |
+|---|---|
+| click | `AXPress` on the control found by its stable selector; if AX cannot press it, ONE coordinate click at its centre (never on a secret field) |
+| type | sets `AXValue` of a text field; if AX refuses, focuses it, selects all (when replacing) and types with keyboard events. Secure/password/seed-named fields: refused, `secret field` |
+| select | opens the pop-up (`AXShowMenu`) and presses the item with that label |
+| check | reads the state and presses only if it differs |
+| key | `cmd+t`, `Enter`, `space`, ... as key down/up with the modifiers held, to the front app |
+| scroll | wheel event at the window centre, a few lines or a page |
+| open_app / quit_app | by name or bundle id; waits up to 5 s for it to be frontmost / `terminate()` only, never force (an unsaved document keeps its own Save sheet) |
+| open_url | http(s) only, in the default browser |
+| copy | the pasteboard; the loop sees "copied N characters", never the text |
+| screenshot | the front window to `~/Desktop/Ishara-<time>.png` AND the pasteboard. Local only, never sent anywhere (needs Screen Recording) |
+
+**How it finds the control.** `ishara-ax context` adds a `selector` per control (role, raw AX role, label, index among same-labelled
+controls in reading order, secure flag). The helper sends it with the window title and the rect as a hint; `ishara-act` walks the front
+window with the same rules and re-finds it, so nothing relies on a pointer that died between processes. If the front app changed, or
+the label is gone, it says so and does nothing.
+
+**Visible and stoppable.** Before each targeted action the overlay cursor travels to the control (about 0.7 s) and the pill shows the step
+("Step 3", the model's sentence, a stop button). A tap of **Right Option** while a task runs stops it (the daemon's `cancel` event is the
+stop chord), as do the words "stop" / "ruko", the pill's stop button and `POST /act/stop`; the stop flag is checked between every step
+and again after the cursor arrives. Caps: 25 actions, 3 minutes.
+
+**Approval.** A HIGH-risk action (quit an app, submit/send/delete/pay clicks, ...) shows the action in words with "Say yes to approve, no to
+cancel." and approve/deny buttons. "yes / yeah / haan / ok do it / go ahead" approve, "no / stop / nahi / cancel" deny, anything else leaves
+it open; no answer in 60 s is a no. Overlay lines: `{"ev":"approve","approve":true|false}` and `{"ev":"agent","cmd":"stop"}`.
+
+**Overlay commands added:** `agentmode{on}`, `agent{text,step,risk}` (step 0 ends the task), `approval{text,sub}`.
+
+**Permissions.** Accessibility is required (grant it to the app that starts the helper; without it `ishara-act` exits 2 and names it).
+Screen Recording is needed only for `screenshot` (and the OCR fallback). `npm run desktop:build` builds `ishara-act`.
+
+**Safety rules.** Armed or nothing. Secret fields are never typed into and never read. Page or window text cannot start an action (only
+the user's sentence can; the core checks every target with laya). Actions in a browser are refused here ("use the browser extension").
+Clipboard text and screenshots never go to 0G. The loop stops if 0G is unreachable.
+
+**Measured on this Mac (macOS 27).** `press` 150 ms, `key` 85 ms end to end. TextEdit: open, new document, type, select font, toggle bold,
+`cmd+a`/`cmd+c`, scroll, screenshot, quit (the Save sheet is answered by the user or a separate `Delete` press); System Settings sidebar
+press changed the pane (re-read title Bluetooth, then Wi-Fi). Typing by keyboard events needs the combined-session event source (the HID
+source was dropped by TextEdit).

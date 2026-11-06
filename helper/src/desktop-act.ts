@@ -328,7 +328,6 @@ export const isStopWord = (text: string): boolean => STOP_WORDS.test(squash(text
 export type ActEv = { event: string; data?: any };
 export type TaskCtx = { ctx: PageContext };
 export const AGENT_OFF_HINT = "Turn on Agent mode and I will do that.";
-const RISK_NOTE: Record<string, string> = { high: "Needs your approval", refused: "Not allowed" };
 
 /** One /act SSE event -> the pill commands. The pill text is the model's own short `say`; the step chip carries the number. */
 export function actEventToCmds(ev: ActEv, t: TaskCtx): OverlayCmd[] {
@@ -336,7 +335,7 @@ export function actEventToCmds(ev: ActEv, t: TaskCtx): OverlayCmd[] {
   switch (ev.event) {
     case "thinking": return [{ cmd: "agent", text: "Thinking…", step: Math.max(1, Number(d.n) || 1), risk: "low" } as OverlayCmd];
     case "action": return [{ cmd: "agent", text: String(d.say || actionInWords(d.action, t.ctx)), step: Math.max(1, Number(d.n) || 1), risk: String(d.risk ?? "low") } as OverlayCmd];
-    case "approval": return [{ cmd: "approval", text: `${actionInWords(d.action, t.ctx)}?`, sub: `${String(d.why || RISK_NOTE.high)}. Say yes to approve, no to cancel.` } as OverlayCmd];
+    case "approval": return [{ cmd: "approval", text: `${actionInWords(d.action, t.ctx)}?`, sub: "Say yes to approve, no to cancel." } as OverlayCmd];
     case "result": return d.ok === false ? [{ cmd: "agent", text: `That did not work: ${String(d.detail || "").slice(0, 80)}`, step: Math.max(1, Number(d.n) || 1), risk: "low" } as OverlayCmd] : [];
     case "done": case "ask": return [{ cmd: "agent", text: String(d.say || "Done."), step: 0, risk: "low" } as OverlayCmd];
     case "failed": return [{ cmd: "agent", text: String(d.say || "I could not finish that."), step: 0, risk: "low" } as OverlayCmd];
