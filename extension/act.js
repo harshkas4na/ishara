@@ -629,6 +629,8 @@
     }
   }
 
+  // `action` comes first, then (for a risky one) `approval`: the action must NOT run until the person says yes. So a risky action is
+  // prepared here (step text, cursor on the target) and held; the approval answer runs it.
   async function onAction(R, d) {
     if (R.stopped || runState !== R) return;
     approvalState = null;
@@ -637,36 +639,45 @@
     const target = a.id ? elementFor(R.cur, a.id) : null;
     const label = d.targetLabel || (a.id ? labelFor(R.cur, a.id) : "");
     const say = (d.say && String(d.say).trim()) || describe(a, label);
+    const J = { d, a, n, target, label, say };
     ui.step(n, say.replace(/[.!]+$/, ""));
-    if (cfg.speak && d.say) tp().post("/speech/say", { text: String(d.say).slice(0, 300) }).catch?.(() => {});
-    const report = async (res) => {
-      if (runState !== R || R.stopped) return;
-      const ctx = (await compile().catch(() => null));
-      if (ctx) R.cur = ctx;
-      R.history.push(say.replace(/[.!]+$/, "").slice(0, 80)); R.done = n; R.acting = false;
-      await saveState({ awaiting: false });
-      tp().post("/act/result", { actId: R.actId, n: R.n, ok: !!res.ok, detail: String(res.detail || "").slice(0, 300), context: ctx ? ctx.ctx : undefined });
-    };
-    if (d.rehearsal === undefined && d.point && d.point.status && d.point.status !== "confirmed" && a.id) return report(fail("the control was not confirmed as the right one"));
-    if (a.id && !target) return report(fail("I can't find that control on the page"));
+    if (cfg.speak && d.say) tp().post("/speech/say", { text: String(d.say).slice(0, 300) });
+    if (d.point && d.point.status && d.point.status !== "confirmed" && a.id) return report(R, J, fail("the control was not confirmed as the right one"));
+    if (a.id && !target) return report(R, J, fail("I can't find that control on the page"));
     if (target) {
       try { await OV().agent.point(target); } catch { /* pointing is a courtesy; the action decides */ }
       await sleep(POINT_WAIT);
     } else await sleep(a.type === "wait" ? 0 : 450);
     if (R.stopped || runState !== R) return;
-    await saveState({ awaiting: true, expectNav: true }); // if this action navigates, the next page resumes from here
-    const res = await run(a, makeEnv(R.cur));
+    if (d.needsApproval) { R.held = J; return; } // waits for the `approval` event and the person's answer
+    return execute(R, J);
+  }
+
+  async function execute(R, J) {
+    if (R.stopped || runState !== R) return;
+    await saveState({ awaiting: true }); // if this action navigates, the next page resumes from here
+    const res = await run(J.a, makeEnv(R.cur));
     if (R.stopped || runState !== R) return;
     if (res.navigating) await sleep(6000); // a real navigation unloads this script; surviving means it was blocked or in-page
     else await settle();
-    return report(res);
+    return report(R, J, res);
+  }
+
+  async function report(R, J, res) {
+    if (runState !== R || R.stopped) return;
+    const c = await compile().catch(() => null);
+    if (c) R.cur = c;
+    R.history.push(J.say.replace(/[.!]+$/, "").slice(0, 80)); R.done = J.n; R.acting = false; R.held = null;
+    await saveState({ awaiting: false });
+    tp().post("/act/result", { actId: R.actId, n: R.n, ok: !!res.ok, detail: String(res.detail || "").slice(0, 300), context: c ? c.ctx : undefined });
   }
 
   async function onApproval(R, d) {
     if (R.stopped || runState !== R) return;
     const a = d.action || {}, n = (R.done || 0) + 1;
-    const target = a.id ? elementFor(R.cur, a.id) : null;
-    if (target) { try { await OV().agent.point(target); } catch { /* optional */ } }
+    const J = R.held && R.held.d.n === d.n ? R.held : null;
+    const target = J ? J.target : (a.id ? elementFor(R.cur, a.id) : null);
+    if (!J && target) { try { await OV().agent.point(target); } catch { /* optional */ } }
     const label = a.id ? labelFor(R.cur, a.id) : "";
     const words = describe(a, label, { question: true });
     const myN = d.n;
@@ -674,7 +685,12 @@
       if (!approvalState || approvalState.n !== myN) return;
       clearTimeout(approvalState.timer); approvalState = null;
       tp().post("/act/approve", { actId: R.actId, n: myN, approve: !!yes });
-      if (yes) ui.step(n, "approved, doing it"); else ui.thinking(n + 1);
+      if (yes) {
+        ui.step(n, "approved, doing it");
+        const held = R.held || { d: { n: myN, action: a }, a, n, target, label, say: words.replace(/\?$/, "") };
+        R.held = null;
+        R.queue = R.queue.then(() => execute(R, held)).catch(() => {});
+      } else { R.held = null; R.acting = false; ui.thinking(n); } // denied: the helper plans again or ends; nothing ran
     };
     // No answer in 60 s = deny (the helper does the same); the pill must not keep offering a button that no longer works.
     approvalState = { n: myN, answer, timer: setTimeout(() => { if (approvalState && approvalState.n === myN) answer(false); }, 60000) };

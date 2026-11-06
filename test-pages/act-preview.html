@@ -1,0 +1,115 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ishara agent preview</title>
+<!-- Dev only. Drives the Agent mode UI (extension/act.js + overlay.js) with SCRIPTED helper events, no network, no 0G, no extension:
+     the real executor runs on the real form below, so every state can be seen and screenshotted.
+     ?state=chip | planning | action | approval | done | failed | stopped | refused | full
+     full = a whole scripted task: name, email, country, newsletter, then "Create account" (risky, so it asks first).
+       &answer=yes|no answers the prompt by itself after 1.5 s; omit it and use the buttons or the Y / N keys.
+       &stopafter=N stops (as the Stop button would) after N completed steps.
+     &dark=1 for a dark host page. Served by the helper at /test/act-preview.html; loads /ext scripts. -->
+<style>
+  body{font:16px system-ui;margin:2rem;color:#222;max-width:760px}
+  label{display:block;margin-top:12px;font-weight:600}
+  input[type=text],input[type=email],select,textarea{font-size:16px;padding:8px;width:420px;display:block;margin-top:4px}
+  body.dark{background:#0d1117;color:#e6edf3}
+  body.dark input,body.dark select{background:#161b22;color:#e6edf3;border:1px solid #30363d}
+  #log{position:fixed;right:12px;top:8px;pointer-events:none;font:12px ui-monospace,monospace;color:#555;max-width:340px;white-space:pre-wrap;background:rgba(255,255,255,.85);padding:4px 6px;border-radius:6px}
+  button{font-size:16px;padding:9px 16px;margin-top:16px;margin-right:8px}
+</style>
+<h1>Create your account</h1>
+<label for="n">Full name</label><input id="n" type="text">
+<label for="e">Email address</label><input id="e" type="email">
+<label for="c">Country</label><select id="c"><option value="">Choose a country</option><option>India</option><option>Germany</option></select>
+<label><input id="nl" type="checkbox"> Send me the newsletter</label>
+<button id="go" type="submit" onclick="document.getElementById('res').textContent='SUBMITTED'">Create account</button><button id="del">Delete account</button>
+<p id="res"></p>
+<div id="log">posts: (none)</div>
+<script>
+  // outline.js and blocks.js register runtime listeners at load; outside an extension there is no chrome.*, so a stub keeps them quiet.
+  window.chrome = { runtime: { onMessage: { addListener() {} }, sendMessage() {} } };
+</script>
+<script src="/ext/blocks-core.js"></script><script src="/ext/outline.js"></script><script src="/ext/blocks.js"></script>
+<script src="/ext/overlay.js"></script><script src="/ext/act.js"></script>
+<script>
+  const q = new URLSearchParams(location.search), state = q.get("state") || "full";
+  if (q.get("dark")) document.body.classList.add("dark");
+  const NS = Ishara, A = NS.act, O = NS.overlay.agent, $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const logPosts = [];
+  const note = (s) => { logPosts.push(s); $("log").textContent = "posts:\n" + logPosts.slice(-8).join("\n"); document.documentElement.dataset.posts = JSON.stringify(logPosts); };
+
+  // Scripted helper. The script is a list of steps; "label" names a control and is turned into its outline id when played.
+  const waiters = {};
+  const waitFor = (k) => new Promise((r) => { waiters[k] = r; });
+  const transport = {
+    open(body, onEvent) {
+      let closed = false;
+      const emit = (ev, d) => { if (!closed) onEvent(ev, d); };
+      (async () => {
+        // The real helper plans from the LATEST context, so ids are looked up when each step is emitted, never ahead of time.
+        let c = await A.compile();
+        const idOf = (label) => (c.outline.elements.find((e) => e.label === label) || {}).id;
+        const act = (n, a, say, extra = {}) => ({ n, a, say, extra });
+        const build = (st) => ({ n: st.n, action: { ...st.a, id: st.a.label ? idOf(st.a.label) : undefined, label: undefined }, risk: "medium", say: st.say, needsApproval: false, targetLabel: st.a.label, ...st.extra });
+        await sleep(500); emit("thinking", { n: 1, actId: body.actId });
+        const stopAfter = Number(q.get("stopafter") || 0);
+        const steps = [
+          act(1, { type: "type", label: "Full name", text: "Harsh Kasana", clear: true }, "Typing your name."),
+          act(2, { type: "type", label: "Email address", text: "harsh@example.com", clear: true }, "Typing your email."),
+          act(3, { type: "select", label: "Country", option: "India" }, "Choosing India."),
+          act(4, { type: "check", label: "Send me the newsletter", checked: true }, "Ticking the newsletter box."),
+          act(5, { type: "click", label: "Create account" }, "Pressing Create account.", { risk: "high", needsApproval: true }),
+        ];
+        for (const st of steps) {
+          if (closed) return;
+          await sleep(500); emit("thinking", { n: st.n });
+          c = await A.compile();
+          const ev = build(st);
+          await sleep(500); emit("action", ev);
+          if (ev.needsApproval) {
+            await sleep(100); emit("approval", { n: ev.n, action: ev.action, risk: "high", why: "This button submits the form." });
+            const ans = await waitFor("approve:" + st.n);
+            if (!ans) { await sleep(500); emit("thinking", { n: st.n + 1 }); await sleep(1200); emit("failed", { say: "You said no, so I stopped before submitting.", steps: st.n - 1, requestIds: {}, ms: 9000 }); return; }
+          }
+          await waitFor("result:" + st.n);
+          if (stopAfter && st.n >= stopAfter) { setTimeout(() => $("go") && document.dispatchEvent(new CustomEvent("preview-stop")), 600); await sleep(4000); }
+        }
+        await sleep(500); emit("done", { say: "I filled the form and submitted it.", steps: 5, requestIds: {}, ms: 14000 });
+      })();
+      return { close() { closed = true; } };
+    },
+    async post(path, body) {
+      note(path.replace("/act/", "") + " " + JSON.stringify(body).replace(/"context":\{.*\}/, '"context":{…}').slice(0, 90));
+      if (path === "/act/approve") (waiters["approve:" + body.n] || (() => {}))(body.approve);
+      if (path === "/act/result") (waiters["result:" + body.n] || (() => {}))(body);
+      return { data: { ok: true } };
+    },
+    state: { get: async () => null, set: async () => ({}), clear: async () => ({}) },
+    agent: { get: async () => false, set: async () => ({}) },
+    tab: async () => ({ ok: true }),
+  };
+  A.init({ transport, sessionId: "preview", speak: false });
+  document.addEventListener("preview-stop", () => A.stop("button"));
+  // The same Esc / Y / N handling content.js does, so the keys can be tried here too.
+  addEventListener("keydown", (e) => { if (A.handleKey(e)) return; if (e.key === "Escape" && A.isBusy()) A.stop("esc"); });
+
+  (async () => {
+    const T = A._ui;
+    if (state === "chip") { O.chip(true); O.pill("idle", "Agent mode on. Ask me to do something. Esc stops me.", {}); return; }
+    if (state === "planning") { A.setAgent(true, { silent: true, quiet: true }); T.thinking(1); return; }
+    if (state === "action") { A.setAgent(true, { silent: true, quiet: true }); await O.point($("e")); T.step(2, "Typing your email"); return; }
+    if (state === "approval") { A.setAgent(true, { silent: true, quiet: true }); await O.point($("go")); T.approval(5, "Press “Create account”?", "This button submits the form.", () => {}, () => {}); return; }
+    if (state === "done") { A.setAgent(true, { silent: true, quiet: true }); T.end("done", "I filled the form but did not submit it.", 600000); return; }
+    if (state === "failed") { A.setAgent(true, { silent: true, quiet: true }); T.end("failed", "I could not find a Country field on this page.", 600000); return; }
+    if (state === "stopped") { A.setAgent(true, { silent: true, quiet: true }); T.end("stopped", "Stopped.", 600000); return; }
+    if (state === "refused") { A.setAgent(true, { silent: true, quiet: true }); T.end("refused", "0G's private model is not reachable, so I did nothing.", 600000); return; }
+    // full
+    A.setAgent(true, { silent: true, quiet: true });
+    await sleep(600);
+    A.start("fill the form: name Harsh Kasana, email harsh@example.com, country India, tick the newsletter box, then create the account");
+    const ans = q.get("answer");
+    if (ans) { const iv = setInterval(() => { if (A.hasApproval()) { clearInterval(iv); setTimeout(() => A.handleKey({ key: ans === "yes" ? "y" : "n", preventDefault() {}, stopPropagation() {} }), 1500); } }, 200); }
+  })();
+  document.addEventListener("ishara-act-end", (e) => { document.documentElement.dataset.end = e.detail.kind; });
+</script>
