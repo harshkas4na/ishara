@@ -14,6 +14,9 @@
   const MAX_ELEMENTS = 150;
   const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
   const clip = (s) => (s.length > 80 ? s.slice(0, 79) + "…" : s);
+  // Every label leaves the tab (to /decide and /tutor), so it passes the page reader's redaction like block text does:
+  // a button showing a seed word, a "Copy sk-..." link or an aria-label holding a key was sent verbatim before.
+  const safeLabel = (s) => { const B = globalThis.IsharaBlocks; return B ? B.redact(B.neutralize(s)) : s; };
 
   function roleOf(el) {
     const tag = el.tagName.toLowerCase();
@@ -65,6 +68,9 @@
       return clean(el.name);
     }
     if (/^h[1-3]$/.test(tag)) return clean(el.textContent);
+    // A rich-text box's text is what the person TYPED, not its name: never use it as the label.
+    if (el.isContentEditable || el.getAttribute("role") === "textbox")
+      return clean(el.getAttribute("aria-placeholder") || el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("data-placeholder"));
     return clean(el.innerText || el.textContent) || clean(el.getAttribute("title")) || clean(el.querySelector("img[alt]")?.alt);
   }
 
@@ -116,7 +122,7 @@
       seen.add(el);
       const rect = el.getBoundingClientRect();
       if (!isVisible(el, rect) || !notOccluded(el, rect)) continue;
-      const label = clip(labelOf(el));
+      const label = clip(safeLabel(labelOf(el)));
       const role = roleOf(el);
       const control = role === "input" || role === "select" || role === "checkbox";
       // Unlabelled elements give the model nothing to match on, except form controls.
@@ -279,7 +285,7 @@
       const size = { w: num(rep.size.w), h: num(rep.size.h) };
       for (const c of rep.elements.slice(0, MAX_ELEMENTS)) {
         if (!c || !/^b\d{1,4}$/.test(c.id) || !c.rect) continue;
-        const label = clip(clean(String(c.label ?? "")));
+        const label = clip(clean(safeLabel(String(c.label ?? "")))); // the child page is untrusted: redact again here
         const role = ROLES.has(c.role) ? c.role : "button";
         const cr = { x: num(c.rect.x), y: num(c.rect.y), w: num(c.rect.w), h: num(c.rect.h) };
         // Only what is inside the frame's own visible viewport: a child control scrolled out of the frame is not

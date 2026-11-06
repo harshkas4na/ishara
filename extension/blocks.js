@@ -157,7 +157,8 @@
         if (!t || !/\S/.test(t)) continue;
         const p = n.parentElement;
         if (!p || !vis(p)) continue;
-        if (p.closest("button,[role=button],[role=tab],[role=menuitem],[contenteditable=true],[aria-hidden=true],[hidden]")) continue;
+        // Any editable box (contenteditable="", "true" or "plaintext-only") holds what the person typed: never page text.
+        if (p.closest("button,[role=button],[role=tab],[role=menuitem],[role=textbox],[contenteditable]:not([contenteditable=false]),[aria-hidden=true],[hidden]")) continue;
         // A label that belongs to a control is already the control's label in the outline: reading it again as page text
         // only glues "Email Password Recovery phrase ..." into one useless block.
         const lab = p.closest("label");
@@ -251,7 +252,7 @@
     const meta = c.meta || new Map();
     const trimmed = B.trim(rawBlocks, budgetTokens);
     const blocks = B.number(trimmed.blocks);
-    const controls = outline.elements.map((e) => {
+    const controlsRaw = outline.elements.map((e) => {
       const el = map.get(e.id);
       let x;
       if (el && el.frame) x = meta.get(e.id) || {}; // computed by the owning frame, redacted there
@@ -259,6 +260,14 @@
       const o = { ...e };
       if (x.state && Object.keys(x.state).length) o.state = x.state;
       if (x.errorText) o.errorText = x.errorText;
+      return o;
+    });
+    // A recovery phrase typed into (or shown as) 12+ one-word controls: each label/value alone looks harmless.
+    const lmask = B.phraseRunMask(controlsRaw.map((o) => o.label));
+    const vmask = B.phraseRunMask(controlsRaw.map((o) => (o.state && o.state.value) || ""));
+    const controls = controlsRaw.map((o, i) => {
+      if (lmask[i]) o.label = B.REDACTED;
+      if (vmask[i]) o.state = { ...o.state, value: B.REDACTED };
       return o;
     });
     const ctx = {

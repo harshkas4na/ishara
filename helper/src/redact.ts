@@ -35,3 +35,31 @@ export function readerCore(): Core {
   core = sandbox.IsharaBlocks as Core;
   return core;
 }
+
+/** The same redaction, applied again on the helper to a PageContext that arrived over HTTP, before it reaches 0GM.
+ *  The extension redacts first; this is the second lock for an older extension build or any other client. Idempotent:
+ *  "[redacted]" stays "[redacted]". Returns a new object; ids, kinds, rects and booleans are untouched. */
+export function scrubContext<T extends Record<string, any>>(ctx: T): T {
+  if (!ctx || typeof ctx !== "object") return ctx;
+  const B = readerCore() as Core & { phraseRunMask(texts: string[]): boolean[] };
+  const r = (s: unknown) => (typeof s === "string" ? B.redact(s) : s);
+  const blocks = Array.isArray(ctx.blocks) ? ctx.blocks.map((b: any) => (b && typeof b === "object" ? { ...b, text: r(b.text) } : b)) : ctx.blocks;
+  if (Array.isArray(blocks)) { const m = B.phraseRunMask(blocks.map((b: any) => String(b?.text ?? ""))); blocks.forEach((b: any, i: number) => { if (m[i] && b) b.text = B.REDACTED; }); }
+  let controls = Array.isArray(ctx.controls) ? ctx.controls.map((c: any) => {
+    if (!c || typeof c !== "object") return c;
+    const o: any = { ...c, label: r(c.label) };
+    if (typeof c.errorText === "string") o.errorText = r(c.errorText);
+    if (c.state && typeof c.state === "object") {
+      o.state = { ...c.state };
+      if (typeof o.state.value === "string") o.state.value = r(o.state.value);
+      if (typeof o.state.selectedOption === "string") o.state.selectedOption = r(o.state.selectedOption);
+    }
+    return o;
+  }) : ctx.controls;
+  if (Array.isArray(controls)) {
+    const lm = B.phraseRunMask(controls.map((c: any) => String(c?.label ?? "")));
+    const vm2 = B.phraseRunMask(controls.map((c: any) => String(c?.state?.value ?? "")));
+    controls = controls.map((c: any, i: number) => (!c ? c : { ...c, ...(lm[i] ? { label: B.REDACTED } : {}), ...(vm2[i] ? { state: { ...c.state, value: B.REDACTED } } : {}) }));
+  }
+  return { ...ctx, title: r(ctx.title), blocks, controls, ...(typeof ctx.selection === "string" ? { selection: r(ctx.selection) } : {}) };
+}

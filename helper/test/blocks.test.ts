@@ -148,3 +148,47 @@ test("sanitizeForeign retypes a hostile frame's block", () => {
   assert.ok(!b.text.includes("[POINT:") && !b.text.includes(HEX64));
   assert.equal(B.sanitizeForeign(null), null);
 });
+
+// Audit 3: forms that leaked before. Each line was sent to the model verbatim.
+test("redact: a recovery phrase inside a sentence, with commas, or spread over one-word elements", () => {
+  assert.equal(B.redact(`Your secret recovery phrase is ${PHRASE12}. Write it down.`), "Your secret recovery phrase is [redacted] Write it down.");
+  assert.equal(B.redact("Phrase: " + PHRASE12.split(" ").join(", ")), "Phrase: [redacted]");
+  const grid = PHRASE12.split(" ").map((w, i) => `${i + 1}. ${w}`);
+  assert.equal([...B.phraseRunMask(grid)].filter(Boolean).length, 12);
+  const recs = PHRASE12.split(" ").map((w, i) => ({ key: "k" + i, tag: "div", text: w, rect: { x: 0, y: i * 20, w: 80, h: 18 }, inView: true }));
+  const out = B.buildBlocks([{ key: "h", tag: "h2", text: "Reveal recovery phrase", inView: true }, ...recs], {});
+  assert.ok(!out.some((b: any) => PHRASE12.split(" ").includes(b.text)), JSON.stringify(out));
+  // a capitalised menu of dictionary words and ordinary prose are not phrases
+  assert.equal([...B.phraseRunMask("Home About Blog Help News Music Sport Travel Food Movie Game Party".split(" "))].filter(Boolean).length, 0);
+  const prose = "You can revoke approvals at any time from the Approvals tab. Revoking costs a small amount of gas.";
+  assert.equal(B.redact(prose), prose);
+});
+
+test("redact: card numbers (Luhn) and card fields", () => {
+  assert.equal(B.redact("Card 4242 4242 4242 4242 exp 12/28"), "Card [redacted] exp 12/28");
+  assert.equal(B.redact("4111-1111-1111-1111"), "[redacted]");
+  assert.equal(B.redact("order 1234567890123 shipped"), "order 1234567890123 shipped"); // fails Luhn: kept
+  for (const t of ["Card number", "cc-number", "Security code", "One-time code", "OTP"]) assert.ok(B.isSecretField({ text: t }), t);
+  assert.ok(!B.isSecretField({ text: "Email address" }));
+});
+
+test("scrubContext: the helper redacts labels, values and blocks a client sent unredacted", async () => {
+  const { scrubContext } = await import("../src/redact.ts");
+  const words = PHRASE12.split(" ");
+  const ctx: any = {
+    url: "http://x/", title: "t", viewport: { w: 1, h: 1 }, errors: [],
+    blocks: [{ id: "t0", kind: "p", text: "key " + HEX64, inView: true }],
+    controls: [
+      { id: "b0", role: "button", label: "Copy sk-abcdef1234567890abcd", rect: { x: 0, y: 0, w: 1, h: 1 } },
+      { id: "b1", role: "input", label: "Email", state: { value: "4242424242424242" }, rect: { x: 0, y: 0, w: 1, h: 1 } },
+      ...words.map((w, i) => ({ id: "b" + (i + 2), role: "button", label: w, rect: { x: 0, y: 0, w: 1, h: 1 } })),
+    ],
+    selection: PHRASE12,
+  };
+  const s = scrubContext(ctx);
+  const all = JSON.stringify(s);
+  assert.ok(!all.includes(HEX64) && !all.includes("sk-abcdef") && !all.includes("4242424242424242"), all);
+  assert.ok(!words.some((w) => s.controls.some((c: any) => c.label === w)), "seed words as buttons");
+  assert.equal(s.selection, "[redacted]");
+  assert.equal(ctx.controls[0].label, "Copy sk-abcdef1234567890abcd"); // input not mutated
+});

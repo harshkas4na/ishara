@@ -6,6 +6,7 @@ import { episodeLog, type CallRef } from "./episode-log.ts";
 import { memory, memoryUsed, hostOf } from "./memory.ts";
 import { checkPointer } from "./pointer-gate.ts";
 import { speak, sayFor } from "./speech.ts";
+import { scrubContext } from "./redact.ts";
 import type { BrainResult, VerifyResult, Decision, Outline, OutlineElement } from "./types.ts";
 
 export type Deps = {
@@ -120,6 +121,8 @@ export async function* tutorTurn(req: any, o: TutorTurnDeps = {}): AsyncGenerato
     run = t.runTutorTurn;
     deps.askStream ??= (await import("./zg.ts") as any).askTutorStream;
   }
+  // Second redaction lock: whatever the client sent, secrets never reach the model (the extension redacts first).
+  if (req?.context) req = { ...req, context: scrubContext(req.context) };
   const said: string[] = [];
   let pointed: { id: string; kind: string } | undefined, refused: TEvent | undefined;
   {
@@ -164,6 +167,7 @@ function logTurn(req: any, said: string[], pointed: { id: string; kind: string }
 /** /tutor/walk: next, back, repeat, stop, where. No 0G call, so nothing to log or prove. */
 export async function* tutorWalk(req: any, o: { run?: (req: any, deps: any) => AsyncGenerator<any> } = {}): AsyncGenerator<TEvent> {
   const run = o.run ?? (await import("./tutor.ts")).runWalkCommand;
+  if (req?.context) req = { ...req, context: scrubContext(req.context) }; // a walk re-plan sends the page to 0GM too
   for await (const ev of run(req, {})) {
     if ((ev.event ?? ev.type) === "done" && ev.data && "calls" in ev.data) { const { calls: _c, ...wire } = ev.data; yield { ...ev, data: wire }; } // internal list, not for the client
     else yield ev;
