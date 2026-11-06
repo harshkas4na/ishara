@@ -311,9 +311,13 @@ const real = createSpeaker({
 }, VOICE);
 
 export const speaker = real;
-export const startSpeech = () => real.start();
+// Only the process that started speech (the helper server) ever speaks. Before this, any script that imported decide()
+// (scripts/eval.ts, smoke.ts) started its own Kokoro, read every eval answer aloud, and never exited: the child's pipes
+// kept node alive.
+let started = false;
+export const startSpeech = () => { started = true; return real.start(); };
 export const stopSpeech = () => real.stop();
-export const speak = (t: string) => real.speak(t);
+export const speak = (t: string) => { if (started) real.speak(t); };
 export const interrupt = () => real.interrupt();
 export const setMuted = (m: boolean) => real.setMuted(m);
 export const speechStatus = () => real.status();
