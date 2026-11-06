@@ -322,8 +322,12 @@ export async function askVerifyRef(question: string, sentence: string, el: Outli
   try {
     const r = await post("/decisions", {
       model: LAYA_MODEL,
-      state: `The user asked: "${question}"\nThe tutor is saying: "${sentence.slice(0, 300)}"\nHighlighted control: ${el.role} "${el.label}"`,
-      questions: { right: { type: "noul", instructions: "Is the highlighted control the one the tutor's sentence refers to?" } },
+      // Wording measured on the real router (8 right/wrong pairs from a guide walk): "is the highlighted control the one the
+      // sentence refers to?" with the question in the state scored RIGHT targets 0.08-0.14 (3 of 4 vetoed); this phrasing
+      // scores right 0.82-0.94 and wrong 0.00-0.12 (one near-synonym, "version" vs "Type", 0.76). The user's question is left
+      // out on purpose: in explain/guide it is not about one control.
+      state: `Sentence: "${sentence.slice(0, 300)}"\nCandidate control label: "${el.label}" (a ${el.role})`,
+      questions: { right: { type: "noul", instructions: "Is the candidate control the thing the sentence is about?" } },
     }, baseFor(o), o.timeoutMs ?? LAYA_TIMEOUT_MS);
     if (r.status !== 200) return { ok: false, cause: "unavailable", ...testFlag() };
     const p = r.json?.answers?.right?.noul;

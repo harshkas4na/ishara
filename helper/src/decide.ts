@@ -168,7 +168,10 @@ function logTurn(req: any, said: string[], pointed: { id: string; kind: string }
 export async function* tutorWalk(req: any, o: { run?: (req: any, deps: any) => AsyncGenerator<any> } = {}): AsyncGenerator<TEvent> {
   const run = o.run ?? (await import("./tutor.ts")).runWalkCommand;
   if (req?.context) req = { ...req, context: scrubContext(req.context) }; // a walk re-plan sends the page to 0GM too
-  for await (const ev of run(req, {})) {
+  // With no injected `run` the real deps must apply (laya checks each step's pointer). Passing `{}` here once replaced them with
+  // nothing: checkPointer was undefined, every step 2..n came out "suppressed" and the ring never moved after step 1.
+  const events = o.run ? o.run(req, {}) : run(req);
+  for await (const ev of events) {
     if ((ev.event ?? ev.type) === "done" && ev.data && "calls" in ev.data) { const { calls: _c, ...wire } = ev.data; yield { ...ev, data: wire }; } // internal list, not for the client
     else yield ev;
   }
