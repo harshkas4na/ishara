@@ -26,7 +26,8 @@ get() { # name size sha256
 get kokoro-v1.0.int8.onnx 92MB 6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb
 get voices-v1.0.bin 28MB bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
 
-say "Smoke test"
+say "Smoke test (English, then Hindi: voices-v1.0.bin carries hf_alpha, hf_beta, hm_omega, hm_psi; espeak-ng comes with kokoro-onnx)"
 echo '{"id":1,"text":"Ishara can speak now.","out":"/tmp/ishara-voice-test.wav"}' | voice/.venv/bin/python voice/kokoro_server.py 2>/dev/null
+echo '{"id":2,"text":"यह बॉक्स है।","out":"/tmp/ishara-voice-test-hi.wav","voice":"hf_alpha","lang":"hi"}' | voice/.venv/bin/python voice/kokoro_server.py 2>/dev/null | grep -q '"ok": true' || echo "WARNING: the Hindi voice did not synthesise; Hindi sentences will fail"
 echo "Wrote /tmp/ishara-voice-test.wav. Play it: afplay /tmp/ishara-voice-test.wav"
 echo "Done. Restart the helper; GET http://127.0.0.1:7777/speech should say engine \"kokoro\"."
