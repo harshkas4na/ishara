@@ -5,3 +5,9 @@ node_modules/
 helper/.data/
 voice/.venv/
 voice/models/
+
+voice-samples/*.wav
+voice-samples/*.m4a
+voice-samples/*.mov
+voice-samples/*.mp3
+voice-samples/*.mp4

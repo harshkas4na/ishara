@@ -226,3 +226,29 @@ these 16 takes and reads the real `maxRms` values.
 Real voice; real room noise; Chrome `noiseSuppression` on soft speech; recordings over 10 s with `-ac 512`;
 `-sns`; Hinglish priming words; Apex RSS; helper integration (no product code was changed, the running helper on
 7777 and its whisper on 7778 were not touched; tests used ports 7851 and 7852).
+
+## 10. Fix and results (2026-11-06)
+
+Built: `helper/src/whisper.ts` picks `ISHARA_WHISPER_MODEL`, else the Apex q8 model, else small, and starts
+`whisper-server -l en -ac 512 -sns` (flags verified in `--help`). `/health` now says
+`whisper: { ok, loading, model, hinglish }` plus `minRms`; `/transcribe` waits up to 20 s for the model.
+`helper/src/chunk-audio.ts` cuts recordings over 9.5 s into pieces of at most 9 s at the quietest 30 ms frame near
+the boundary. `helper/src/transcript-guard.ts` is the single guard (response `{ text, ms, rejected?, detail? }`,
+`text` is "" when rejected): blank/music markers, stock phrases, wrong-script output, Devanagari mapped to Roman
+(approximate), server-side silence floor (`ISHARA_MIN_RMS`, default 0.006). "ok", "haan", "kya", "ye" are kept; the
+extension and desktop client regexes and the length<3 rule are gone. Calibrate the floor with `scripts/mic-level.ts`.
+
+Re-run with `scripts/eval-voice.ts --spawn` on the same kind of set (25 clips: the 23 above, reconstructed where the
+audit gave only examples, plus two ~12 s long clips of two sentences each), WER on the consonant skeleton:
+
+| Config | Hinglish | Deva | English | Short | Long (12 s, chunked) | s/clip |
+|---|---|---|---|---|---|---|
+| BEFORE: small `-l en`, no -ac, no prompt | 67% | 100% | 0% | 67% | 18% | 0.3 |
+| small `-l en -ac 512 -sns` + prompt (fallback) | 73% | 67% | 0% | 33% | 21% | 0.15 |
+| AFTER: Apex q8 `-l en -ac 512 -sns` + prompt | 28% | 10% | 0% | 33% | 10% | 0.4 (0.8 on a loaded run) |
+| Apex q8 same, without `-sns` | 28% | 10% | 0% | 33% | 10% | 0.4 |
+
+`-sns` changed no word, so it stays (it keeps `[BLANK_AUDIO]` out of the text). 0 of 25 clips came out in
+Devanagari. The remaining short-clip miss is "kya" heard as "Person," on a 0.4 s synthetic clip. Long clip L01 (English,
+11.9 s, two sentences) came out word-perfect through the chunk path, L02 (Hinglish, 11.7 s) 6 of 28 words wrong,
+the same kind of error as the short Hinglish clips. Real voice is still unmeasured: see `voice-samples/README.md`.
