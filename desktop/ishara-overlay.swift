@@ -10,10 +10,16 @@
 //   {"cmd":"say","text":"..","append":bool}     a streamed sentence: queued in the pill (>= 1.5 s each) until `speaking` takes over
 //   {"cmd":"done"}                              the turn ended: let the pill linger, then fade
 //   {"cmd":"clear"}                             hide everything
+// Agent mode (docs/AGENT-MODE.md, docs/DESKTOP.md "Agent mode"):
+//   {"cmd":"agentmode","on":true}               armed/disarmed: a small "Agent" chip rides on the pill while armed
+//   {"cmd":"agent","text":"..","step":3,"risk":"low|medium|high"}   what the agent is doing now: chip "Step 3" and a stop
+//                                               button; step 0 = the task ended (the buttons go, the text lingers)
+//   {"cmd":"approval","text":"..","sub":".."}   a HIGH-risk action waiting: the pill says it in words, with approve / deny
 // Older commands keep working: think (= state thinking; "Listening..." texts = state listening), ask (note pill),
 // stop (= state refused), step (= steps).
 // The pill lives in its OWN non-activating panel so buttons can be clicked; the big drawing window stays click-through.
-// Button presses are printed on stdout: {"ev":"walk","cmd":"next|back|stop"}.
+// Button presses are printed on stdout: {"ev":"walk","cmd":"next|back|stop"}, and in agent mode
+// {"ev":"approve","approve":true|false} and {"ev":"agent","cmd":"stop"}.
 // x,y are SCREEN POINTS with a top-left origin (what the Accessibility API reports and what ishara-ax emits).
 // Look mirrors extension/overlay.js: needle cursor, pill #1f1147, refused #7f1d1d, boundary #3b82f6, highlighter #fde047.
 // Reduce Motion: final state only (no pulse, dance, pen stroke, glide).
@@ -336,13 +342,32 @@ var look: Look = .note
 var pillVisible = false
 var stepChip = ""            // "2/6", empty = not a guide
 var stepsOn = false
+// Agent mode. The pill's chip and button strip were built for the guide (n/m, ‹ › ✕); the agent reuses both: a different chip
+// text, and a different button set (stop, or approve / deny). nil agentBtns = the guide's buttons, shown only while stepsOn.
+var agentArmed = false
+var agentStep = 0
+var agentBtns: [(String, String)]? = nil
+var chipW: CGFloat = 38
+let GUIDE_BTNS: [(String, String)] = [("‹", "back"), ("›", "next"), ("✕", "stop")]
+func btnItems() -> [(String, String)] { agentBtns ?? GUIDE_BTNS }
+func btnsOn() -> Bool { stepsOn || agentBtns != nil }
+func btnW() -> CGFloat { let n = CGFloat(btnItems().count); return BTN * n + BTN_GAP * (n - 1) }
+func chipLabel() -> String { stepsOn ? stepChip : (agentStep > 0 ? "Step \(agentStep)" : (agentArmed ? "Agent" : "")) }
+// Room the chip and buttons take at the right end of the pill, so the text wraps before them.
+func rightReserve() -> CGFloat {
+    let label = chipLabel()
+    let cw = label.isEmpty ? 0 : max(38, ceil((label as NSString).size(withAttributes: [.font: chip.font as Any]).width) + 12)
+    chipW = cw == 0 ? 38 : cw
+    if btnsOn() { return 8 + chipW + 8 + btnW() }
+    return label.isEmpty ? 0 : 8 + chipW
+}
 var curText = "", curSub = ""
 var micLevel: CGFloat = 0
 let BAR_GAIN: [CGFloat] = [0.6, 1.0, 0.8, 0.5]
 
 // Page the sentence: at most two lines of 15 pt fit, so a long sentence is shown in 2-line pages, paced like speech.
 func textWidthAvail() -> CGFloat {
-    let reserve: CGFloat = stepsOn ? (8 + 38 + 8 + BTN * 3 + BTN_GAP * 2) : 0
+    let reserve: CGFloat = rightReserve()
     return PILL_MAX_W - 16 - 30 - 12 - 16 - reserve
 }
 func lineHeight() -> CGFloat { ceil(("Ag" as NSString).size(withAttributes: [.font: PILL_FONT]).height) }
@@ -417,7 +442,7 @@ func setLevel(_ lv: CGFloat) {
 
 // ---- buttons: their own tiny panel on top of the pill's right end ----
 final class ButtonsView: NSView {
-    let items: [(String, String)] = [("‹", "back"), ("›", "next"), ("✕", "stop")]
+    var items: [(String, String)] { btnItems() }
     var pressed = -1
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true } // the panel is never key: the first click must count
@@ -432,9 +457,9 @@ final class ButtonsView: NSView {
             let r = cell(i)
             NSColor(white: 1, alpha: pressed == i ? 0.34 : 0.16).setFill()
             NSBezierPath(ovalIn: r).fill()
-            let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: it.0 == "✕" ? 12 : 19, weight: .medium), .foregroundColor: NSColor.white]
+            let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: (it.0 == "✕" || it.0 == "■") ? 12 : (it.0 == "✓" ? 16 : 19), weight: .medium), .foregroundColor: NSColor.white]
             let sz = (it.0 as NSString).size(withAttributes: a)
-            (it.0 as NSString).draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2 + (it.0 == "✕" ? 0 : 1)), withAttributes: a)
+            (it.0 as NSString).draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2 + (it.0 == "✕" || it.0 == "■" ? 0 : 1)), withAttributes: a)
         }
     }
     func index(_ e: NSEvent) -> Int { let p = convert(e.locationInWindow, from: nil); return items.indices.first { cell($0).contains(p) } ?? -1 }
@@ -444,7 +469,13 @@ final class ButtonsView: NSView {
         pressed = -1; needsDisplay = true
         guard i >= 0, i == was else { return }
         // The helper reads this line and runs the SAME walk command the voice words next / back / stop run.
-        print("{\"ev\":\"walk\",\"cmd\":\"\(items[i].1)\"}"); fflush(stdout)
+        switch items[i].1 {
+        case "approve": print("{\"ev\":\"approve\",\"approve\":true}")   // agent mode: the helper answers the waiting HIGH-risk action
+        case "deny": print("{\"ev\":\"approve\",\"approve\":false}")
+        case "agentstop": print("{\"ev\":\"agent\",\"cmd\":\"stop\"}")
+        default: print("{\"ev\":\"walk\",\"cmd\":\"\(items[i].1)\"}")
+        }
+        fflush(stdout)
     }
 }
 let btnPanel = makePanel(NSRect(x: 0, y: 0, width: BTN * 3 + BTN_GAP * 2, height: BTN), level: Int(CGWindowLevelForKey(.screenSaverWindow)) + 2)
@@ -463,7 +494,7 @@ func armHide(_ secs: TimeInterval) {
     hideTimer = Timer.scheduledTimer(withTimeInterval: secs, repeats: false) { _ in clearAll() }
 }
 // How long a finished answer lingers. A guide stays much longer: the person is doing the step.
-func lingerSecs() -> TimeInterval { stepsOn ? 180 : 7 }
+func lingerSecs() -> TimeInterval { stepsOn ? 180 : (agentBtns != nil ? 60 : 7) }
 
 func hopsToTop(_ pill: CGRect, _ scr: CGRect) -> Bool {
     markRectsAX.contains { $0.insetBy(dx: -14, dy: -14).intersects(pill) }
@@ -477,7 +508,7 @@ func layoutPill() {
     let lh = lineHeight()
     let m = measure(full, tw)
     let textW = max(40, min(tw, m.width + CELL_PAD + 2)), textH = min(m.height, lh * 2)
-    let reserve: CGFloat = stepsOn ? (8 + 38 + 8 + BTN * 3 + BTN_GAP * 2) : 0
+    let reserve: CGFloat = rightReserve()
     let w = min(PILL_MAX_W, max(PILL_MIN_W, 16 + 30 + 12 + textW + 16 + reserve))
     let h = max(52, textH + 26)
     // placement in AX space (top-left origin) on the screen of the target, else of the frontmost window
@@ -499,15 +530,17 @@ func layoutPill() {
     ind.frame = CGRect(x: 16, y: (h - 30) / 2, width: 30, height: 30)
     pillText.preferredMaxLayoutWidth = textW
     pillText.frame = NSRect(x: 58, y: (h - textH) / 2, width: textW, height: textH)
-    chip.stringValue = stepChip
-    chip.isHidden = !stepsOn
-    chip.frame = NSRect(x: w - 16 - BTN * 3 - BTN_GAP * 2 - 8 - 38, y: (h - 16) / 2, width: 38, height: 16)
-    if stepsOn {
-        btnPanel.setFrame(NSRect(x: pill.maxX - 16 - (BTN * 3 + BTN_GAP * 2), y: cocoaY + (h - BTN) / 2, width: BTN * 3 + BTN_GAP * 2, height: BTN), display: true)
+    let label = chipLabel()
+    chip.stringValue = label
+    chip.isHidden = label.isEmpty
+    chip.frame = NSRect(x: w - 16 - (btnsOn() ? btnW() + 8 : 0) - chipW, y: (h - 16) / 2, width: chipW, height: 16)
+    if btnsOn() {
+        btnView.frame = NSRect(x: 0, y: 0, width: btnW(), height: BTN); btnView.needsDisplay = true
+        btnPanel.setFrame(NSRect(x: pill.maxX - 16 - btnW(), y: cocoaY + (h - BTN) / 2, width: btnW(), height: BTN), display: true)
         btnPanel.orderFrontRegardless()
     } else { btnPanel.orderOut(nil) }
     pillPanel.orderFrontRegardless()
-    if stepsOn { btnPanel.orderFrontRegardless() }
+    if btnsOn() { btnPanel.orderFrontRegardless() }
 }
 
 func showPill(_ l: Look, _ text: String, sub: String = "") {
@@ -547,6 +580,7 @@ func clearAll() {
     host.isHidden = true
     clearMarks()
     stepsOn = false; stepChip = ""; speakingMode = false; doneSeen = false; micLevel = 0
+    agentBtns = nil; agentStep = 0 // (agentArmed stays: it is the user's setting, not a turn's state)
     hidePill()
 }
 func clearCursor() {
@@ -560,6 +594,7 @@ func canvasRect(_ r: CGRect) -> CGRect { CGRect(origin: toCanvas(Double(r.minX),
 // A new question starts: the old answer's marks, queue and speaking mode go; the guide chip stays (a walk turn keeps it).
 func beginTurn() {
     resetPages(); clearMarks(); speakingMode = false; doneSeen = false; pointedThisTurn = false
+    agentBtns = nil; agentStep = 0 // a tutor turn or a refusal ends the agent's step display and its stop / approve buttons
 }
 
 func handle(_ obj: [String: Any]) {
@@ -606,6 +641,22 @@ func handle(_ obj: [String: Any]) {
         let n = (obj["n"] as? NSNumber)?.intValue ?? 0, m = (obj["m"] as? NSNumber)?.intValue ?? 0
         stepsOn = m > 1; stepChip = stepsOn ? "\(n)/\(m)" : ""
         layoutPill(); if stepsOn { armHide(lingerSecs()) }
+    case "agentmode":
+        agentArmed = (obj["on"] as? Bool) == true
+        if !agentArmed { agentBtns = nil; agentStep = 0 }
+        resetPages(); speakingMode = false
+        showPill(.note, agentArmed ? "Agent mode on" : "Agent mode off", sub: agentArmed ? "Tell me what to do. Tap Right Option to stop me." : ""); armHide(5)
+    case "agent":
+        let st = (obj["step"] as? NSNumber)?.intValue ?? 0
+        agentStep = max(0, st)
+        agentBtns = st > 0 ? [("■", "agentstop")] : nil
+        resetPages(); speakingMode = false
+        showPill(.note, text.isEmpty ? "Working…" : text, sub: sub)
+        armHide(st > 0 ? 60 : 8)
+    case "approval":
+        agentBtns = [("✓", "approve"), ("✕", "deny")]
+        resetPages(); speakingMode = false
+        showPill(.note, text, sub: sub.isEmpty ? "Say yes to approve, no to cancel." : sub); armHide(70)
     case "point":
         guard let x = num("x"), let y = num("y") else { return }
         let p = toCanvas(x, y)
