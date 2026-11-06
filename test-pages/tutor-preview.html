@@ -4,11 +4,18 @@
 <!-- Dev only. Drives the tutor UI (extension/overlay.js) with SCRIPTED events, no network, no 0G, so every visual can be
      checked. Served by the helper at /test/tutor-preview.html; loads /ext/overlay.js and /ext/sse.js.
      ?state=explain | point | two | guide | refused | cutoff | suppressed | rejected | chat | long | testrouter
+            | preparing | listening | thinking | speaking | boundary | highlight | multiline | hop | plan
+     &dark=1 dark host page, &novoice=1 sends no `speaking` events (the pill's own 1.5 s fallback), &step=3 for guide.
+     Every state is a screenshot target: the pill, the boundary on a control, the highlighter on text (UI v2).
      The line at the bottom is the in-page SSE parser test. -->
 <style>
   body{font:16px system-ui;margin:2rem;color:#222;max-width:900px}
   label{display:block;margin-top:14px}
   input,select,textarea{font-size:16px;padding:8px;width:420px}
+  body.dark{background:#0d1117;color:#e6edf3}
+  body.dark input,body.dark select,body.dark textarea{background:#161b22;color:#e6edf3;border:1px solid #30363d}
+  #multi{width:340px;line-height:1.5}
+  #lastbtn{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);padding:10px 22px;font-size:16px}
   #ssetest{position:fixed;left:12px;bottom:4px;font:12px ui-monospace,monospace;color:#555}
 </style>
 <h1>Verify and Publish source code</h1>
@@ -19,20 +26,28 @@
 <label>Runs <input id="runs" value="200"></label>
 <label>Source code <textarea id="src" rows="5"></textarea></label>
 <p><button id="go" style="padding:10px 18px;font-size:16px;margin-top:10px">Verify and Publish</button></p>
+<p id="multi">Verification compares the bytecode the compiler produces from your source with the bytecode already on chain, so every compiler setting you used must be repeated here exactly, including the optimizer and its runs.</p>
+<button id="lastbtn">Submit</button>
 <div id="ssetest">sse test: …</div>
 <script src="/ext/sse.js"></script>
 <script src="/ext/overlay.js"></script>
 <script>
   const q = new URLSearchParams(location.search), state = q.get("state") || "explain";
+  if (q.get("dark")) document.body.classList.add("dark");
   const T = Ishara.overlay.tutor, $ = (id) => document.getElementById(id);
   const ids = { brain: "9d838747-d2f1-47fe-a702-bb30fc23560c", laya: ["99fbafb5-cc9c-48dc-8de4-69fba1a1497c"] };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const doneEv = (o = {}) => ({ mode: "explain", outcome: "answered", requestIds: ids, ms: { firstToken: 1900, total: 4300 }, ...o });
   const runsAnswer = ["The optimizer runs setting tells the compiler how many times you expect each function to be called.", "A low number makes the contract smaller and cheaper to deploy.", "A high number makes calls cheaper but the code bigger.", "For verification, it must be the same number you compiled with."];
 
+  // Sentences arrive quickly (0G streams faster than speech); with a voice the helper then sends `speaking` as each one
+  // STARTS playing, and `speaking {seq:null}` at the end. &novoice=1 sends none, to see the pill's own fallback timing.
+  const voice = !q.get("novoice");
   async function say(list, gap = 650) { for (let i = 0; i < list.length; i++) { T.say(i + 1, list[i]); await sleep(gap); } }
+  async function speak(list, each = 1800) { if (!voice) return; for (let i = 0; i < list.length; i++) { T.speaking({ seq: i + 1, text: list[i] }); await sleep(each); } T.speaking({ seq: null }); }
   // Same shape as content.js: resolve the element, hand it to the overlay.
   const point = (id, status = "confirmed", extra = {}) => T.point({ seq: 1, targetId: id, kind: "control", status, layaP: 0.77, reason: "ok", label: id, ...extra }, status === "confirmed" ? $(id) : null);
+  const text = (id) => point(id, "confirmed", { kind: "block" }); // a text block: the highlighter
 
   const steps = [
     { say: "First, paste the contract address you deployed.", id: "addr" },
@@ -44,7 +59,7 @@
   async function showStep(n, withBegin) {
     stepNo = n;
     if (withBegin) T.begin({ mode: "guide", question: "walk me through filling this form" });
-    T.say(1, steps[n - 1].say);
+    T.say(1, steps[n - 1].say); T.speaking({ seq: 1 });
     point(steps[n - 1].id);
     T.step({ n, m: steps.length, say: steps[n - 1].say, targetId: steps[n - 1].id, kind: "control" });
     T.done(doneEv({ mode: "guide" }), "walk me through filling this form");
@@ -61,18 +76,29 @@
     const Q = "what does the optimizer runs setting mean";
     if (state === "explain") {
       Ishara.overlay.thinking("I heard: “" + Q + "” …thinking"); await sleep(1200);
-      T.begin({ mode: "explain", question: Q, voice: true }); await say(runsAnswer); T.done(doneEv(), Q);
+      T.begin({ mode: "explain", question: Q, voice: true }); await say(runsAnswer); T.done(doneEv(), Q); await speak(runsAnswer);
     } else if (state === "point") {
       T.begin({ mode: "point", question: "where do I put the contract address" });
       T.say(1, "Put the address in the first field."); point("addr"); T.done(doneEv({ mode: "point" }), "where");
     } else if (state === "two") {
       T.begin({ mode: "explain", question: "how do I set the optimizer" });
-      T.say(1, "First tick the optimization box."); point("opt"); await sleep(900);
-      T.say(2, "Then set the runs number to match your compile."); point("runs"); await sleep(600);
+      T.say(1, "First tick the optimization box."); T.speaking({ seq: 1 }); point("opt"); await sleep(900);
+      T.say(2, "Then read the note under the form."); T.speaking({ seq: 2 }); text("intro"); await sleep(600);
       T.done(doneEv(), "how");
     } else if (state === "guide") {
       T.begin({ mode: "guide", question: "walk me through filling this form" }); await sleep(500); await showStep(1, false);
       if (q.get("step")) { for (let i = 2; i <= +q.get("step"); i++) { await sleep(300); await showStep(i, false); } }
+    } else if (state === "preparing") { Ishara.overlay.setListening("preparing");
+    } else if (state === "listening") { Ishara.overlay.setListening("listening"); let t = 0; setInterval(() => Ishara.overlay.setLevel(Math.round(5 + 4 * Math.sin(t += 0.5))), 90);
+    } else if (state === "thinking") { Ishara.overlay.thinking("I heard: “" + Q + "” …thinking");
+    } else if (state === "speaking") { T.begin({ mode: "explain", question: Q, voice: true }); T.say(1, runsAnswer[0]); T.speaking({ seq: 1 });
+    } else if (state === "boundary") { T.begin({ mode: "point", question: "where do I put the contract address" }); T.say(1, "Put the address in the first field."); T.speaking({ seq: 1 }); point("addr"); T.done(doneEv({ mode: "point" }), "where");
+    } else if (state === "highlight") { T.begin({ mode: "explain", question: "what does this say" }); T.say(1, "This line explains why the optimizer setting matters."); T.speaking({ seq: 1 }); text("intro"); T.done(doneEv(), "q");
+    } else if (state === "multiline") { T.begin({ mode: "explain", question: "what does this paragraph say" }); T.say(1, "Every setting you compiled with must be repeated."); T.speaking({ seq: 1 }); text("multi"); T.done(doneEv(), "q");
+    } else if (state === "hop") { T.begin({ mode: "point", question: "where is submit" }); T.say(1, "The Submit button is at the bottom, so this pill moved up."); T.speaking({ seq: 1 }); point("lastbtn"); T.done(doneEv({ mode: "point" }), "q");
+    } else if (state === "plan") { // the model's plan is only in done.plan: no step event, the chip and buttons still appear
+      T.begin({ mode: "guide", question: "walk me through this" }); T.say(1, steps[0].say); T.speaking({ seq: 1 }); point(steps[0].id);
+      T.done(doneEv({ mode: "guide", plan: steps.map((x, i) => ({ n: i + 1, m: steps.length, say: x.say })) }), "walk");
     } else if (state === "refused") {
       T.begin({ mode: "explain", question: Q }); T.refused({ cause: "timeout", say: "" }, Q);
     } else if (state === "cutoff") {

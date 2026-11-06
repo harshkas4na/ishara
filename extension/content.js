@@ -93,7 +93,7 @@
 
   // Walk buttons (Next / Back / Stop): no 0G call, the helper answers from its walk state.
   function walkButton(cmd) {
-    if (streaming || !last) return; // a double press must not advance two steps
+    if ((streaming && cmd !== "stop") || !last) return; // a double press must not advance two steps; Stop always works
     const my = ++turn; closePort();
     send({ type: "speech-stop" });
     runStream(my, { type: "walk", sessionId, cmd }, { question: cmd, cmd, blocks: [] });
@@ -104,10 +104,14 @@
     const q = ctx.question;
     let p;
     try { p = chrome.runtime.connect({ name: "tutor" }); } catch { return showError("Ishara was updated or reloaded. Reload this page to continue.", q); }
-    port = p; streaming = true;
+    port = p; streaming = true; T.setBusy(true); // Next/Back wait: the helper starts the walk only once this stream has ended
     let began = false, finished = false, stepSeen = false;
     const begin = (mode) => { if (!began) { began = true; T.begin({ mode, question: q, voice: ctx.voice }); } };
-    const finish = () => { finished = true; streaming = false; if (port === p) port = null; try { p.disconnect(); } catch { /* done */ } };
+    const finish = () => { finished = true; streaming = false; T.setBusy(false); if (port === p) port = null; try { p.disconnect(); } catch { /* done */ } };
+    // `speaking` events keep arriving AFTER done (the voice is still reading). So a finished answer keeps its port open until
+    // the voice reports quiet (`speaking {seq:null}`), a new turn closes it, or 60 s pass; only then is it disconnected.
+    let lingerT = 0;
+    const lingerOpen = () => { finished = true; streaming = false; T.setBusy(false); lingerT = setTimeout(() => { if (port === p) port = null; try { p.disconnect(); } catch { /* done */ } }, 60000); };
     p.onMessage.addListener((m) => {
       if (my !== turn || !m) return;
       const d = m.data || {};
@@ -131,13 +135,17 @@
           if (el && d.kind !== "block" && !el.frame) watchAccepted(el, q); // "accepted" signal for confirmed pointers, as before
           return;
         }
+        case "speaking": // only this tab's own turn reaches here: the port is per tab and per turn, and `my !== turn` drops stale ones
+          T.speaking(d);
+          if (d.seq == null && finished) { clearTimeout(lingerT); finish(); }
+          return;
         case "step": begin(); stepSeen = true; return T.step(d);
         case "done": {
           begin(); T.done(d, q);
           // A walk command that produced no new step at the end of the walk (the last "next", or "stop") ends the walk UI.
           const w = ctx.cmd || (T.isWalkWord(q) ? q.trim().toLowerCase() : "");
           if (!stepSeen && /^(next|done|stop|finished|ruko|agla|aage)/.test(w)) { T.endWalk(); T.clearPointers(); }
-          return finish();
+          return lingerOpen();
         }
         case "refused": begin(); T.refused(d, q); return finish();
       }
@@ -261,6 +269,9 @@
     } else if (e.altKey && e.shiftKey && e.code === "Space") {
       e.preventDefault(); e.stopPropagation();
       NS.overlay.openTypeBox((q) => ask(q));
+    } else if (e.altKey && e.shiftKey && NS.overlay.tutor.walkActive() && (e.code === "ArrowRight" || e.code === "ArrowLeft" || e.code === "Escape")) {
+      // guide steps from the keyboard, the same as the pill's buttons
+      e.preventDefault(); walkButton(e.code === "ArrowRight" ? "next" : e.code === "ArrowLeft" ? "back" : "stop");
     } else if (e.altKey && e.shiftKey && e.code === "KeyC") { // conversation panel
       e.preventDefault(); NS.overlay.tutor.toggleConvo();
     } else if (e.altKey && e.shiftKey && e.code === "KeyP") { // classic = pointing only (the /decide path), for a plain pointer demo

@@ -69,7 +69,8 @@
   //  - an abort (new question, port closed) is silent: the caller already moved on.
   // NOTE the helper keeps draining 0G for the proof when we cancel the reader; cancelling here only stops relaying.
   async function relay({ fetchFn, url, init, signal, post }) {
-    const known = new Set(["thinking", "say", "point", "step", "done", "refused"]);
+    // "speaking" (the helper started playing a sentence) arrives AFTER `done` too, so it must not count as terminal.
+    const known = new Set(["thinking", "say", "point", "step", "speaking", "done", "refused"]);
     let seen = 0, terminal = false;
     const emit = (event, data) => { if (signal && signal.aborted) return; if (event === "done" || event === "refused") terminal = true; seen++; post({ event, data }); };
     const offline = () => emit("refused", { cause: "offline", say: "" });

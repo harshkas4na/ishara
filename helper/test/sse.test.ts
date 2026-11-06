@@ -137,3 +137,9 @@ test("relay: aborting posts nothing more", async () => {
     post: (m: any) => { got.push(m); ctl.abort(); } });
   assert.equal(got.length, 1);
 });
+
+test("relay: `speaking` is relayed, also after done, and does not end the stream", async () => {
+  const got = await relayWith(async () => streamOf([frame("say", { seq: 1, text: "Hi." }), frame("speaking", { seq: 1, text: "Hi." }), frame("done", { outcome: "answered" }), frame("speaking", { seq: null })]));
+  assert.deepEqual(got.map((m) => m.event), ["say", "speaking", "done", "speaking"]);
+  assert.equal(got[3].data.seq, null);
+});
