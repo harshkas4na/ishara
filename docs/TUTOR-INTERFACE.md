@@ -41,6 +41,7 @@ Response: `text/event-stream`; each event is `event: <name>\ndata: <json>\n\n`.
 |---|---|---|
 | `thinking` | `{ mode }` | the mode chosen (point, explain, guide, follow-up); sent at once |
 | `say` | `{ seq, text }` | one SENTENCE of the spoken/shown answer, as soon as it ends. No ids, tags, URLs or markers inside |
+| `speaking` | `{ seq: number \| null, text?: string }` | the helper STARTED playing sentence `seq` aloud (same `seq` as its `say`; `text` is the spoken sentence). `{ seq: null }` once the voice has gone quiet after `done`. Never sent when speech is muted, disabled or unavailable: the UI then times sentences itself. Unknown to old clients, which ignore it |
 | `point` | `{ seq, targetId, kind: "control"\|"block", status: "confirmed"\|"rejected"\|"suppressed", layaP?, reason }` | a pointer the model asked for, AFTER the laya check. The UI moves the ring ONLY on `confirmed` |
 | `step` | `{ n, m, say, targetId?, kind? }` | guide mode: step n of m is current (the matching `say`/`point` events precede it) |
 | `done` | `{ mode, outcome: "answered"\|"refused"\|"cutoff", cause?, requestIds: { brain?: string, laya: string[] }, ms: { firstToken?: number, total: number }, testRouter?: true }` | end of the turn |
