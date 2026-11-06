@@ -130,3 +130,25 @@ pointed target is under it) and shows the sentence being spoken; the full answer
   `/test/etherscan-verify.html`, wait ~8 s, click ›, three times. Expect `1/6`, `2/6`, `3/6` and the sentence changing.
 - A tab only renders its own turn: the relay port is per tab and per turn, and the overlay ignores `say`/`speaking`
   without an active turn.
+
+## Listening start (warm mic, PREPARING -> LISTENING, tick)
+- Key-down sends `rec-start` at once; the offscreen document buffers from its first sample. The pill says "Getting ready…"
+  until the recorder delivers its first buffer (`mic-live`), then "Speak now" with a soft tick (40 ms, 880 Hz, quiet).
+  Mute the tick: `chrome.storage.local.set({tickOff: true})` from the extension's console.
+- **Warm mic:** after a recording the mic stream stays open, detached, for **10 s**, then stops. **The browser's recording dot
+  therefore stays on for 10 s after each question**; that is the price of not losing your first words.
+- Measure: after a press, `document.documentElement.dataset.isharaMicLiveMs` and the console line `[ishara] mic live N ms`.
+  Measured in Chrome (synthetic taps): cold 538 and 651 ms (getUserMedia + AudioContext), warm 58 ms. Before this change every
+  press paid the cold cost plus a 128 ms chunk, and the first words were lost.
+- The tick was measured not to be heard by Whisper (alone, at full level with noise, and mixed with speech: transcripts
+  unchanged), so no audio is cut after it. Up to 64 ms from just before the key-down can sit in the first warm chunk.
+- Escape stops the voice only if THIS tab started the question (a stray `/speech/stop` would cut another browser's answer).
+
+## Two browsers at once (double activation)
+`/tutor` is a request the extension makes itself; the helper has no push channel, so a second browser can never receive
+the first one's answer. Conversation memory and guide walks are keyed by `sessionId`, a UUID made per page load, so two
+browsers never share one. What CAN happen: (1) the desktop daemon and a browser both reacting to Option+Space: the daemon
+ignores a take when a browser is in front (and cancels it anyway when another key joins the Right Option within 350 ms);
+(2) two browsers with the extension, one voice: a question in either stops the other's audio (one speaker, by design);
+(3) the old Esc handler stopping the voice from a tab that asked nothing (fixed). Not reproduced: Chrome plus Brave at once
+(only Chrome available). To confirm, tell me which two browsers, and whether the Ishara pill showed in both on one press.

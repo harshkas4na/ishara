@@ -124,3 +124,15 @@ With Reduce Motion on there is no pulse, dance, glide, ripple, pen stroke or swe
 - Elements outside the visible window, scrolled-off rows and the menu bar are skipped on purpose (text areas keep
   their off-screen paragraphs as `inView:false` blocks).
 - Rects are screen points, not window-relative; `viewport` is the window size.
+
+## Listening start (pre-roll, measured)
+Capture starts at the **key-down**; the 350 ms hold only decides whether the take is kept. A release or another key/click
+inside 350 ms discards the take (`cancel`, audio dropped from memory). Daemon events: `down`, `live {ms}` (first real buffer),
+`confirmed`, `cancel`, `level`, `up`. The helper shows nothing for the first 120 ms (so taps flash nothing), then
+"Getting ready…" until `live`, then "Speak now" plus a soft tick (`ISHARA_TICK=0` mutes it). The engine is built and
+prepared but not started while idle (mic dot off, checked with CoreAudio DeviceIsRunningSomewhere); after a confirmed take it
+stays running 8 s (dot on for 8 s) so follow-ups start instantly.
+Measured key-down -> `live`, 10 trials each: cold (engine idle) median 140 ms (137-148); warm median 35 ms (1-73). Before: capture
+began ~350 ms + 115 ms after the key-down, so about 0.5 s of speech was lost. A Right-Option tap, Option+letter and Right
+Option + Space all give `down` then `cancel`; in a browser nothing is shown, no tick, and the voice is not interrupted.
+Synthetic check: `desktop/ptt-post roptSpace 600`.
