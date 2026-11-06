@@ -5,6 +5,9 @@ by the helper (helper/src/speech.ts) as a child process, like whisper-server.
 Wire (JSON lines, one object per line):
   stdout  {"event":"ready","voice":"af_heart","sr":24000,"load_ms":2100}      once, after the model is loaded
   stdin   {"id":7,"text":"Click the blue Send button.","out":"/tmp/x.wav"}     one sentence
+          optional "voice" (default ISHARA_VOICE_EN) and "lang" ("en-us" | "en-gb" | "hi"); a voice or lang that is not
+          installed / not in the allowlist is an error for that sentence only. Hindi text must be Devanagari (the
+          helper converts Roman Hinglish before it gets here: helper/src/speech-lang.ts).
   stdout  {"id":7,"ok":true,"ms":410,"audio_ms":1490,"rms":0.08}               the 24 kHz mono 16-bit WAV is at "out"
           {"id":7,"ok":false,"error":"..."}
 
@@ -20,7 +23,10 @@ import json, os, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL = os.environ.get("ISHARA_KOKORO_MODEL") or os.path.join(HERE, "models", "kokoro-v1.0.int8.onnx")
 VOICES = os.environ.get("ISHARA_KOKORO_VOICES") or os.path.join(HERE, "models", "voices-v1.0.bin")
-VOICE = os.environ.get("ISHARA_VOICE", "af_heart")
+# English voice: ISHARA_VOICE_EN, else the older ISHARA_VOICE override, else af_heart. Hindi sentences name their own
+# voice per request (the helper picks it), so there is no Hindi default in this process.
+VOICE = os.environ.get("ISHARA_VOICE_EN") or os.environ.get("ISHARA_VOICE") or "af_heart"
+LANGS = {"en-us", "en-gb", "hi"}  # the espeak languages the helper may ask for; anything else is refused
 SPEED = float(os.environ.get("ISHARA_VOICE_SPEED", "1.0"))
 SR = 24000
 
@@ -56,12 +62,20 @@ def main():
         emit({"event": "error", "error": f"unknown voice {VOICE}"})
         sys.exit(3)
     k.create("Ready.", voice=VOICE, speed=SPEED, lang="en-us")  # first call compiles kernels; pay it now, not on the first answer
-    emit({"event": "ready", "voice": VOICE, "sr": SR, "load_ms": int((time.time() - t0) * 1000)})
+    # Pay the Hindi front-end and kernel cost now too: a first Hindi sentence must not be the slow one.
+    if "hf_alpha" in k.get_voices():
+        k.create("नमस्ते।", voice="hf_alpha", speed=SPEED, lang="hi")
+    emit({"event": "ready", "voice": VOICE, "voices": sorted(k.get_voices()), "sr": SR, "load_ms": int((time.time() - t0) * 1000)})
     for line in sys.stdin:  # EOF (the helper died) ends the loop, so this process never outlives it
         try:
             r = json.loads(line)
             t = time.time()
-            a, sr = k.create(r["text"], voice=r.get("voice", VOICE), speed=SPEED, lang="en-us")
+            voice, lang = r.get("voice", VOICE), r.get("lang", "en-us")
+            if voice not in k.get_voices():
+                raise ValueError(f"unknown voice {voice}")
+            if lang not in LANGS:
+                raise ValueError(f"unsupported lang {lang}")
+            a, sr = k.create(r["text"], voice=voice, speed=SPEED, lang=lang)
             a = trim(np.asarray(a, dtype=np.float32))
             sf.write(r["out"], a, sr, subtype="PCM_16")
             emit({"id": r.get("id"), "ok": True, "ms": int((time.time() - t) * 1000),

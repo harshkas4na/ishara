@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { detectLang, hinglishToDevanagari, pickVoice, voiceConfig, langOfVoice, type VoiceConfig } from "./speech-lang.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const KOKORO_PY = join(ROOT, "voice/.venv/bin/python");
@@ -20,12 +21,18 @@ export const MUTE_FILE = join(ROOT, "helper/.data/speech.json");
 
 // ---------- pure text rules (unit tested) ----------
 
-// An answer is read, not recited: a hard cap of 40 words. The cut falls on a sentence boundary when one exists
-// inside the cap; a single sentence longer than the cap is cut at its last comma inside the cap, else at the cap.
-// A cut answer ends with a plain full stop (never a spoken "dot dot dot"), so it sounds finished, not broken.
-export const MAX_WORDS = 40;
-// A first sentence longer than this is also split at commas, so the first words reach the speaker sooner
-// (synthesis time grows with length; the clause is made while the person is already listening to the first).
+// The WHOLE answer is spoken. There used to be a 40-word cap here and it cut every answer after about three
+// sentences ("it never completes the response, it always stops before the last line"). The only limit left is a
+// sanity ceiling against a runaway model: the 0G reply is already capped near 350 tokens (~260 words), so 400
+// words is above anything legitimate, and it is checked per sentence (the sentence that crosses it is still
+// spoken to its end, only the sentences after it are dropped, and the status says so).
+export const MAX_ANSWER_WORDS = 400;
+// Kokoro synthesises best and fastest in sentence-sized pieces. A sentence longer than this is cut at commas
+// (then at word boundaries if it has none) into pieces of at most this many words. Nothing is dropped: the
+// pieces joined are exactly the sentence.
+export const MAX_PIECE_WORDS = 30;
+// The first sentence of an answer longer than this is also split at commas, so the first words reach the speaker
+// sooner (synthesis time grows with length; the next clause is made while the person listens to the first).
 const CLAUSE_OVER = 12;
 
 // Strip what a voice must not read: "(test router)" suffix, URLs, element ids like b12 or [b12], markdown marks,
@@ -45,18 +52,20 @@ export function cleanForSpeech(raw: string): string {
   return /[\p{L}\p{N}]/u.test(s) ? s : ""; // only punctuation left: nothing to say
 }
 
-// Split on sentence ends (. ! ? and newlines). Abbreviation-safe enough for short UI answers: a full stop only
-// ends a sentence when followed by space and a capital or digit, so "e.g. the button" and "3.5" stay whole.
+// Split on sentence ends (. ! ? the Hindi danda and newlines). Abbreviation-safe enough for short UI answers: a
+// full stop only ends a sentence when followed by space and a capital, digit or Devanagari letter, so "e.g. the
+// button" and "3.5" stay whole. The danda "।" always ends one.
 export function splitSentences(text: string): string[] {
   const out: string[] = [];
   for (const para of text.split(/\n+/)) {
-    const parts = para.split(/(?<=[.!?…])["')\]]*\s+(?=[A-Z0-9"'(])/);
+    const parts = para.split(/(?<=[.!?…])["')\]]*\s+(?=[A-Z0-9"'(ऀ-ॿ])|(?<=।)["')\]]*\s*/);
     for (const p of parts) { const t = p.trim(); if (t) out.push(t); }
   }
   return out;
 }
 
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
+const SENTENCE_END = /[.!?…।]["')\]]*\s*$/;
 
 // Break one long sentence at commas/semicolons/colons into chunks of 4+ words, so the first chunk is short.
 export function clauses(sentence: string): string[] {
@@ -72,23 +81,43 @@ export function clauses(sentence: string): string[] {
   return out;
 }
 
-// Clean, cap and split one answer into the pieces that are synthesised one by one.
-export function prepare(raw: string, maxWords = MAX_WORDS): string[] {
-  const clean = cleanForSpeech(raw);
-  if (!clean) return [];
+// One sentence longer than MAX_PIECE_WORDS becomes several pieces, never fewer words: first at commas, and any
+// stretch with no comma at plain word boundaries. Short sentences come back as they are.
+export function splitLong(sentence: string, max = MAX_PIECE_WORDS): string[] {
+  if (words(sentence) <= max) return [sentence];
   const out: string[] = [];
-  let used = 0;
-  for (const sent of splitSentences(clean)) {
-    const n = words(sent);
-    if (used + n <= maxWords) { out.push(sent); used += n; continue; }
-    if (used === 0) { // the very first sentence is already over the cap: keep its head
-      const head = sent.split(/\s+/).slice(0, maxWords).join(" ");
-      const comma = head.lastIndexOf(",");
-      out.push((comma > head.length / 2 ? head.slice(0, comma) : head).replace(/[,;:\s]+$/, "") + ".");
-    }
-    break; // later sentences are dropped; the screen still has the full text
+  let cur = "";
+  const push = () => { if (cur) { out.push(cur); cur = ""; } };
+  for (const part of sentence.split(/(?<=[,;:])\s+/)) {
+    if (words(part) > max) { // a comma-free run: cut it by words
+      push();
+      const w = part.split(/\s+/).filter(Boolean);
+      for (let i = 0; i < w.length; i += max) out.push(w.slice(i, i + max).join(" "));
+    } else if (words(cur) + words(part) > max) { push(); cur = part; }
+    else cur = cur ? `${cur} ${part}` : part;
   }
-  return out.flatMap((s, i) => (i === 0 ? clauses(s) : [s]));
+  push();
+  return out;
+}
+
+export type Sentences = { sentences: string[]; clipped: boolean };
+// Clean one answer and split it into sentences, applying the runaway ceiling. `used` is how many words of this
+// answer were already queued (streaming adds text in several calls).
+export function sentencesOf(raw: string, used = 0, ceiling = MAX_ANSWER_WORDS): Sentences {
+  const clean = cleanForSpeech(raw);
+  const out: string[] = [];
+  let clipped = false;
+  for (const sent of splitSentences(clean)) {
+    if (used >= ceiling) { clipped = true; break; }
+    out.push(sent); used += words(sent);
+  }
+  return { sentences: out, clipped };
+}
+
+// Everything above in one call for a whole answer: the pieces that are synthesised one by one, in order. The
+// first sentence also gets the faster-first-sound clause split.
+export function prepare(raw: string, ceiling = MAX_ANSWER_WORDS): string[] {
+  return sentencesOf(raw, 0, ceiling).sentences.flatMap((s, i) => (i === 0 ? clauses(s) : [s]).flatMap((c) => splitLong(c)));
 }
 
 // ---------- the queue (all outside effects injected) ----------
@@ -98,7 +127,8 @@ export type Playing = { done: Promise<void>; kill(): void };
 export type Voice = {
   engine: Engine;
   // Synthesise one piece to a WAV file and resolve its path; reject on failure. Absent for the "system" engine.
-  synth?: (text: string) => Promise<string>;
+  // `o` names the Kokoro voice and espeak language for this piece (English and Hindi pieces alternate).
+  synth?: (text: string, o?: { voice: string; lang: string }) => Promise<string>;
   // Play a WAV path (kokoro) or speak text (system) and resolve when it finished.
   play: (what: string) => Playing;
 };
@@ -113,9 +143,20 @@ export type SpeechDeps = {
 };
 
 export type SpeechStatus = {
-  engine: Engine; voice: string; muted: boolean; enabled: boolean; ready: boolean;
-  speaking: boolean; queued: number; spoken: number; lastFirstAudioMs?: number; reason?: string; lastError?: string;
+  engine: Engine; voice: string; voiceHi: string; muted: boolean; enabled: boolean; ready: boolean;
+  speaking: boolean; queued: number; spoken: number; pieces: number; maxGapMs?: number; clipped?: boolean;
+  lastFirstAudioMs?: number; reason?: string; lastError?: string;
 };
+
+// What the UI is told. Both are optional and replaced per turn (setHooks): the /tutor route installs its own at
+// the start of each question, so a late callback can never reach an older stream.
+export type SpeechHooks = {
+  // Playback of the sentence tagged `tag` (the `say` seq) is starting now. `text` is the cleaned sentence.
+  onSentenceStart?: (tag: number, text: string) => void;
+  // The answer has been flushed and the voice has gone quiet (or it was interrupted after speaking began).
+  onIdle?: () => void;
+};
+export type SayOpts = { voice?: string; lang?: string; translit?: boolean }; // per-call voice override (the sampler)
 
 // The pick rule on its own so it is testable: kokoro if it is installed and came up, else the macOS voice, else none.
 export function pickEngine(o: { forced?: string; kokoroReady: boolean; systemAvailable: boolean }): Engine {
@@ -124,48 +165,83 @@ export function pickEngine(o: { forced?: string; kokoroReady: boolean; systemAva
   return o.systemAvailable ? "system" : "none";
 }
 
-export function createSpeaker(d: SpeechDeps, voiceName = "af_heart") {
+type Piece = { text: string; tag?: number; shown?: string; last: boolean; force?: SayOpts };
+type Job = { piece: Piece; file: Promise<string | null> };
+const LOOKAHEAD = 2; // pieces synthesised ahead of the one playing: covers a long sentence following a short one
+
+export function createSpeaker(d: SpeechDeps, cfg: VoiceConfig = voiceConfig(), maxPiece = MAX_PIECE_WORDS) {
   let voice: Voice | null = null;
   let reason: string | undefined = d.enabled ? "not started" : "disabled by ISHARA_SPEAK=0";
   let starting: Promise<void> | null = null;
   let muted = false;
   try { muted = d.readMuted(); } catch { /* unreadable mute file: default unmuted */ }
   let gen = 0;                  // bumped by interrupt(); work that belongs to an older generation is discarded
-  let pending: string[] = [];   // pieces waiting to be synthesised
-  let ready: { text: string; gen: number; file: Promise<string | null> }[] = []; // synthesised or in flight, in order
+  let pending: Piece[] = [];    // pieces waiting to be synthesised
+  let ready: Job[] = [];        // synthesised or in flight, in order
   let current: Playing | null = null;
   let pumping = false;
   let buf = "";                 // enqueue() text not yet ended by a sentence boundary
-  let budget = MAX_WORDS;       // words left for the current answer (reset by flush)
-  let spoken = 0, lastError: string | undefined, lastFirst: number | undefined;
+  let used = 0;                 // words of the current answer already queued (the runaway ceiling)
+  let sentNo = 0;               // sentences of the current answer already queued (the first one gets the clause split)
+  let clipped = false;
+  let spoken = 0, pieces = 0, lastError: string | undefined, lastFirst: number | undefined;
   let answerStart = 0, firstDone = true;
+  let lastEnd = 0, maxGap = 0;  // silence between two pieces of one answer, ms
+  let hooks: SpeechHooks = {};
+  let announced = false;        // a sentence-start was sent this turn, so an idle must follow
+  let ending = false;           // flush() was called: the turn is over, report idle when the queue drains
+  let waiters: (() => void)[] = [];
 
   async function ensure(): Promise<void> {
     if (voice || !d.enabled) return;
     starting ??= d.start().then((r) => { voice = r.voice; reason = r.voice ? undefined : r.reason; }).finally(() => { starting = null; });
     await starting;
   }
-
-  function toPieces(text: string): string[] {
-    const ps = prepare(text, budget);
-    budget -= ps.reduce((n, p) => n + words(p), 0);
-    return ps;
+  const fire = (f: () => void) => { try { f(); } catch { /* a UI callback must never break speech */ } };
+  const quiet = () => !current && !pending.length && !ready.length && !pumping;
+  // The voice is silent and the turn is over (or was cut): tell the UI once and release whoever awaits flush().
+  function settle() {
+    const w = waiters; waiters = []; ending = false;
+    if (announced) { announced = false; fire(() => hooks.onIdle?.()); }
+    for (const f of w) f();
   }
-  function add(pieces: string[]) {
-    if (!pieces.length || muted || !d.enabled) return;
-    if (pending.length === 0 && ready.length === 0 && !current) { answerStart = d.now(); firstDone = false; }
-    pending.push(...pieces);
+
+  function newAnswer() { used = 0; sentNo = 0; clipped = false; }
+  // One chunk of text (already complete sentences) -> queued pieces. `tag` marks the first piece of the first
+  // sentence so the UI hears about it once, however many pieces it was split into.
+  function toPieces(text: string, tag?: number, force?: SayOpts): Piece[] {
+    const r = sentencesOf(text, used);
+    if (r.clipped) { clipped = true; console.warn(`[speech] answer passed ${MAX_ANSWER_WORDS} words; the rest is not spoken`); }
+    const out: Piece[] = [];
+    r.sentences.forEach((sent, i) => {
+      used += words(sent);
+      const cl = (sentNo++ === 0 ? clauses(sent) : [sent]).flatMap((c) => splitLong(c, maxPiece));
+      cl.forEach((c, j) => out.push({ text: c, last: j === cl.length - 1, force, ...(tag !== undefined && i === 0 && j === 0 ? { tag, shown: cleanForSpeech(text) } : {}) }));
+    });
+    return out;
+  }
+  function add(ps: Piece[]) {
+    if (!ps.length || muted || !d.enabled) return;
+    if (pending.length === 0 && ready.length === 0 && !current) { answerStart = d.now(); firstDone = false; maxGap = 0; lastEnd = 0; }
+    pending.push(...ps);
     if (pumping) fill(); else void pump();
   }
 
-  // Synthesis runs one piece ahead of playback: while piece N plays, N+1 is made, so there is no gap between
+  // Synthesis runs ahead of playback: while piece N plays, N+1 and N+2 are made, so there is no gap between
   // sentences. fill() is also called when text arrives mid-playback (streaming), not only between pieces.
+  // The voice and language are chosen per piece, so an English sentence followed by a Hindi one is simply two
+  // jobs with different voices, both made before the first one ends.
   function fill(): void {
-    while (pending.length && ready.length < (current ? 1 : 2) && voice) {
-      const text = pending.shift()!;
+    while (pending.length && ready.length < (current ? LOOKAHEAD : LOOKAHEAD + 1) && voice) {
+      const piece = pending.shift()!;
       const v = voice;
-      const file = v.synth ? v.synth(text).catch((e) => { lastError = String(e?.message ?? e); return null; }) : Promise.resolve(text);
-      ready.push({ text, gen, file });
+      let file: Promise<string | null>;
+      if (v.synth) {
+        const f = piece.force;
+        const pick = f?.voice ? { voice: f.voice, lang: f.lang ?? langOfVoice(f.voice), text: f.translit === false || detectLang(piece.text) !== "hinglish" ? piece.text : hinglishToDevanagari(piece.text) } : pickVoice(piece.text, cfg);
+        file = v.synth(pick.text, { voice: pick.voice, lang: pick.lang }).catch((e) => { lastError = String(e?.message ?? e); return null; });
+      } else file = Promise.resolve(piece.text);
+      ready.push({ piece, file });
     }
   }
   async function pump(): Promise<void> {
@@ -182,37 +258,59 @@ export function createSpeaker(d: SpeechDeps, voiceName = "af_heart") {
         const f = await item.file;
         if (myGen !== gen) { if (f && voice?.synth) d.cleanup(f); break; } // interrupted while synthesising
         if (f && voice) {
+          const t = d.now();
+          if (lastEnd) maxGap = Math.max(maxGap, t - lastEnd);
           current = voice.play(f);
-          fill(); // start making the next piece now, while this one plays
+          const p = item.piece;
+          if (p.tag !== undefined && !muted) { announced = true; fire(() => hooks.onSentenceStart?.(p.tag!, p.shown ?? p.text)); }
+          fill(); // start making the next pieces now, while this one plays
           if (!firstDone) { firstDone = true; lastFirst = d.now() - answerStart; }
-          try { await current.done; spoken++; } catch (e: any) { lastError = String(e?.message ?? e); }
+          try { await current.done; pieces++; if (p.last) spoken++; } catch (e: any) { lastError = String(e?.message ?? e); }
+          lastEnd = d.now();
           current = null;
           if (voice.synth) d.cleanup(f);
         }
       }
-    } finally { pumping = false; if (pending.length && !muted && voice) void pump(); }
+    } finally {
+      pumping = false;
+      if (pending.length && !muted && voice) void pump();
+      else if (ending && quiet()) settle();
+    }
   }
 
   return {
     // speak(): one whole answer. enqueue()/flush(): the same, streamed: text is cut at sentence ends as it arrives.
-    speak(text: string): void { budget = MAX_WORDS; add(toPieces(text)); },
-    enqueue(text: string): void {
+    speak(text: string, o?: SayOpts): void { newAnswer(); add(toPieces(text, undefined, o)); },
+    // enqueue(text): untagged streaming text, held until a sentence ends. enqueue(text, tag): one complete sentence
+    // (a `say` event) that the UI should hear about when it starts playing; spoken at once, never merged.
+    enqueue(text: string, tag?: number): void {
+      if (tag !== undefined) { add(toPieces(text, tag)); return; }
       buf += text;
       const parts = splitSentences(buf);
-      // The last part may be a sentence still arriving; hold it unless it already ends in . ! ?
-      const complete = /[.!?…]["')\]]*\s*$/.test(buf) ? parts : parts.slice(0, -1);
-      buf = /[.!?…]["')\]]*\s*$/.test(buf) ? "" : (parts[parts.length - 1] ?? "");
+      // The last part may be a sentence still arriving; hold it unless it already ends in . ! ? or the danda
+      const ended = SENTENCE_END.test(buf);
+      const complete = ended ? parts : parts.slice(0, -1);
+      buf = ended ? "" : (parts[parts.length - 1] ?? "");
       if (complete.length) add(toPieces(complete.join(" ")));
     },
-    flush(): void { const t = buf; buf = ""; if (t.trim()) add(toPieces(t)); budget = MAX_WORDS; },
+    // End of the turn: speak the trailing sentence that has no final punctuation, and resolve once the voice is
+    // quiet (immediately when nothing is playing). The /tutor route awaits it to send the final `speaking: idle`.
+    flush(): Promise<void> {
+      const t = buf; buf = "";
+      if (t.trim()) add(toPieces(t));
+      newAnswer();
+      return new Promise<void>((res) => { waiters.push(res); ending = true; if (quiet()) settle(); });
+    },
     // Stop talking now and forget the rest. Called on every new question (push-to-talk down, typed ask) so the
     // voice never talks over the person and never leaks into a recording.
     interrupt(): void {
-      gen++; pending = []; buf = ""; budget = MAX_WORDS;
+      gen++; pending = []; buf = ""; newAnswer();
       const old = ready; ready = [];
       for (const r of old) void r.file.then((f) => { if (f && voice?.synth) d.cleanup(f); });
       current?.kill(); current = null;
+      settle(); // the UI must hear "idle" for the answer that was just cut
     },
+    setHooks(h: SpeechHooks): void { hooks = h; },
     setMuted(m: boolean): void {
       muted = m;
       try { d.writeMuted(m); } catch (e: any) { lastError = `cannot save mute: ${e?.message ?? e}`; }
@@ -223,8 +321,10 @@ export function createSpeaker(d: SpeechDeps, voiceName = "af_heart") {
     stop(): void { this.interrupt(); d.stop(); voice = null; },
     status(): SpeechStatus {
       return {
-        engine: voice?.engine ?? "none", voice: voice?.engine === "kokoro" ? voiceName : voice?.engine === "system" ? "macOS" : "-",
-        muted, enabled: d.enabled, ready: !!voice, speaking: !!current, queued: pending.length + ready.length, spoken,
+        engine: voice?.engine ?? "none", voice: voice?.engine === "kokoro" ? cfg.en : voice?.engine === "system" ? "macOS" : "-",
+        voiceHi: voice?.engine === "kokoro" ? cfg.hi : "-",
+        muted, enabled: d.enabled, ready: !!voice, speaking: !!current, queued: pending.length + ready.length, spoken, pieces,
+        ...(maxGap ? { maxGapMs: maxGap } : {}), ...(clipped ? { clipped } : {}),
         ...(lastFirst !== undefined ? { lastFirstAudioMs: lastFirst } : {}),
         ...(voice ? {} : { reason: reason ?? "not started" }), ...(lastError ? { lastError } : {}),
       };
@@ -234,7 +334,7 @@ export function createSpeaker(d: SpeechDeps, voiceName = "af_heart") {
 
 // ---------- the real thing ----------
 
-const VOICE = process.env.ISHARA_VOICE || "af_heart";
+const CFG = voiceConfig(); // ISHARA_VOICE_EN (or the older ISHARA_VOICE) and ISHARA_VOICE_HI, checked against the installed list
 let child: ChildProcess | null = null;
 let seq = 0;
 const waiting = new Map<number, { ok: (p: string) => void; fail: (e: Error) => void; out: string }>();
@@ -254,7 +354,7 @@ async function startKokoro(): Promise<Voice | string> {
   if (!existsSync(KOKORO_PY) || !existsSync(KOKORO_SCRIPT)) return "Kokoro is not installed (run scripts/setup-voice.sh)";
   const dir = join(tmpdir(), `ishara-voice-${process.pid}`);
   mkdirSync(dir, { recursive: true });
-  const p = spawn(KOKORO_PY, [KOKORO_SCRIPT], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, ISHARA_VOICE: VOICE } });
+  const p = spawn(KOKORO_PY, [KOKORO_SCRIPT], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, ISHARA_VOICE_EN: CFG.en } });
   child = p;
   return await new Promise<Voice | string>((resolve) => {
     let buf = "", ready = false;
@@ -271,10 +371,10 @@ async function startKokoro(): Promise<Voice | string> {
           ready = true; clearTimeout(timer);
           resolve({
             engine: "kokoro",
-            synth: (text) => new Promise<string>((ok, fail2) => {
+            synth: (text, o) => new Promise<string>((ok, fail2) => {
               const id = ++seq, out = join(dir, `${id}.wav`);
               waiting.set(id, { ok, fail: fail2, out });
-              p.stdin!.write(JSON.stringify({ id, text, out }) + "\n");
+              p.stdin!.write(JSON.stringify({ id, text, out, ...(o ? { voice: o.voice, lang: o.lang } : {}) }) + "\n");
             }),
             play: afplay,
           });
@@ -308,7 +408,7 @@ const real = createSpeaker({
   writeMuted(m) { mkdirSync(join(ROOT, "helper/.data"), { recursive: true }); writeFileSync(MUTE_FILE, JSON.stringify({ muted: m })); },
   cleanup(p) { try { rmSync(p, { force: true }); } catch { /* temp file */ } },
   now: Date.now,
-}, VOICE);
+}, CFG);
 
 export const speaker = real;
 // Only the process that started speech (the helper server) ever speaks. Before this, any script that imported decide()
@@ -317,7 +417,7 @@ export const speaker = real;
 let started = false;
 export const startSpeech = () => { started = true; return real.start(); };
 export const stopSpeech = () => real.stop();
-export const speak = (t: string) => { if (started) real.speak(t); };
+export const speak = (t: string, o?: SayOpts) => { if (started) real.speak(t, o); };
 export const interrupt = () => real.interrupt();
 export const setMuted = (m: boolean) => real.setMuted(m);
 export const speechStatus = () => real.status();
