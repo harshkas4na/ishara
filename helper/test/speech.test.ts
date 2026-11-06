@@ -163,7 +163,7 @@ test("interrupt mid-answer cuts every remaining sentence of a long answer", asyn
   assert.equal(r.playing.length, 1); // nothing from the old answer ever starts
 });
 
-test("voices: English sentences use the English voice, Hindi and Hinglish the Hindi one, per piece", async () => {
+test("voices: every sentence, English, Hindi or Hinglish, uses the English voice (English only since 6 Nov 2026)", async () => {
   const calls: { text: string; voice?: string; lang?: string }[] = [];
   const playing: { finish: () => void }[] = [];
   const sp = createSpeaker({
@@ -176,8 +176,8 @@ test("voices: English sentences use the English voice, Hindi and Hinglish the Hi
   }, { en: "af_heart", hi: "hf_alpha" });
   sp.speak("Click the Send button. यह बॉक्स है। Pehle address daalo, phir Send dabao.");
   await tick();
-  assert.deepEqual(calls.map((c) => [c.voice, c.lang]), [["af_heart", "en-us"], ["hf_alpha", "hi"], ["hf_alpha", "hi"]]);
-  assert.equal(calls[2].text, "पहले address डालो, फिर Send दबाओ।"); // Hinglish converted before synthesis
+  assert.deepEqual(calls.map((c) => [c.voice, c.lang]), [["af_heart", "en-us"], ["af_heart", "en-us"], ["af_heart", "en-us"]]);
+  assert.equal(calls[2].text, "Pehle address daalo, phir Send dabao."); // not converted to Devanagari: the Hindi voice is off
 });
 
 test("speaking events: first piece of each tagged sentence, in order, then idle after flush", async () => {

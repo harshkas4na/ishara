@@ -70,11 +70,16 @@ async function handle(msg, sender) {
       recTab = null;
       if (r.samples < 4000) return { error: "too short, hold the key while you speak" }; // under 0.25 s
       // Silence goes to Whisper as noise and comes back as a made-up word ("you"); refuse it here instead.
-      if (r.maxRms < 0.006) return { error: "I could not hear any sound from the microphone" };
+      // 0.003, not 0.006: the laptop's built-in mic without headphones peaked around the old floor for a normal voice.
+      const mic = String(r.mic || "?").replace(/[^\x20-\x7e]/g, "").slice(0, 60);
+      if (r.maxRms < 0.003) {
+        helper("/transcribe/silent", json({ mic, maxRms: r.maxRms }), 2000).catch(() => {}); // so the helper log names the device
+        return { error: "I heard only silence from “" + mic + "”. Check chrome://settings/content/microphone and pick your Mac's microphone." };
+      }
       const wav = fromBase64(r.wavBase64);
       return helper("/transcribe", {
         method: "POST",
-        headers: { "content-type": "audio/wav", "x-prompt": msg.prompt || "" },
+        headers: { "content-type": "audio/wav", "x-prompt": msg.prompt || "", "x-mic": mic, "x-max-rms": String(Math.round(r.maxRms * 10000) / 10000) },
         body: wav,
       });
     }

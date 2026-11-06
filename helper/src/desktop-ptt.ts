@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { desktopAsk, frontApp, isBrowserBundle, overlay, BROWSER_HINT, type FrontApp, type OverlayCmd } from "./desktop.ts";
 import { transcribe } from "./whisper.ts";
 import { minRms, transcribeGuarded } from "./transcript-guard.ts";
+import { parseWav, encodeWav } from "./chunk-audio.ts";
 import { interrupt } from "./speech.ts";
 import { desktopSay, stopTask, taskRunning } from "./desktop-act.ts";
 
@@ -23,7 +24,23 @@ export const PTT_BIN = fileURLToPath(new URL("../../desktop/ishara-ptt", import.
 // Same thresholds as the browser path (extension/background.js, content.js): under 0.25 s is a tap, under 0.006
 // RMS is silence that Whisper would turn into a made-up word, and a handful of stock phrases are what it says to noise.
 export const MIN_SAMPLES = 0.25 * 16000;
-export const MIN_RMS = minRms(); // ISHARA_MIN_RMS overrides; stock phrases and short words are judged by transcript-guard.ts
+// Desktop floor 0.003 (browser keeps 0.006: Chrome applies auto-gain, so its takes are ~25x louder). Measured 6 Nov 2026 on the
+// MacBook Air built-in mic: room 0.0006, Harsh's voice at the keyboard 0.005-0.007 on the raw daemon. ISHARA_MIN_RMS overrides.
+export const MIN_RMS = process.env.ISHARA_MIN_RMS ? minRms() : 0.003; // stock phrases and short words are judged by transcript-guard.ts
+
+/** A quiet take is raised to a normal level before Whisper hears it (the extension does the same: peak to 0.9, at most 8x),
+ *  so a near-silent take stays near-silent. Pure; returns the input unchanged when it is not canonical PCM16 mono or already loud. */
+export function boostQuiet(wav: Uint8Array): Uint8Array {
+  const pcm = parseWav(wav);
+  if (!pcm) return wav;
+  let peak = 0;
+  for (let i = 0; i < pcm.samples.length; i++) { const a = Math.abs(pcm.samples[i]); if (a > peak) peak = a; }
+  if (peak === 0 || peak >= 0.45 * 32767) return wav;
+  const gain = Math.min(8, (0.9 * 32767) / peak);
+  const out = new Int16Array(pcm.samples.length);
+  for (let i = 0; i < out.length; i++) out[i] = Math.max(-32768, Math.min(32767, Math.round(pcm.samples[i] * gain)));
+  return encodeWav(out, pcm.rate);
+}
 export const METER_EVERY_MS = 150; // overlay is a JSON line to another process; 8 Hz is smooth enough, 120 ms floods
 
 // Feedback timing. Capture has already started at the key-down; the pill appears FEEDBACK_AFTER_MS later so that a tap or an
@@ -86,6 +103,7 @@ export function createPtt(d: PttDeps) {
   async function onUp(ev: any): Promise<void> {
     const mine = gen;
     await frontCheck;                 // the browser check started at key-down; it is ~30 ms, usually long done
+    console.log(`[ptt] take: skipTake=${skipTake} samples=${Number(ev.samples) || 0} (min ${MIN_SAMPLES}) maxRms=${Number(ev.maxRms) || 0} (min ${MIN_RMS}) wav=${String(ev.wavBase64 ?? "").length} chars`); // diagnostic: why a take produced no turn
     if (skipTake) return;             // nothing was recorded for anyone: the hint stays on screen
     await take(ev, mine);
   }
@@ -250,7 +268,9 @@ function playTick(): void {
 
 const real = createPtt({
   send: (c) => overlay.send(c),
-  transcribe: (wav) => transcribeGuarded(wav, undefined, transcribe), // same guard as POST /transcribe
+  // Loudness was already judged on the raw take (take(): maxRms vs MIN_RMS), so the guard's own floor is 0 here: it used to
+  // re-test the whole clip's average against 0.006 and answer "I heard nothing" for a quiet but real voice.
+  transcribe: (wav) => transcribeGuarded(boostQuiet(wav), undefined, transcribe, 0),
   // desktopSay decides: an approval answer, "agent mode on/off", a task for the act loop (only while armed), else the tutor.
   ask: (q, signal) => desktopSay(q, { signal }),
   stopTask: () => (taskRunning() ? stopTask() : false),

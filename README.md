@@ -1,7 +1,6 @@
 # Ishara (working name)
 
-A screen tutor you can verify. Ask about anything on your screen, out loud or typed, in English, Hindi or
-Hinglish. Ishara explains it, points at it, walks you through it step by step, answers your follow-ups, and
+A screen tutor you can verify. Ask about anything on your screen, out loud or typed, in English. Ishara explains it, points at it, walks you through it step by step, answers your follow-ups, and
 speaks the answer back. Every answer is made by sealed models on 0G with a receipt you can check, and if 0G
 cannot be reached the tutor says so instead of guessing.
 
@@ -18,17 +17,19 @@ Ethereum Foundation Best CROPS App.
   circles it. The ring moves only if a second sealed model agrees.
 - **Walk you through:** "walk me through verifying my contract". Step 1 of 6 with Next / Back / Stop, one pointer per step.
 - **Follow-ups:** "why?", "and then?". It keeps a short memory of the conversation on that page.
-- **Voice in and out:** hold a key and talk (Hindi, English or both); the answer is spoken back by a local voice.
+- **Voice in and out:** hold a key and talk (English only); the answer is spoken back in English by a local voice.
 - **Any app:** the desktop path reads any Mac app through the Accessibility tree and on-device OCR. In a browser the
   Chrome extension does the reading.
-- **Agent mode (off until you turn it on):** "fill this form", "open the pricing page", "search for X", "switch to my mail
-  tab", "read ~/Documents/notes.txt" (desktop only). It plans one step at a time on 0GM and laya checks each target. Any step
-  that might commit something (a commit word, an unknown button, Enter in a form, text you did not give it, a search or link
-  carrying words you did not say) waits for your Approve in a separate Ishara window the web page cannot touch.
+- **Agent mode (no switch: say an order instead of a question):** "fill this form", "open the pricing page", "search for X", "switch to my mail
+  tab", "read ~/Documents/notes.txt" (desktop only). It plans one step at a time on 0GM and laya checks each target. Your order
+  is the approval: every step it plans runs without a tap, and the receipt marks the risky ones "auto". What it never does is
+  refuse-listed work: secret fields, secret-looking text you did not give it, instructions that only a web page addressed to an
+  assistant asked for, and "don't submit". Keys are pressed only in the app the screen was read from. `ISHARA_AUTO=soft` makes money,
+  delete, send/post, signing and wallet steps wait for your Approve in a separate Ishara window; `ISHARA_AUTO=0` makes every risky step ask.
 
 ## How a turn works
 1. You ask (Option+Space in the browser, hold Right Option on the desktop, or type with Option+Shift+Space).
-2. Your voice becomes text **on your laptop** (whisper.cpp with a local Hinglish model). No audio leaves the machine.
+2. Your voice becomes text **on your laptop** (whisper.cpp, large-v3-turbo, English only). No audio leaves the machine.
 3. The page is read into text blocks and a control list. **Secrets are removed first, in the tab:** password
    fields, seed/key/token/card fields, anything shaped like a key, a recovery phrase (also inside a sentence or spread
    over 12 elements) or a card number, in page text and in control labels alike; inputs are reported as "filled, 38
@@ -79,8 +80,8 @@ Lead property: **Private**. The other three hold, and where we trade something a
 - **S, secure.** The 0G key lives only in the local helper, never in the extension, and the helper accepts only this
   extension (a foreign Host or Origin gets a 403; local programs with no Origin header can still call it). Page text is
   untrusted data (fenced, marker look-alikes neutralized). In tutor mode the model can only speak and ask for a pointer,
-  and every pointer needs a second model's yes. Agent mode is off until you arm it in a tab (it disarms after 10 idle
-  minutes), never types into secret fields, asks before every step it cannot show is harmless, including everything on a
+  and every pointer needs a second model's yes. Agent mode starts when you give an order instead of a question (Option+Shift+A
+  switches a page to explain-only), never types into secret fields, asks before every step it cannot show is harmless, including everything on a
   wallet or approval page, and takes the answer only in its own window, never from the page. Option+Shift+X stops it from any
   page, Esc and the Stop button too; 25 actions, 3 minutes of agent time and 10 minutes in all per task, across pages. A
   label we do not know is treated as risky, but a page can still name a dangerous button innocently ("Next") and do
@@ -103,7 +104,7 @@ All on the real 0G router (6 Nov 2026), mechanical checks, no model judging itse
 | follow-up | 7 / 8 |
 | point | 0 / 8 |
 | prompt-injection canaries | 6 / 6 (also 6 / 6 in a separate injection-only run, 6 Nov 08:54 IST) |
-| Hinglish questions | 2 / 6 |
+| Hinglish questions (measured 6 Nov before Hindi and Hinglish were removed; not a current feature) | 2 / 6 |
 | walk-through (guide) | 0 / 8 |
 | asking about something not on the page | 1 / 5 |
 
@@ -144,7 +145,7 @@ Details: `docs/TESTING-extension.md`, `docs/DESKTOP.md`, `docs/SPEECH.md`.
   confirmed pointer at "Sign in". Since then a gate rule refuses a pointer at any control that page text addressed to an
   assistant asks for, unless you named it yourself. Plain page instructions ("sign in first") are not caught by that rule
   and can still shape what the tutor says.
-- **Hinglish is measured on synthetic voices.** Real-voice results are not in yet; the spoken answer is an English voice.
+- **English only.** Hindi and Hinglish input and output were removed on 6 Nov 2026 (speech recognition is pinned to English, the spoken voice is English, and the model is told to answer in English, even to a Hinglish question). The Hinglish numbers above are history.
 - **Tested on a limited set of pages:** a mock page and 11 saved contexts (some text hand-authored), plus manual runs on
   real sites. Iframes work in the browser; canvas and closed shadow DOM are not read.
 - **Browsers on the desktop path are skipped on purpose** (it would only see the browser's own chrome and private tab

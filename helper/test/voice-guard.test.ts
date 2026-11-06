@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { guardTranscript, devanagariToRoman, transcribeGuarded, minRms } from "../src/transcript-guard.ts";
 import { splitRanges, splitWav, encodeWav, parseWav, CHUNK_SEC } from "../src/chunk-audio.ts";
-import { pickModel, HINGLISH_MODEL, SMALL_MODEL, serverArgs } from "../src/whisper.ts";
+import { pickModel, HINGLISH_MODEL, TURBO_MODEL, SMALL_EN_MODEL, SMALL_MODEL, serverArgs } from "../src/whisper.ts";
 
 test("guard drops whisper's stock output", () => {
   for (const t of ["[BLANK_AUDIO]", "(music)", "♪♪", "you", "You.", "Thank you.", "Thanks for watching!", "bye", "the", "uh", "Um...", "Hmm.", "...", "nan", "you you you", "[Music] (applause)"]) {
@@ -96,11 +96,13 @@ test("transcribeGuarded: JSON shape, accepted, rejected, silent", async () => {
 });
 
 // ---- model selection ----
-test("model order: env, then Hinglish, then small, else none", () => {
+test("model order: env, then large-v3-turbo, then small.en, then small, else none; never the Hinglish model", () => {
   const has = (...p: string[]) => (f: string) => p.includes(f);
   assert.deepEqual(pickModel({ ISHARA_WHISPER_MODEL: "/x/m.bin" }, has("/x/m.bin", HINGLISH_MODEL)), { path: "/x/m.bin", hinglish: false });
-  assert.equal(pickModel({ ISHARA_WHISPER_MODEL: "/missing.bin" }, has(HINGLISH_MODEL, SMALL_MODEL))!.path, HINGLISH_MODEL);
-  assert.deepEqual(pickModel({}, has(HINGLISH_MODEL, SMALL_MODEL)), { path: HINGLISH_MODEL, hinglish: true });
+  assert.equal(pickModel({ ISHARA_WHISPER_MODEL: "/missing.bin" }, has(HINGLISH_MODEL, TURBO_MODEL, SMALL_MODEL))!.path, TURBO_MODEL);
+  assert.deepEqual(pickModel({}, has(HINGLISH_MODEL, TURBO_MODEL, SMALL_MODEL)), { path: TURBO_MODEL, hinglish: false });
+  assert.deepEqual(pickModel({}, has(HINGLISH_MODEL, SMALL_EN_MODEL, SMALL_MODEL)), { path: SMALL_EN_MODEL, hinglish: false });
+  assert.deepEqual(pickModel({}, has(HINGLISH_MODEL, SMALL_MODEL)), { path: SMALL_MODEL, hinglish: false }); // the Hinglish model alone is never used
   assert.deepEqual(pickModel({}, has(SMALL_MODEL)), { path: SMALL_MODEL, hinglish: false });
   assert.equal(pickModel({}, has()), null);
 });

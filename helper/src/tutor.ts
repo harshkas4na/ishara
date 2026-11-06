@@ -64,6 +64,13 @@ function launchPointer(ctl: Ctl, deps: TutorDeps, question: string, ctx: PageCon
     then?.();
     return;
   }
+  // "Where is the X button/field/link" asks for something to act on. A heading or paragraph is never that, so a ring on text is a wrong
+  // point (seen on the wallet page: the ring sat on the heading "Connect a wallet", which is not a button).
+  if (kind === "block" && /^\s*(where|which|find|show me|point)\b/i.test(question) && /\b(button|field|input|box|checkbox|dropdown|link|toggle|switch|menu|tab)\b/i.test(question)) {
+    ctl.ch.push({ event: "point", data: { seq, targetId: id, kind, status: "rejected", reason: "not pointing: you asked for a control and that target is text, not a control" } });
+    then?.();
+    return;
+  }
   const p = (async () => {
     let v: PointerVerdict;
     try { v = await deps.checkPointer(question, { id, kind, label: target.label, ...(target.role ? { role: target.role } : {}), ...(sentence ? { sentence } : {}) }); }

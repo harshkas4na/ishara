@@ -62,9 +62,7 @@ def main():
         emit({"event": "error", "error": f"unknown voice {VOICE}"})
         sys.exit(3)
     k.create("Ready.", voice=VOICE, speed=SPEED, lang="en-us")  # first call compiles kernels; pay it now, not on the first answer
-    # Pay the Hindi front-end and kernel cost now too: a first Hindi sentence must not be the slow one.
-    if "hf_alpha" in k.get_voices():
-        k.create("नमस्ते।", voice="hf_alpha", speed=SPEED, lang="hi")
+    # (Hindi warm-up removed 6 Nov 2026: English only, so the Hindi front-end is never loaded.)
     emit({"event": "ready", "voice": VOICE, "voices": sorted(k.get_voices()), "sr": SR, "load_ms": int((time.time() - t0) * 1000)})
     for line in sys.stdin:  # EOF (the helper died) ends the loop, so this process never outlives it
         try:

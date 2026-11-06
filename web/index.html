@@ -22,15 +22,27 @@ const list = el("ul", { class: "sessions" }); const box = el("div", { class: "ca
     const data = await getJson("/sessions", "sessions");
     const ss = (data.sessions || []).slice().sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
     if (!ss.length) { list.append(el("li", { class: "muted", text: "No sessions yet. Ask Ishara a question, then end the session." })); return; }
-    for (const s of ss) {
+    // Default view: real sessions stored on 0G. Local-only and test-router sessions (evals, smoke runs) sit behind a toggle.
+    const isMain = (s) => !!s.root && !s.testRouter;
+    const mainCount = ss.filter(isMain).length;
+    let showAll = mainCount === 0;
+    const toggle = el("button", { class: "btnlink", style: "margin-bottom:10px;cursor:pointer", text: "" });
+    const draw = () => {
+      list.replaceChildren();
+      for (const s of (showAll ? ss : ss.filter(isMain))) list.append(row(s));
+      toggle.textContent = showAll ? `Show only sessions stored on 0G (${mainCount})` : `Show all ${ss.length} sessions, including local-only and test runs`;
+    };
+    if (mainCount > 0) { toggle.onclick = () => { showAll = !showAll; draw(); }; box.before(toggle); }
+    const row = (s) => {
       const stored = !!s.root;
-      list.append(el("li", {},
+      return (el("li", {},
         el("div", {}, el("b", { text: s.sessionId }),
           s.testRouter ? el("span", { class: "chip", style: "margin-left:8px;background:#f59e0b;color:#1c1100;border-color:#b45309", text: "TEST ROUTER, not 0G" }) : null,
           el("div", { class: "muted", text: `${fmtTime(s.startedAt)} · ${s.decisions} decision${s.decisions === 1 ? "" : "s"}` }),
           stored ? el("div", {}, el("span", { class: "muted", text: "stored on 0G, root " }), hashView(s.root)) : el("div", { class: "muted", text: "not stored on 0G yet (local copy only)" })),
         el("a", { class: "btnlink", href: "replay.html?session=" + encodeURIComponent(s.sessionId), text: stored ? "Replay" : "View local log" })));
-    }
+    };
+    draw();
   } catch (e) {
     box.replaceChildren(el("div", { class: "verdict bad", text: "Cannot reach the Ishara helper." }, el("small", { text: "Start it with `npm run helper`, then reload. (" + e.message + ")" })));
   }

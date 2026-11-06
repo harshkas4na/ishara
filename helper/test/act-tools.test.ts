@@ -261,7 +261,7 @@ test("fake router: search then read the results page then done (testRouter flagg
   assert.equal(evs.at(-1).data.testRouter, true);
   assert.equal(evs.find((e) => e.event === "action").data.risk, "low");
 });
-test("fake router: read_file in the browser-only run is refused by the route, not by guess", async () => {
+test("fake router: read_file in a browser task is run by the helper, not by the page", async () => {
   const evs = await viaRouter("read my notes file", async () => ({ ok: true, detail: "should not run" }));
   assert.equal(evs.find((e) => e.event === "action").data.action.type, "read_file");
 });

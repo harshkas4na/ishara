@@ -12,10 +12,13 @@ Private mode (verified: returns proper tool calls in ~2 s). So: **0GM plans, ids
 executors act, everything gets a receipt.** `cua-driver` stays an option only if our own executors prove too weak.
 
 ## Principles (non-negotiable)
-1. **Armed or nothing.** Agent mode is OFF by default. It is turned on per TAB (browser: Option+Shift+A) and turns itself off
-   after 10 minutes without a task; a task that moves to another tab carries its arming with it. Turning it off in any tab turns it
-   off everywhere and stops every task. A page load never resumes a task in an unarmed tab (desktop: say "agent mode on" or the
-   same hotkey chord). When off, a task request gets "Turn on Agent mode and I will do that" and nothing moves.
+1. **Asking is arming (changed 6 Nov evening, Harsh's call).** There is no separate switch to start: an ORDER said or typed to the
+   normal key (browser: Option+Space or the Option+Shift+Space box; desktop: hold Right Option) runs as a task, and a QUESTION gets
+   the tutor. `isTask` (extension/act.js) and `isTaskUtterance` (desktop-act.ts) tell them apart by the first verb ("open",
+   "fill", "type", "click", "kholo", "bharo"...; "how do I…", "where is…" stay questions). Option+Shift+A (browser) or "agent mode
+   off" (desktop) switches to explain-only, where an order gets "Turn on Agent mode and I will do that". The original rule was
+   "off until armed", so that a question worded like an order could never move anything; what now keeps that safe is the risk
+   rules below (anything that commits waits for Approve), not the switch.
 2. **Visible and stoppable.** The cursor travels to each target before the action; the pill says what it is doing ("Step 3: typing
    your name"). **Option+Shift+X** (a browser command: no page can intercept it) stops every task and disarms; Esc, the pill's
    Stop button, the Stop button in the approval window, or a tap of Right Option (desktop) stop too. The loop checks the stop

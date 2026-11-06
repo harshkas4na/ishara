@@ -48,7 +48,10 @@ const STRONG = new Set(Object.keys(H).filter((k) => !LOOKALIKE.has(k)));
 
 const wordsOf = (s: string) => (s.toLowerCase().match(/[a-zऀ-ॿ']+/g) ?? []);
 
-export function detectLang(text: string): Lang {
+// English only (Harsh, 6 Nov 2026): the Hindi voice and the Hinglish transliteration are switched off, so every sentence is "en".
+// The detection below is kept for the day Hindi comes back; `detectLangFull` is what detectLang used to be.
+export function detectLang(_text: string): Lang { return "en"; }
+export function detectLangFull(text: string): Lang {
   const deva = (text.match(/[ऀ-ॿ]/g) ?? []).length;
   const letters = (text.match(/[A-Za-zऀ-ॿ]/g) ?? []).length;
   if (deva > 0 && deva >= letters * 0.3) return "hi"; // a Devanagari sentence, even with a few English words in it
@@ -85,7 +88,5 @@ export function voiceConfig(env: Record<string, string | undefined> = process.en
 }
 // What to synthesise for one sentence: the text (converted for Hinglish), the voice and the espeak language code.
 export function pickVoice(sentence: string, cfg: VoiceConfig = voiceConfig()): VoicePick {
-  const l = detectLang(sentence);
-  if (l === "en") return { voice: cfg.en, lang: langOfVoice(cfg.en), text: sentence };
-  return { voice: cfg.hi, lang: "hi", text: l === "hinglish" ? hinglishToDevanagari(sentence) : sentence };
+  return { voice: cfg.en, lang: langOfVoice(cfg.en), text: sentence }; // English voice only; the Hindi branch (cfg.hi, hinglishToDevanagari) is off
 }

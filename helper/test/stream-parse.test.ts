@@ -100,3 +100,9 @@ test("cleanSpoken leaves no empty or punctuation-only sentence", () => {
   assert.equal(cleanSpoken("[POINT:b7]"), "");
   assert.deepEqual(says(run(["[POINT:b7] . ! ?"])), []);
 });
+test("6 Nov evening: a sentence that ended where the pointer marker was still reads as a sentence", async () => {
+  const { cleanSpoken } = await import("../src/stream-parse.ts");
+  assert.equal(cleanSpoken("The equals button is at [POINT:b21]."), "The equals button is here.");
+  assert.equal(cleanSpoken("Click [POINT:b4]."), "Click this.");
+  assert.equal(cleanSpoken("The Save button is in the top right [POINT:b3]."), "The Save button is in the top right.");
+});

@@ -8,6 +8,8 @@ import { actTools, ACT_TOOL_CHOICE, buildActMessages } from "../src/act-prompt.t
 import { runAct, newState, type ActDeps } from "../src/act-loop.ts";
 import { verifyCtx } from "./act-helpers.ts";
 
+process.env.ISHARA_AUTO = "0"; // these tests are about the ask-before-a-risky-step path; act-auto.test.ts covers the default (auto) levels
+
 let server: ReturnType<typeof createFakeRouter>; let base = "";
 before(async () => { server = createFakeRouter(); await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r())); base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`; });
 after(() => { server.closeAllConnections(); server.close(); for (const k of ["ISHARA_ROUTER_URL", "FAKE_ROUTER_MODE", "FAKE_ACT_STYLE", "ISHARA_ACT_SCHEMA"]) delete process.env[k]; });

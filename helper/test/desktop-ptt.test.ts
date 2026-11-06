@@ -73,7 +73,7 @@ test("too short is refused without transcribing", async () => {
   assert.equal(r.transcribed.length, 0);
 });
 test("silence is refused with the browser's wording", async () => {
-  const r = rig(); r.line(up({ maxRms: 0.004 })); await tick();
+  const r = rig(); r.line(up({ maxRms: 0.002 })); await tick(); // below the desktop floor (0.003); room noise measured 0.0006
   assert.match((r.sent.at(-1) as any).text, /I could not hear any sound from the microphone/);
   assert.equal(r.transcribed.length, 0); assert.equal(r.asked.length, 0);
 });

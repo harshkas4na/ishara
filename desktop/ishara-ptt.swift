@@ -112,9 +112,28 @@ final class Recorder {
             }
         }
     }
-    private func consume(_ buf: AVAudioPCMBuffer) {
+    /// Average all channels into one mono float buffer. AVAudioConverter's own down-mix of a multi-channel input that has no
+    /// stereo/mono layout (the MacBook Air's built-in mic: 3 discrete channels) outputs digital silence (measured 6 Nov 2026:
+    /// raw channel peak 0.0166, converted peak 0), so the mix is done here and the converter only resamples one channel.
+    private func monoMix(_ buf: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
+        let ch = Int(buf.format.channelCount)
+        guard ch > 1, buf.format.commonFormat == .pcmFormatFloat32, let src = buf.floatChannelData,
+              let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buf.format.sampleRate, channels: 1, interleaved: false),
+              let out = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: buf.frameLength), let dst = out.floatChannelData?[0] else { return buf }
+        let n = Int(buf.frameLength)
+        if buf.format.isInterleaved {
+            let p = src[0]
+            for i in 0..<n { var s: Float = 0; for c in 0..<ch { s += p[i * ch + c] }; dst[i] = s / Float(ch) }
+        } else {
+            for i in 0..<n { var s: Float = 0; for c in 0..<ch { s += src[c][i] }; dst[i] = s / Float(ch) }
+        }
+        out.frameLength = buf.frameLength
+        return out
+    }
+    private func consume(_ raw: AVAudioPCMBuffer) {
         lock.lock(); let on = running; lock.unlock()
         guard on else { return } // a warm engine between takes delivers buffers that belong to nobody: drop them unconverted
+        let buf = monoMix(raw)
         let inFmt = buf.format
         if convFrom == nil || convFrom! != inFmt { conv = AVAudioConverter(from: inFmt, to: outFmt); convFrom = inFmt }
         guard let conv = conv, inFmt.sampleRate > 0 else { return }

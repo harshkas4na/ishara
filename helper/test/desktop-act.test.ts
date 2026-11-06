@@ -118,7 +118,7 @@ test("in a browser, DOM actions say 'use the browser extension' and nothing runs
     assert.equal(rec.ran.length, 0);
   }
   for (const a of [{ type: "key", combo: "cmd+t" }, { type: "copy", text: "x" }, { type: "open_app", name: "Notes" }, { type: "open_url", url: "https://a.com" }, { type: "screenshot", to: "file" }, { type: "quit_app", name: "Notes" }] as any[]) {
-    const { rec, deps, c } = fakes({}, undefined, "com.google.Chrome");
+    const { rec, deps, c } = fakes({ bundleId: () => "com.google.Chrome" }, undefined, "com.google.Chrome"); // screen read from the browser too
     const r = await executeDesktopAction(a, c, deps);
     assert.equal(r.ok, true, a.type); assert.equal(rec.ran.length, 1);
   }
@@ -270,9 +270,13 @@ const routeDeps = () => {
     speak: () => {},
   } };
 };
-test("agent mode starts OFF; a task while off gets the hint and nothing is posted", async () => {
-  const r = routeDeps();
+test("a task said to the normal push-to-talk runs without arming first (Harsh, 6 Nov); after 'agent mode off' it gets the hint", async () => {
+  const r0 = routeDeps();
   assert.equal(agentState().armed, false);
+  assert.equal((await desktopSay("open TextEdit and type hello", r0.deps)).outcome, "task");
+  resetAgentState();
+  const r = routeDeps();
+  await desktopSay("agent mode off", r.deps); r.sent.length = 0;
   const out = await desktopSay("open TextEdit and type hello", r.deps);
   assert.equal(out.outcome, "hint");
   assert.deepEqual(r.sent, [{ cmd: "ask", text: "Turn on Agent mode and I will do that." }]);
@@ -408,4 +412,24 @@ test("selectorsFromRaw pairs raw selectors with built control ids, and drops mal
   assert.equal(m.get(c.controls[0].id)?.index, 0);
   assert.equal(m.get(c.controls[2].id)?.index, 1);
   assert.equal(m.get(c.controls[4].id)?.secure, true);
+});
+test("audit 5: pointing questions and the walk-through are never orders", async () => {
+  const A = (await import("../../extension/act.js")).default ?? (globalThis as any).Ishara.act;
+  for (const q of ["find the save button", "can you find the license field", "start the walkthrough", "where do I click", "walk me through this page", "read this page to me"]) {
+    assert.equal(isTaskUtterance(q), false, "desktop: " + q); assert.equal(A.isTask(q), false, "browser: " + q);
+  }
+  for (const q of ["Can you open Telegram?", "Opening slack", "fill the name with Harsh", "copy the address", "open the settings page"]) {
+    assert.equal(isTaskUtterance(q), true, "desktop: " + q); assert.equal(A.isTask(q), true, "browser: " + q);
+  }
+});
+
+test("keys are never pressed in a different app than the screen was read from (6 Nov: Cmd+W landed in the Terminal after Calculator quit)", async () => {
+  const c = ctx(); let ran = 0;
+  const mk = (frontId: string) => desktopExecutorFor("act-front-" + frontId, { run: async () => { ran++; return { ok: true, detail: "ok" }; }, send: () => {}, readContext: async () => c, front: async () => ({ app: "x", bundleId: frontId }), sleep: async () => {}, bundleId: () => "com.apple.calculator" });
+  const away = await mk("com.apple.Terminal")({ type: "key", combo: "cmd+w" }, c);
+  assert.equal(away.ok, false); assert.match(away.detail, /front app changed/); assert.equal(ran, 0);
+  const tabAway = await mk("com.apple.Terminal2")({ type: "tab", op: "close" }, c);
+  assert.equal(tabAway.ok, false); assert.equal(ran, 0);
+  const same = await mk("com.apple.calculator")({ type: "key", combo: "cmd+w" }, c);
+  assert.equal(same.ok, true); assert.equal(ran, 1);
 });

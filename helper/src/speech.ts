@@ -126,9 +126,11 @@ export type Engine = "kokoro" | "system" | "none";
 // `ms` (optional) is the known length of the audio. afplay keeps running 0.4 to 0.9 s after the sound has ended
 // (measured here: a 3.18 s clip takes 3.87 s from spawn to exit), so waiting for it to exit before starting the
 // next sentence put an audible half-second hole after every sentence. With `ms`, the next piece is started
-// LEAD_MS before the sound ends (afplay needs ~0.2 s to start making sound), and the old process just finishes.
+// Starting it 250 ms BEFORE the sound ended (the old LEAD_MS) clipped the end of every sentence and left no breath between
+// lines (Harsh, 6 Nov evening: "it starts the second line without completing the first"). Now the next piece starts
+// PAUSE_MS AFTER the sound ends; afplay's own ~0.2 s start-up adds to that, so lines are ~0.35 s apart, like speech.
 export type Playing = { done: Promise<void>; kill(): void; ms?: number };
-export const LEAD_MS = Number(process.env.ISHARA_VOICE_LEAD_MS ?? 250);
+export const PAUSE_MS = Number(process.env.ISHARA_VOICE_PAUSE_MS ?? 150);
 export type Voice = {
   engine: Engine;
   // Synthesise one piece to a WAV file and resolve its path; reject on failure. Absent for the "system" engine.
@@ -278,8 +280,8 @@ export function createSpeaker(d: SpeechDeps, cfg: VoiceConfig = voiceConfig(), m
           if (p.tag !== undefined && !muted) { announced = true; fire(() => hooks.onSentenceStart?.(p.tag!, p.shown ?? p.text)); }
           fill(); // start making the next pieces now, while this one plays
           if (!firstDone) { firstDone = true; lastFirst = d.now() - answerStart; }
-          // Wait for the sound to end: by its known length minus the lead when we have one, else for the exit.
-          const early = pl.ms !== undefined ? new Promise<void>((r) => setTimeout(r, Math.max(0, pl.ms! - LEAD_MS))) : null;
+          // Wait for the sound to END plus a short breath when its length is known (not for afplay's slow exit), else for the exit.
+          const early = pl.ms !== undefined ? new Promise<void>((r) => setTimeout(r, Math.max(0, pl.ms! + PAUSE_MS))) : null;
           try { await (early ? Promise.race([pl.done, early]) : pl.done); pieces++; if (p.last) spoken++; } catch (e: any) { lastError = String(e?.message ?? e); }
           lastEnd = d.now(); // maxGapMs = how late the NEXT piece was started after this one was due (0 = on time)
           if (current === pl) current = null;

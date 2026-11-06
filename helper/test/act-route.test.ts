@@ -6,6 +6,8 @@ import { handleActRoute, ActRuns, TaskChains, type ActRouteDeps } from "../src/a
 import type { AskActResult } from "../src/zg.ts";
 import { verifyCtx, page } from "./act-helpers.ts";
 
+process.env.ISHARA_AUTO = "0"; // these tests are about the ask-before-a-risky-step path; act-auto.test.ts covers the default (auto) levels
+
 const ctx = verifyCtx();
 const A = (action: any, say = "Doing it"): AskActResult => ({ ok: true, args: { action, say }, raw: "", requestId: "r-" + Math.random().toString(16).slice(2, 8), ms: 1 });
 const body = (o: any = {}) => JSON.stringify({ sessionId: "s", task: "click the Verify and Publish button", context: ctx, executor: "client", armed: true, actId: "act-route-0001", ...o });
@@ -259,8 +261,10 @@ test("audit 4 1.7: POST /act/stop {all:true} stops every task; a handoff stop is
 });
 test("audit 4 1.5: notes from earlier pages are data for the model, never the person's words", async () => {
   const f = page([["b1", "input", "Email"], ["b2", "button", "Proceed"]]);
+  const was = process.env.ISHARA_AUTO; process.env.ISHARA_AUTO = "0"; // ask-first path; auto mode runs a soft "Proceed" on the person's order
   const t = await start([A({ type: "click", id: "b2" })], { limits: { approvalMs: 50 } });
   const e = events(await (await t.post("/act", JSON.stringify({ sessionId: "s", task: "fill my email", history: ["Pressing “Proceed”"], context: f, executor: "client", armed: true, actId: "act-route-0004" }))).text());
+  if (was === undefined) delete process.env.ISHARA_AUTO; else process.env.ISHARA_AUTO = was;
   assert.ok(e.some((x) => x.event === "approval"), "Proceed still needs a tap");
   t.close();
 });
@@ -273,5 +277,13 @@ test("audit 4 section 5: typed text never reaches the receipts, only its length"
   await (await p).text();
   assert.doesNotMatch(t.records.at(-1).reason, /harsh@example\.com/);
   assert.match(t.records.at(-1).reason, /<17 chars>/);
+  t.close();
+});
+test("6 Nov evening: 'open Slack' asked in the BROWSER is run by the helper's desktop executor, not refused by the page", async () => {
+  const ran: any[] = [];
+  const t = await start([A({ type: "open_app", name: "Slack" }), A({ type: "done", say: "Opened Slack." })], { helperExecute: async (a) => { ran.push(a); return { ok: true, detail: "opened Slack" }; } });
+  const e = events(await (await t.post("/act", body({ task: "open Slack", actId: "act-route-0009", executor: "client" }))).text());
+  assert.deepEqual(ran, [{ type: "open_app", name: "Slack" }]);
+  assert.deepEqual(e.map((x) => x.event), ["thinking", "action", "result", "thinking", "done"]);
   t.close();
 });

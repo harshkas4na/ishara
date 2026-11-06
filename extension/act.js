@@ -25,14 +25,15 @@
   const POLITE = /^(?:(?:hey|hi|ok|okay|so|ishara|buddy)[\s,]+)*(?:(?:please|kindly|just|now|then|and|also|next|after that)[\s,]+)*(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|i\s+(?:want|need|would\s+like)\s+you\s+to\s+|you\s+(?:can|should|need\s+to)\s+|zara\s+|ab\s+)?(?:(?:please|kindly|just|now|then|and|also)[\s,]+)*/;
   const QUESTION = /^(?:what|what's|whats|where|where's|why|how|which|who|whom|whose|when|is|are|was|were|am|does|did|do|can|could|would|will|should|shall|may|might|has|have|kya|kaise|kaisa|kaisi|kahan|kahaan|kyun|kyon|kaun|kab|kitna|kitne|kitni|konsa|konsi)\b/;
   const VERB = new RegExp("^(?:" + [
-    "open", "go to", "goto", "go back", "go forward", "navigate", "visit", "browse to", "click", "double click", "right click", "press", "tap", "hit",
+    "open", "launch", "write", "bring up", "pull up", "go to", "goto", "go back", "go forward", "navigate", "visit", "browse to", "click", "double click", "right click", "press", "tap", "hit",
     "fill", "fill in", "fill out", "type", "enter", "write in", "scroll", "copy", "paste", "play", "pause", "resume", "search", "look up", "select", "choose",
     "pick", "tick", "untick", "check", "uncheck", "toggle", "close", "reload", "refresh", "take a screenshot", "take screenshot", "screenshot", "capture",
     "submit", "send", "download", "mute", "unmute", "dismiss", "accept", "decline", "expand", "collapse", "log in", "login", "sign in", "switch to",
     "turn on", "turn off", "do this", "do that", "do it", "do the same", "start", "stop the video", "skip", "like", "subscribe", "add to cart", "scroll down", "scroll up",
   ].join("|") + ")\\b");
   // "check if it is right" and "enter into a discussion" are not UI tasks; "check the box" is.
-  const NOT_TASK_AFTER = /^(?:check\s+(?:if|whether|that|why|how|what)\b|search\s+(?:engine|results\s+mean)\b)/;
+  // "find the save button" asks WHERE it is (a pointer), and "start the walkthrough" asks for the tutor's guide: not orders.
+  const NOT_TASK_AFTER = /^(?:check\s+(?:if|whether|that|why|how|what)\b|search\s+(?:engine|results\s+mean)\b|(?:start|begin)\s+(?:the\s+|a\s+)?(?:walk|tour|guide|tutorial|explain|lesson))/;
   // Hinglish: the verb comes last ("youtube kholo", "form bharo", "yahan click karo", "band karo").
   const HINGLISH = /\b(?:kholo|khol\s+do|khol\s+dijiye|karo|kar\s+do|kijiye|kar\s+dijiye|bharo|bhar\s+do|likho|likh\s+do|chalao|chala\s+do|band\s+karo|band\s+kar\s+do|dabao|daba\s+do|chuno|utha\s+lo|badlo|hatao)\b/;
 
@@ -45,13 +46,16 @@
     if (QUESTION.test(stripped)) return false;
     if (HINGLISH.test(stripped)) return true;
     if (NOT_TASK_AFTER.test(stripped)) return false;
+    // What speech-to-text often hears instead of the order: "Opening Slack", "Launching Notes".
+    if (/^(?:opening|launching|starting|closing|typing|writing|searching|playing|copying|pasting|scrolling|filling)\s+\S/.test(stripped)) return true;
     return VERB.test(stripped);
   }
 
   // ---- Action validation (the helper validates too; this is the guard at the door of the executor) ----
   const ID_RE = /^[bt]\d{1,5}$/;
   const SIMPLE = new Set(["click", "type", "select", "check", "key", "scroll", "open_url", "search", "tab", "copy", "screenshot", "wait"]);
-  const NOT_BROWSER = new Set(["open_app", "quit_app", "read_file"]); // read_file is the helper's, desktop only: a page never reads the disk
+  const NOT_BROWSER = new Set(["open_app", "quit_app", "read_file"]); // never run by the page: the helper runs these (a page never reads the disk)
+  const HELPER_RUNS = NOT_BROWSER;
   // Same three engines and addresses as the helper's searchUrl (helper/src/act.ts). https only, the query URL-encoded.
   const ENGINES = { brave: "https://search.brave.com/search?q=", google: "https://www.google.com/search?q=", duckduckgo: "https://duckduckgo.com/?q=" };
   const TAB_OPS = ["switch", "close", "back", "forward", "new"];
@@ -711,7 +715,10 @@
     const say = (d.say && String(d.say).trim()) || describe(a, label);
     const J = { d, a, n, target, label, say };
     ui.step(n, say.replace(/[.!]+$/, ""));
-    if (cfg.speak && d.say) tp().post("/speech/say", { text: String(d.say).slice(0, 300) });
+    if (cfg.speak && d.say) tp().post("/speech/say", { text: String(d.say).slice(0, 300), queue: true }); // never cut the previous step's line
+    // Opening/quitting a Mac app and reading a file are done by the helper itself (act-route.ts HELPER_RUNS): show the step, run nothing,
+    // report nothing; the helper sends the result and the next step.
+    if (HELPER_RUNS.has(a.type)) { R.done = d.n; R.acting = false; R.history.push(say.replace(/[.!]+$/, "").slice(0, 80)); return; }
     if (d.point && d.point.status && d.point.status !== "confirmed" && a.id) return report(R, J, fail("the control was not confirmed as the right one"));
     if (a.id && !target) return report(R, J, fail("I can't find that control on the page"));
     if (target) {
@@ -789,7 +796,7 @@
     approvalState = null; runState = null;
     tp().state.clear();
     ui.end(kind, d && d.say, undefined);
-    if (cfg.speak && d && d.say && kind !== "stopped") tp().post("/speech/say", { text: String(d.say).slice(0, 300) }).catch?.(() => {});
+    if (cfg.speak && d && d.say && kind !== "stopped") tp().post("/speech/say", { text: String(d.say).slice(0, 300), queue: true }).catch?.(() => {});
     document.dispatchEvent(new CustomEvent("ishara-act-end", { detail: { kind } })); // measurement hook for the tests
   }
 

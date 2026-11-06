@@ -23,18 +23,33 @@ function start() {
   if (rec) return Promise.resolve({});
   clearTimeout(idleTimer);
   // The take exists from this instant, so no chunk delivered after it is ever dropped, even while the graph is still opening.
+  // A warm stream bound to a mic that is gone (headphones unplugged, Bluetooth off) keeps delivering silence without "ended".
+  // Reuse it only while its track is really live; otherwise open a fresh one on the CURRENT default mic (Harsh, 6 Nov evening).
+  if (warm && !trackOk(warm.stream)) { teardown(); }
   rec = { chunks: [], maxRms: 0, t0: performance.now(), live: false, warm: !!warm, openMs: 0, sinceLevel: 0 };
   if (warm) return Promise.resolve({ warm: true });
   if (!starting) starting = open().finally(() => { starting = null; });
   return starting;
 }
 
+function trackOk(stream) {
+  const t = stream && stream.getAudioTracks()[0];
+  return !!t && t.readyState === "live" && !t.muted && t.enabled;
+}
+// Plugging or unplugging headphones changes the default mic: drop the warm stream so the next press opens the new one.
+navigator.mediaDevices.addEventListener?.("devicechange", () => { if (warm && !rec) teardown(); else if (warm) warmStale = true; });
+let warmStale = false;
+
 async function open() {
   const t = performance.now();
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      // Echo cancellation stays (the spoken answer comes out of the same laptop speakers); noise suppression is off because on
+      // the built-in mic at arm's length it pushed a normal voice under the loudness floor. Gain control helps the quiet mic.
+      // deviceId "default" = the Mac's own default input (the one desktop mode hears fine). Without it Chrome uses ITS preferred
+      // mic from chrome://settings/content/microphone, which can be a virtual device or absent headphones: pure silence.
+      audio: { deviceId: "default", channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: true },
     });
   } catch (e) {
     rec = null;
@@ -62,7 +77,8 @@ async function open() {
   // The processor only runs when connected onward; a zero-gain node keeps it silent.
   const mute = ctx.createGain(); mute.gain.value = 0;
   src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
-  warm = { stream, ctx, src, proc, mute };
+  const tr = stream.getAudioTracks()[0];
+  warm = { stream, ctx, src, proc, mute, label: tr ? String(tr.label || tr.getSettings?.().deviceId || "?") : "?" };
   if (rec) rec.openMs = Math.round(performance.now() - t);
   // The OS can end the track (device unplugged, permission revoked): forget the graph so the next press opens a fresh one.
   stream.getAudioTracks()[0]?.addEventListener("ended", () => { if (warm && warm.stream === stream) teardown(); });
@@ -85,6 +101,9 @@ async function stop() {
   if (!rec.live) await new Promise((res) => { rec.onLive = res; setTimeout(res, 400); });
   const { chunks, maxRms } = rec;
   rec = null;
+  // A silent take means this stream hears nothing: drop it so the next press opens the mic afresh.
+  if (warmStale || maxRms < 0.003) { warmStale = false; setTimeout(() => { if (!rec) teardown(); }, 0); }
+  const mic = warm ? warm.label : "?";
   // Keep the graph warm for the next question; close it WARM_MS after the last use.
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => { if (!rec) teardown(); }, WARM_MS);
@@ -92,7 +111,12 @@ async function stop() {
   const total = chunks.reduce((n, c) => n + c.length, 0);
   const all = new Float32Array(total);
   let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
-  return { wavBase64: toBase64(encodeWav(all, rate)), samples: total, rate, maxRms };
+  // A quiet mic (the laptop's own, from a distance) is raised to a normal level before Whisper hears it: peak to 0.9, at most
+  // 8x, so a near-silent take stays near-silent and is still refused by the loudness floor (which uses the raw maxRms).
+  let peak = 0; for (let i = 0; i < all.length; i++) { const a = Math.abs(all[i]); if (a > peak) peak = a; }
+  const gain = peak > 0 && peak < 0.45 ? Math.min(8, 0.9 / peak) : 1;
+  if (gain !== 1) for (let i = 0; i < all.length; i++) all[i] *= gain;
+  return { wavBase64: toBase64(encodeWav(all, rate)), samples: total, rate, maxRms, gain, mic };
 }
 
 chrome.runtime.onMessage.addListener((msg, _s, send) => {

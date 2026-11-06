@@ -112,8 +112,19 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/transcribe") {
       const wav = await readBody(req);
       const prompt = typeof req.headers["x-prompt"] === "string" ? req.headers["x-prompt"] : undefined;
-      try { return send(res, 200, await transcribeGuarded(wav, prompt, transcribe)); } // shared guard: noise, blank, script, silent
+      try {
+        const out = await transcribeGuarded(wav, prompt, transcribe); // shared guard: noise, blank, script, silent
+        // Which mic and how loud, never what was said: the one line that tells "wrong device" from "quiet voice".
+        const mic = String(req.headers["x-mic"] ?? "").replace(/[^\x20-\x7e]/g, "").slice(0, 60);
+        console.log(`[mic] browser "${mic || "?"}" maxRms=${String(req.headers["x-max-rms"] ?? "?").slice(0, 8)} -> ${out.rejected ? "rejected " + out.rejected + (out.detail && out.rejected === "silent" ? " (" + out.detail + ")" : "") : "ok, " + out.text.split(/\s+/).filter(Boolean).length + " words"}`);
+        return send(res, 200, out);
+      }
       catch (e: any) { return send(res, 503, { error: `transcription unavailable: ${e.message}` }); }
+    }
+    if (req.method === "POST" && path === "/transcribe/silent") { // the extension refused a silent take itself: log the device only
+      const b = JSON.parse((await readBody(req, 2000)).toString("utf8") || "{}");
+      console.log(`[mic] browser "${String(b.mic ?? "?").replace(/[^\x20-\x7e]/g, "").slice(0, 60)}" maxRms=${Number(b.maxRms) || 0} -> silent, refused in the extension`);
+      return send(res, 200, { ok: true });
     }
     if (req.method === "POST" && path === "/decide") {
       const b = JSON.parse((await readBody(req)).toString("utf8"));
@@ -154,6 +165,8 @@ const server = createServer(async (req, res) => {
         if (b.lang !== undefined && !["en-us", "en-gb", "hi"].includes(b.lang)) return send(res, 400, { error: "lang must be en-us, en-gb or hi" });
         o = { voice: b.voice, lang: b.lang, translit: b.translit !== false };
       }
+      // queue:true (Agent mode step lines): add after what is being said instead of cutting it off mid-sentence.
+      if (b.queue === true && !o) { speaker.enqueue(b.text.trim() + (/[.!?।]$/.test(b.text.trim()) ? "" : ".")); return send(res, 200, speechStatus()); }
       speaker.interrupt(); speaker.speak(b.text, o); return send(res, 200, speechStatus());
     }
     // Static pages: web/ at /app (proof sheet, replay), test-pages/ at /test, and /ext for the dev panel preview

@@ -69,3 +69,10 @@ test("audit 4: a signed text that is not a zg-sig-v1 record is refused", async (
     fetchImpl: async () => new Response(JSON.stringify({ text: "anything at all", signature: "0x00" }), { status: 200 }) });
   assert.equal(r.status, "error"); assert.match((r as any).detail, /zg-sig-v1/);
 });
+test("laya's bare hash:hash signed text verifies (measured 6 Nov 2026)", async () => {
+  const bare = "ab".repeat(32) + ":" + "cd".repeat(32);
+  const r = await fetchProof({ chatId: "c", provider: signer.address,
+    lookup: async () => ({ url: "https://p.invalid", model: "laya", signer: signer.address, acknowledged: true, verifiability: "TeeML" }),
+    fetchImpl: async () => new Response(JSON.stringify({ text: bare, signature: await signer.signMessage(bare) }), { status: 200 }) });
+  assert.equal(r.status, "ok"); assert.equal((r as any).proof.match, true);
+});

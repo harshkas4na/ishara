@@ -212,8 +212,11 @@ export async function askVerify(question: string, el: OutlineElement, o: ZgOpts 
 
 // ---- Tutor stream (docs/TUTOR-INTERFACE.md section 3). Separate from askBrain on purpose: the pointing path is
 // measured (11/12) and must not change, so the tutor gets its own call with its own timeouts.
-export const TUTOR_FIRST_TOKEN_MS = 6000; // no first token by here: 0GM is not answering, refuse
-export const TUTOR_IDLE_MS = 4000;        // silence between chunks after text started: keep what was said, mark it cut off
+// No first token by here: 0GM is not answering, refuse. Was 6000; on 6 Nov evening the router took 3-5 s for a trivial call and
+// longer with a whole page, so correct answers were refused. ISHARA_TUTOR_FIRST_MS overrides.
+const envMs = (k: string, d: number) => { const v = Number(process.env[k]); return Number.isFinite(v) && v >= 1000 && v <= 60000 ? v : d; };
+export const TUTOR_FIRST_TOKEN_MS = envMs("ISHARA_TUTOR_FIRST_MS", 15000);
+export const TUTOR_IDLE_MS = envMs("ISHARA_TUTOR_IDLE_MS", 8000); // silence between chunks after text started: keep what was said, mark it cut off
 export const TUTOR_MAX_TOKENS = 400;
 const TUTOR_DRAIN_MS = 30000;             // the background read to the end of the stream never waits longer than this
 
@@ -233,23 +236,31 @@ export async function* askTutorStream(messages: ChatMessage[], o: ZgOpts & { fir
   let timedOut = false;
   const arm = (ms: number) => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; ac.abort(); }, ms); };
   arm(firstMs); // covers connect AND the wait for the first token
-  let res: Response;
-  try {
-    res = await fetch(baseFor(o) + "/chat/completions", {
-      method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-0g-provider-trust-mode": "private" },
-      body: JSON.stringify({
-        model: BRAIN_MODEL, messages, stream: true, max_tokens: TUTOR_MAX_TOKENS, temperature: 0.3,
-        chat_template_kwargs: { enable_thinking: false }, // measured: with thinking on the whole budget went to reasoning
-      }),
-      signal: ac.signal,
-    });
-  } catch (e: any) {
-    clearTimeout(timer);
-    console.error("[zg] tutor fetch failed:", e?.name ?? e?.message);
-    yield { type: "error", cause: timedOut ? "timeout" : "offline", totalMs: Date.now() - t0, ...tf };
-    return;
+  let res: Response | undefined;
+  const send = () => fetch(baseFor(o) + "/chat/completions", {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-0g-provider-trust-mode": "private" },
+    body: JSON.stringify({
+      model: BRAIN_MODEL, messages, stream: true, max_tokens: TUTOR_MAX_TOKENS, temperature: 0.3,
+      chat_template_kwargs: { enable_thinking: false }, // measured: with thinking on the whole budget went to reasoning
+    }),
+    signal: ac.signal,
+  });
+  // One retry when the CONNECTION failed (not a timeout, nothing received yet): on 6 Nov evening every other call died with
+  // "fetch failed" at the same moment, a stale kept-alive socket. Same router, same sealed model: a retry, never a fallback.
+  for (let attempt = 0; attempt < 2 && !res; attempt++) {
+    try { res = await send(); }
+    catch (e: any) {
+      const cause = e?.cause?.code ?? e?.cause?.message ?? "";
+      console.error("[zg] tutor fetch failed:", e?.name ?? e?.message, cause ? `(${String(cause).slice(0, 60)})` : "", attempt === 0 && !timedOut ? "- retrying once" : "");
+      if (timedOut || attempt === 1 || Date.now() - t0 > firstMs - 3000) {
+        clearTimeout(timer);
+        yield { type: "error", cause: timedOut ? "timeout" : "offline", totalMs: Date.now() - t0, ...tf };
+        return;
+      }
+    }
   }
+  if (!res) return;
   if (res.status !== 200 || !res.body) {
     clearTimeout(timer);
     console.error(`[zg] tutor HTTP ${res.status}`);

@@ -7,7 +7,7 @@
 // Never in this file: a screenshot or clipboard text going to 0G (the detail the loop sees says "copied N characters" and a
 // path, never the content), a keystroke into a secret field, an action in a browser (the extension owns those).
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { Control, PageContext } from "./types.ts";
@@ -23,7 +23,10 @@ import { searchUrl } from "./act.ts";
 import { readFileForAgent, type ReadOut } from "./act-files.ts";
 
 export const ACT_BIN = fileURLToPath(new URL("../../desktop/ishara-act", import.meta.url));
-export const ACT_TIMEOUT_MS = 5000;     // one action, as the plan says; ishara-act itself answers in well under 300 ms
+export const ACT_TIMEOUT_MS = 5000;
+// Opening an app is a LAUNCH: Slack, Telegram, WhatsApp and other Electron apps take 5 to 15 s to start. With the 5 s limit the
+// step was reported as failed while the app was still opening (Harsh, 6 Nov evening: "opening apps stopped working").
+export const APP_TIMEOUT_MS = 25000;     // one action, as the plan says; ishara-act itself answers in well under 300 ms
 export const CURSOR_TRAVEL_MS = 700;    // the cursor glides 0.75 s: the person SEES where it is going before it acts
 export const SETTLE_MAX_MS = 1200;      // how long to wait for the UI to settle before re-reading it
 
@@ -98,6 +101,44 @@ export function isSecretTarget(t: Target): boolean {
   return B.isSecretField({ type: "text", text: t.label }) || /pass(word|code|phrase)|seed|mnemonic|private.?key|secret|cvv|cvc|card.?number|\botp\b/i.test(t.label);
 }
 
+// ---------- app names: what people say -> the app that is installed ----------
+// "text editor", "chrome", "brave", "the Telegram app", "vs code" all failed with "no app called ... is installed": ishara-act
+// matches the exact bundle name only. Aliases first, then exact, then a unique prefix, then a unique word match.
+const APP_ALIAS: Record<string, string[]> = {
+  "text editor": ["TextEdit"], texteditor: ["TextEdit"], "text edit": ["TextEdit"], notepad: ["TextEdit"],
+  chrome: ["Google Chrome"], "google chrome": ["Google Chrome"], brave: ["Brave Browser"], firefox: ["Firefox"], edge: ["Microsoft Edge"],
+  vscode: ["Visual Studio Code", "Cursor"], "vs code": ["Visual Studio Code", "Cursor"], "visual studio code": ["Visual Studio Code"], "code editor": ["Visual Studio Code", "Cursor"],
+  settings: ["System Settings"], "system preferences": ["System Settings"], preferences: ["System Settings"], "mac settings": ["System Settings"],
+  imessage: ["Messages"], messages: ["Messages"], "whats app": ["WhatsApp"], files: ["Finder"], "file manager": ["Finder"],
+  "app store": ["App Store"], "activity monitor": ["Activity Monitor"], calendar: ["Calendar", "Notion Calendar"], mail: ["Mail"], email: ["Mail"],
+  music: ["Music", "Spotify"], iterm: ["iTerm"], word: ["Microsoft Word"], excel: ["Microsoft Excel"], powerpoint: ["Microsoft PowerPoint"],
+};
+const APP_DIRS = ["/Applications", "/System/Applications", "/System/Applications/Utilities", "/Applications/Utilities", "/System/Library/CoreServices/Applications", homedir() + "/Applications"];
+let appCache: { at: number; names: string[] } | null = null;
+export function installedApps(now = Date.now()): string[] {
+  if (appCache && now - appCache.at < 60_000) return appCache.names;
+  const names = new Set<string>();
+  for (const d of APP_DIRS) { try { for (const f of readdirSync(d)) if (f.endsWith(".app")) names.add(f.slice(0, -4)); } catch { /* missing dir */ } }
+  names.add("Finder");
+  appCache = { at: now, names: [...names] };
+  return appCache.names;
+}
+/** The installed app a spoken name means, or the name unchanged when nothing matches (ishara-act then says it is not installed). */
+export function resolveAppName(raw: string, apps: string[] = installedApps()): string {
+  const clean = raw.toLowerCase().replace(/\.app$/, "").replace(/^(?:the|my)\s+/, "").replace(/\s+(?:app|application|desktop)$/, "").replace(/\s+/g, " ").trim();
+  if (!clean) return raw;
+  const byLower = new Map(apps.map((a) => [a.toLowerCase(), a]));
+  if (byLower.has(clean)) return byLower.get(clean)!;
+  for (const a of APP_ALIAS[clean] ?? []) if (byLower.has(a.toLowerCase())) return byLower.get(a.toLowerCase())!;
+  const pre = apps.filter((a) => a.toLowerCase().startsWith(clean));
+  if (pre.length === 1) return pre[0];
+  const words = clean.split(" ").filter((w) => w.length >= 3);
+  const hit = apps.filter((a) => words.length && words.every((w) => a.toLowerCase().includes(w)));
+  if (hit.length === 1) return hit[0];
+  if (pre.length > 1) return pre.sort((a, b) => a.length - b.length)[0]; // "notion" -> "Notion", not "Notion Calendar"
+  return raw;
+}
+
 /** Contract Action -> the ishara-act input. Pure. Returns a string for a refusal the helper decides on by itself. */
 export function toActInput(a: DesktopAction, ctx: PageContext, bundleId?: string): ActInput | { refuse: string } {
   const withTarget = (id: string, extra: ActInput): ActInput | { refuse: string } => {
@@ -123,8 +164,8 @@ export function toActInput(a: DesktopAction, ctx: PageContext, bundleId?: string
       return { type: "key", combo: keys[a.op] };
     }
     case "read_file": return { refuse: "read_file is handled by the helper, not ishara-act" };
-    case "open_app": return { type: "open_app", name: a.name };
-    case "quit_app": return { type: "quit_app", name: a.name };
+    case "open_app": return { type: "open_app", name: resolveAppName(a.name) };
+    case "quit_app": return { type: "quit_app", name: resolveAppName(a.name) };
     case "copy": return { type: "copy", text: a.text };
     case "screenshot": return { type: "screenshot", scope: "window" };
     default: return { refuse: `${a.type} is not a desktop action` };
@@ -220,6 +261,10 @@ export async function executeDesktopAction(action: DesktopAction, context: PageC
     // 1. the browser guard: the extension executes DOM actions in browsers, never this path
     const front = await deps.front();
     if (front && isBrowserBundle(front.bundleId) && DOM_ACTIONS.has(action.type)) return done(false, "use the browser extension");
+    // Keys go to whatever is in front. If the app the screen was read from is gone or no longer in front (6 Nov: "close this window"
+    // quit Calculator, then Cmd+W landed in the user's Terminal), do not press anything: clicks already carry the app and are refused.
+    const readFrom = deps.bundleId?.();
+    if ((action.type === "key" || action.type === "tab") && readFrom && front && front.bundleId !== readFrom) return done(false, `the front app changed (${front.bundleId}), so I did not press keys there`);
 
     // 2. map the action (refuses unknown ids and secret fields BEFORE Swift is even started)
     const input = toActInput(action, context, deps.bundleId?.());
@@ -236,7 +281,7 @@ export async function executeDesktopAction(action: DesktopAction, context: PageC
     if (deps.stopped()) return done(false, "stopped");
 
     // 4. do it. AX press first; the coordinate click only when ishara-act says AX could not press it, and never on a secret field
-    let raw = await deps.run(input);
+    let raw = await deps.run(input, input.type === "open_app" || input.type === "quit_app" ? APP_TIMEOUT_MS : undefined);
     if (!raw.ok && raw.fallback === "click_at" && target && !isSecretTarget(target) && typeof raw.x === "number" && typeof raw.y === "number" && !deps.stopped()) {
       raw = await deps.run({ type: "click_at", x: raw.x, y: raw.y });
       if (raw.ok) raw = { ...raw, detail: `${raw.detail} (AX could not press it, so I clicked its position)` };
@@ -320,20 +365,30 @@ export function agentModeCommand(text: string): "on" | "off" | null {
 
 const QUESTION = /^(what|why|how|when|where|who|which|whose|is|are|was|were|does|do|did|can|could|should|would|will|am|kya|kaise|kyun|kyu|kab|kaun|kahan|kidhar|konsa|kaunsa)\b/;
 // First-word imperatives, and the Hinglish verbs that END the sentence ("settings kholo", "naam bharo").
-const VERBS = /^(open|launch|go to|click|tap|press|hit|fill|fill in|fill out|type|enter|scroll|copy|play|pause|resume|search|select|choose|close|quit|exit|screenshot|take a screenshot|take screenshot|turn on|turn off|switch to|uncheck|toggle|paste)\b/;
+const VERBS = /^(open|launch|start|go to|click|tap|press|hit|fill|fill in|fill out|type|write|enter|scroll|copy|play|pause|resume|search|look up|select|choose|close|quit|exit|screenshot|take a screenshot|take screenshot|turn on|turn off|switch to|bring up|pull up|uncheck|toggle|paste)\b/;
+// What Whisper often hears instead of the order: "Opening Slack", "Launching Notes".
+const GERUND = /^(opening|launching|starting|closing|quitting|typing|writing|searching|playing|copying|pasting|scrolling|clicking|filling)\b/;
+// Politeness before the order: "can you open Telegram?", "hey ishara, please open Slack", "I want you to fill this".
+const POLITE = /^(?:(?:hey|hi|ok|okay|so|ishara|buddy)[\s,]+)*(?:(?:please|kindly|just|now)\s+)*(?:(?:can|could|would|will)\s+(?:you|u)\s+(?:please\s+)?|i\s+(?:want|need|would\s+like)\s+you\s+to\s+|zara\s+)?(?:please\s+)?/;
 const HINGLISH_END = /\b(kholo|khol do|kholiye|bharo|bhar do|likho|likh do|chalao|chala do|dabao|daba do|band karo|band kar do|select karo|click karo|copy karo|search karo|scroll karo|screenshot lo|le lo)$/;
 const HINGLISH_MID = /\b(likho|likh do|bharo|bhar do)\b/; // "yahan likho hello": the verb comes before the thing to write
 /** A sentence that asks Ishara to DO something (not to explain it). Questions and walk words ("next", "stop") are never tasks. */
 export function isTaskUtterance(text: string): boolean {
   const raw = text.trim();
-  if (!raw || raw.endsWith("?")) return false;
-  const q = stripFiller(squash(raw));
-  if (!q || q.split(" ").length < 2 && !/^screenshot$/.test(q)) return false;
+  if (!raw) return false;
+  const q0 = stripFiller(squash(raw));
+  if (!q0) return false;
   if (parseWalkCommand(raw) || agentModeCommand(raw)) return false;
+  // "Can you open Telegram?" is an order said politely (Harsh's desktop test, 6 Nov evening: three of these went to the tutor).
+  const q = q0.replace(POLITE, "").trim();
+  if (!q || (q.split(" ").length < 2 && !/^screenshot$/.test(q))) return false;
   // A Hinglish sentence that ends in a verb is a command even when it starts with "is" ("is window ko band karo" = close THIS window).
   if (HINGLISH_END.test(q) && !/^(kya|kaise|kyun|kab|kaun)\b/.test(q)) return true;
-  if (QUESTION.test(q)) return false;
-  return VERBS.test(q) || HINGLISH_END.test(q) || HINGLISH_MID.test(q);
+  // "start the walkthrough" asks for the tutor's guide, not an action.
+  if (/^(?:start|begin)\s+(?:the\s+|a\s+)?(?:walk|tour|guide|tutorial|explain|lesson)/.test(q)) return false;
+  if (VERBS.test(q) || GERUND.test(q)) return true;
+  if (QUESTION.test(q) || raw.endsWith("?")) return false;
+  return HINGLISH_END.test(q) || HINGLISH_MID.test(q);
 }
 
 const YES = /^(yes|yeah|yep|yup|yes please|haan|han|haan karo|ha|ji haan|ok|okay|ok do it|okay do it|do it|yes do it|go ahead|approve|approved|sure|theek hai|thik hai|kar do|karo|confirm|yes go ahead|yes approve)$/;
@@ -390,14 +445,14 @@ export function createSseParser(onEvent: (ev: ActEv) => void) {
 
 // ---------- state: armed, the running task, the waiting approval ----------
 // Armed is memory only, and starts OFF on every helper start: an agent that wakes up armed is a safety bug.
-export const agent = { armed: false };
+export const agent = { armed: false, disabled: false }; // disabled: the person said "agent mode off", so tasks are not run
 type Running = { actId?: string; abort: AbortController; step: number };
 let running: Running | null = null;
 let pendingApproval: { actId: string; n: number } | null = null;
 export const agentState = () => ({ armed: agent.armed, running: !!running, approvalPending: !!pendingApproval });
 export const taskRunning = (): boolean => !!running;
 /** Test hook only: put the module back to its start state. */
-export function resetAgentState(): void { taskSince = 0; agent.armed = false; running = null; pendingApproval = null; stoppedIds.clear(); stopAllAt = 0; activity.clear(); }
+export function resetAgentState(): void { taskSince = 0; agent.armed = false; agent.disabled = false; running = null; pendingApproval = null; stoppedIds.clear(); stopAllAt = 0; activity.clear(); }
 
 export type SayDeps = {
   send?: (c: OverlayCmd) => void;
@@ -410,10 +465,12 @@ export type SayDeps = {
 };
 const defaultPost: NonNullable<SayDeps["post"]> = (path, body, signal) =>
   fetch(`http://127.0.0.1:${HELPER_PORT}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal }) as any;
-const defaultSpeak = (t: string) => { try { if (!process.env.NODE_TEST_CONTEXT) { realSpeech.start(); realSpeech.say(t, 0); realSpeech.end(); } } catch { /* the voice must never break a task */ } };
+// Each step's line is queued after the one being said: start() would interrupt it mid-sentence (Harsh, 6 Nov evening).
+const defaultSpeak = (t: string) => { try { if (!process.env.NODE_TEST_CONTEXT) { realSpeech.say(t, 0); void realSpeech.end(); } } catch { /* the voice must never break a task */ } };
 
 export function setAgentMode(on: boolean, send: (c: OverlayCmd) => void = (c) => overlay.send(c)): void {
   agent.armed = on;
+  agent.disabled = !on; // "agent mode off" means: explain only, do not run tasks, until "agent mode on"
   if (!on) stopTask(send, false);
   send({ cmd: "agentmode", on } as OverlayCmd);
 }
@@ -509,7 +566,10 @@ export async function desktopSay(text: string, deps: SayDeps = {}): Promise<SayR
   const mode = agentModeCommand(text);
   if (mode) { setAgentMode(mode === "on", send); return { outcome: "agent-mode", detail: mode }; }
   if (isTaskUtterance(text)) {
-    if (!agent.armed) { send({ cmd: "ask", text: AGENT_OFF_HINT }); return { outcome: "hint" }; }
+    // Harsh, 6 Nov evening: a task said to the normal push-to-talk must just run. Saying it IS the arming, for this task only;
+    // the risk rules (secret fields refused, anything that commits waits for "yes") are unchanged. "agent mode off" still
+    // turns tasks into the hint, for a session where he wants explanations only.
+    if (!agent.armed && agent.disabled) { send({ cmd: "ask", text: AGENT_OFF_HINT }); return { outcome: "hint" }; }
     return { outcome: "task", detail: await runDesktopTask(text, deps) };
   }
   return { outcome: "tutor", detail: await (deps.ask ?? ((q: string) => desktopAsk(q, { signal: deps.signal, alreadyThinking: true })))(text) };

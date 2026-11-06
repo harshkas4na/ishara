@@ -7,7 +7,24 @@ import { lookup, parseHttpUrl } from "./act.ts";
 import { readerCore } from "./redact.ts";
 import { checkReadPath } from "./act-files.ts";
 
-export type Classified = { risk: ActRisk; why: string };
+/** `auto`: a HIGH step that is only "might commit something" (an unlabelled button, Enter in a form), never money, deletion or a wallet. Auto mode runs these without a tap. */
+export type Classified = { risk: ActRisk; why: string; auto?: true };
+
+/**
+ * Auto mode. Harsh, 6 Nov 2026 night: "remove all the approvals on all the computer use steps". So by default NOTHING waits for a
+ * tap: his order is the approval for every step the classifier calls HIGH. What is still never done is `refused` (secret fields,
+ * secret-looking values he did not give, text a page addressed to an assistant, "don't submit"): those are refusals, not approvals.
+ *   ISHARA_AUTO unset or "all"  every HIGH step runs (default)
+ *   ISHARA_AUTO=soft            only the soft lane runs; money, delete, send/post, signing and wallet pages still ask
+ *   ISHARA_AUTO=0               every HIGH step asks
+ */
+export type AutoLevel = "all" | "soft" | "off";
+export const autoLevel = (): AutoLevel => (process.env.ISHARA_AUTO === "0" ? "off" : process.env.ISHARA_AUTO === "soft" ? "soft" : "all");
+export const autoMode = (): boolean => autoLevel() !== "off";
+/** True when this classified step runs without a tap at the current level. */
+export const runsWithoutTap = (c: { risk: string; auto?: true }): boolean => c.risk === "high" && (autoLevel() === "all" || (autoLevel() === "soft" && c.auto === true));
+/** Labels that always wait for a tap, auto mode or not: they move money, destroy data, sign, or hand a site access. */
+export const HARD_STOP = /(?<![\p{L}\p{N}])(delete|remove|trash|erase|wipe|deactivate|terminate|revoke|pay|buy|purchase|checkout|check ?out|withdraw|deposit|transfer|send money|swap|bridge|stake|unstake|sell|trade|redeem|cash ?out|donate|place (?:the )?order|sign(?! ?(?:in|on|up)(?![\p{L}]))|approve|authori[sz]e|grant access|connect(?:ing)?(?: (?:your |a )?wallet)?|mint|bid|sign ?out|log ?out|send|post|publish|submit|reply|comment|tweet|repost|retweet|bhejo|bhej do|kharido|khareedo|kharid|bhugtan|paise bhejo|jama karo|hatao|mita do)(?![\p{L}\p{N}])/iu;
 
 // ---- Label normalisation (audit 4, 1.3): a homoglyph, a soft hyphen or spaced-out letters must not dodge the lists below.
 const CONFUSABLE: Record<string, string> = {
@@ -249,9 +266,11 @@ export function classify(action: Action, ctx: PageContext, task: string): Classi
         const nl = normLabel(label);
         // "don't submit": any click that would submit is refused outright, not even approvable. Deleting is a different act.
         if ((byLabel || byShape === "form") && NO_SUBMIT.test(task) && !DESTRUCTIVE.test(nl) && (byShape === "form" || SUBMIT_FAMILY.test(nl) || /submit/i.test(role))) return R("refused", NO_SUBMIT_SAY);
-        if (byShape === "form") return R("high", `${shown(label)} is a button on a form and could submit it`);
-        if (byShape === "unknown") return R("high", `I can't tell what ${shown(label)} does, so I ask first`);
-        if (byLabel) return R("high", `${shown(label)} commits something (${byLabel})`);
+        const soft = !HARD_STOP.test(nl) && !HARD_STOP.test(normLabel(role));
+        const A = (c: Classified): Classified => (soft ? { ...c, auto: true } : c);
+        if (byShape === "form") return A(R("high", `${shown(label)} is a button on a form and could submit it`));
+        if (byShape === "unknown") return A(R("high", `I can't tell what ${shown(label)} does, so I ask first`));
+        if (byLabel) return A(R("high", `${shown(label)} commits something (${byLabel})`));
       }
       return R("medium", `${action.type} on "${label.slice(0, 40)}"`);
     }
@@ -260,7 +279,12 @@ export function classify(action: Action, ctx: PageContext, task: string): Classi
       const w = inWallet(); if (w) return w;
       const { mods, key, canon } = splitCombo(action.combo);
       const accel = mods.has("cmd") || mods.has("ctrl") || mods.has("alt");
-      if (((key === "w" || key === "q") && (mods.has("cmd") || mods.has("ctrl"))) || (key === "f4" && mods.has("alt"))) return R("high", `${action.combo} closes a window or quits an app`);
+      if (((key === "w" || key === "q") && (mods.has("cmd") || mods.has("ctrl"))) || (key === "f4" && mods.has("alt"))) {
+        // The person said "close this window" / "quit X": their order is the approval in auto mode. Quitting needs the word quit/exit.
+        const said = key === "q" ? /\b(quit|exit)\b/i.test(task) : /\bclose\b/i.test(task) && /\b(window|tab|this|it)\b/i.test(task);
+        const c = R("high", `${action.combo} closes a window or quits an app`);
+        return said ? { ...c, auto: true } : c;
+      }
       if (key === "enter" || key === "return" || key === "space") {
         const focused = ctx.focused ? lookup(ctx, ctx.focused) : null;
         const fRole = focused?.kind === "control" ? focused.role : "";
@@ -280,7 +304,8 @@ export function classify(action: Action, ctx: PageContext, task: string): Classi
         // Enter in a field submits its form. Any button that is not plainly harmless may be that form's submit button: ask.
         if (ctx.controls.some((c) => submitLike(c) || (BUTTONISH.test(c.role.trim()) && !safeLabel(c.label)))) {
           if (NO_SUBMIT.test(task)) return R("refused", NO_SUBMIT_SAY);
-          return R("high", "Enter could submit the form on this page");
+          const hard = ctx.controls.some((c) => BUTTONISH.test(c.role.trim()) && HARD_STOP.test(normLabel(c.label)));
+          return hard ? R("high", "Enter could submit the form on this page") : { ...R("high", "Enter could submit the form on this page"), auto: true };
         }
         return R("medium", `${action.combo} key`);
       }
@@ -305,7 +330,8 @@ export function classify(action: Action, ctx: PageContext, task: string): Classi
 
     case "search": {
       // The query leaves the laptop for a search engine: it must be the person's words, not text taken from the page or a file.
-      if (ownWordsShare(action.query, task) < 0.6) return R("high", `those search words did not come from you, and a search sends them to ${action.engine ?? "brave"}`);
+      // Search operators the model adds ("site:wikipedia.org", "filetype:pdf") are syntax, not words the person must have said.
+      if (ownWordsShare(action.query.replace(/(^|\s)[a-z]+:\S+/gi, " "), task) < 0.6) return R("high", `those search words did not come from you, and a search sends them to ${action.engine ?? "brave"}`);
       return R("low", `searches the web for your words (${action.engine ?? "brave"})`);
     }
     case "tab": {
@@ -322,7 +348,12 @@ export function classify(action: Action, ctx: PageContext, task: string): Classi
       return R("medium", `reads ${action.path.slice(0, 60)} (read-only, secrets redacted)`);
     }
     case "open_app": return R("medium", `opens ${action.name}`);
-    case "quit_app": return R("high", `quits ${action.name}`);
+    case "quit_app": {
+      const c = R("high", `quits ${action.name}`);
+      // "quit Notes" names it; "close this window / quit this app" means the app that is in front, which the screen was read from.
+      const isThisApp = /\b(this|it|current)\b/i.test(task) && !!ctx.app && norm(ctx.app) === norm(action.name);
+      return /\b(quit|exit|close)\b/i.test(task) && (hasWords(task, action.name) || isThisApp) ? { ...c, auto: true } : c;
+    }
     case "copy": {
       if (secretShaped(action.text) && !hasWords(task, action.text)) return R("refused", "that text looks like a secret and you did not give it to me in the task");
       const w = inWallet(); if (w) return w;

@@ -11,6 +11,8 @@ import { runAct, newState, confirmFromEnv, type ActDeps, type ActState, type Exe
 import type { Action, ActEvent, ActExecutor, PageContext } from "./types.ts";
 
 export const MAX_TASK = 2000;
+/** Actions the helper runs itself even in a browser task: the browser cannot open or quit Mac apps or read files. */
+export const HELPER_RUNS: ReadonlySet<string> = new Set(["open_app", "quit_app", "read_file"]);
 export const MAX_RUNS = 20;
 export const RUN_TTL_MS = 10 * 60 * 1000;
 const ACT_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -248,7 +250,10 @@ export async function handleActRoute(req: IncomingMessage, res: ServerResponse, 
 
   const deps: ActDeps = {
     ...d.base,
-    execute: (action, n, c) => action.type === "read_file" && r.executor !== "helper" ? Promise.resolve({ ok: false, detail: "reading a file works only in desktop Agent mode, not in the browser" })
+    // Opening or quitting a Mac app and reading a file are the helper's own jobs whichever screen the task came from: "open Slack"
+    // asked in the browser failed three times on 6 Nov because the browser cannot open apps. The browser shows the step and
+    // does not run it (extension/act.js HELPER_RUNS); the helper runs it and reports the result itself.
+    execute: (action, n, c) => HELPER_RUNS.has(action.type) ? (d.helperExecute ? d.helperExecute(action, c) : Promise.resolve({ ok: false, detail: "opening apps and reading files need the desktop part of Ishara, which is not installed" }))
       : r.executor === "client" ? r.waitResult(n)
       : (d.helperExecute ? d.helperExecute(action, c) : Promise.resolve({ ok: false, detail: "the desktop executor is not installed" })),
     approve: (n, _a, _risk, _why, ms) => r.waitApproval(n, ms),

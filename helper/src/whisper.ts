@@ -13,12 +13,17 @@ const PORT = Number(process.env.ISHARA_WHISPER_PORT) || 7778;
 // a machine without the 874 MB file still has voice, as before.
 export const HINGLISH_MODEL = `${homedir()}/.cache/meeting-recorder/models/ggml-hindi2hinglish-apex-q8_0.bin`;
 export const SMALL_MODEL = `${homedir()}/.cache/whisper-models/ggml-small.bin`;
+// English only (Harsh, 6 Nov 2026: "stop hearing Hindi, only English"). large-v3-turbo is the Hinglish model's own base, so it is as fast
+// (-ac 512, warm) and hears Indian-accented English far better than small. The Hinglish files stay on disk but are never chosen.
+export const TURBO_MODEL = `${homedir()}/.cache/meeting-recorder/models/ggml-large-v3-turbo.bin`;
+export const SMALL_EN_MODEL = `${homedir()}/.cache/whisper-models/ggml-small.en.bin`;
 
 // Pure, with the filesystem lookup injected so the order can be tested without the files.
 export function pickModel(env: Record<string, string | undefined>, exists: (p: string) => boolean): { path: string; hinglish: boolean } | null {
   const forced = env.ISHARA_WHISPER_MODEL;
   if (forced && exists(forced)) return { path: forced, hinglish: /hinglish|hindi2/i.test(forced) };
-  if (exists(HINGLISH_MODEL)) return { path: HINGLISH_MODEL, hinglish: true };
+  if (exists(TURBO_MODEL)) return { path: TURBO_MODEL, hinglish: false };
+  if (exists(SMALL_EN_MODEL)) return { path: SMALL_EN_MODEL, hinglish: false };
   if (exists(SMALL_MODEL)) return { path: SMALL_MODEL, hinglish: false };
   return null;
 }

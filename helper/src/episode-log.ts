@@ -205,10 +205,13 @@ export class EpisodeLog {
     let onChain: boolean | null = null;
     const info = contractInfo();
     if (info && s.ended.contract) {
-      try {
-        const c = new Contract(info.address, info.abi as never, new JsonRpcProvider(GALILEO_RPC, GALILEO_CHAIN_ID));
-        onChain = String(await c.rootOf(sessionKeyId(sessionId))).toLowerCase() === (s.ended.root.startsWith("0x") ? s.ended.root : "0x" + s.ended.root).toLowerCase();
-      } catch { onChain = null; }
+      // The Galileo RPC drops a call now and then; "unknown" is honest but a blip should not cost the whole check, so retry once.
+      for (let attempt = 0; attempt < 2 && onChain === null; attempt++) {
+        try {
+          const c = new Contract(info.address, info.abi as never, new JsonRpcProvider(GALILEO_RPC, GALILEO_CHAIN_ID));
+          onChain = String(await c.rootOf(sessionKeyId(sessionId))).toLowerCase() === (s.ended.root.startsWith("0x") ? s.ended.root : "0x" + s.ended.root).toLowerCase();
+        } catch { onChain = null; }
+      }
     }
     return { verified: sha256Hex(pt) === s.ended.plaintextSha256, entries: parsed.entries, root: s.ended.root, plaintextSha256: s.ended.plaintextSha256, onChainRootMatches: onChain };
   }

@@ -60,6 +60,7 @@
   // ---- Tutor ask flow (docs/TUTOR-INTERFACE.md). The classic /decide flow below stays untouched as the fallback. ----
   // classic: forced from Option+Shift+P (stored, so it survives reloads) for a pointing-only demo; also used automatically
   // when the helper has no /tutor route.
+  let explainOnly = false; // Option+Shift+A switched Agent mode OFF on this page: tasks get the hint instead of running
   let classic = false, turn = 0, port = null, streaming = false, last = null; // last: {outline, map} of the latest ask, for walk-step pointers
   try { chrome.storage.local.get("classic", (r) => { classic = !!(r && r.classic); NS.overlay.tutor.setClassic(classic); }); } catch { /* extension reloaded */ }
 
@@ -86,9 +87,13 @@
     // other request, and every request while Agent mode is off, takes the normal tutor path below (the helper tells the user
     // to turn Agent mode on when it recognises a task, so the sentence comes from the router, not from here).
     touchSession();
-    if (NS.act && NS.act.isAgent() && NS.act.isTask(question)) {
+    // Harsh, 6 Nov evening: a task asked with the normal Option+Space (or typed) just runs. Asking IS the arming, for this tab;
+    // the risk rules are unchanged (secret fields refused, anything that commits waits for Approve in the Ishara window).
+    // Option+Shift+A turned OFF on this page means "explain only": tasks then get the hint.
+    if (NS.act && NS.act.isTask(question) && !explainOnly) {
       if (NS.act.isBusy()) return NS.overlay.say("I am still working on the last task. Press Esc to stop it first.");
       cancelTurn(); send({ type: "speech-stop" });
+      if (!NS.act.isAgent()) NS.act.setAgent(true, { quiet: true });
       return NS.act.start(question);
     }
     if (classic) return askClassic(question, compiled);
@@ -338,8 +343,8 @@
       e.preventDefault(); classic = !classic; NS.overlay.tutor.setClassic(classic);
       try { chrome.storage.local.set({ classic }); } catch { /* extension reloaded */ }
       NS.overlay.say(classic ? "Classic mode: pointing only. Option+Shift+P goes back to the tutor." : "Tutor mode: answers, steps and follow-ups.");
-    } else if (e.altKey && e.shiftKey && e.code === "KeyA") { // Agent mode on / off (default off)
-      e.preventDefault(); if (NS.act) NS.act.toggleAgent();
+    } else if (e.altKey && e.shiftKey && e.code === "KeyA") { // Agent mode on / off. Off = explain only on this page
+      e.preventDefault(); if (NS.act) { const on = NS.act.toggleAgent(); explainOnly = !on; }
     } else if (e.altKey && e.shiftKey && e.code === "KeyM") { // mute / unmute the spoken answers
       e.preventDefault();
       send({ type: "speech-toggle" }).then((r) => NS.overlay.say(r.data ? (r.data.muted ? "Voice muted" : "Voice on") : "Voice: " + (r.error || "unavailable")));

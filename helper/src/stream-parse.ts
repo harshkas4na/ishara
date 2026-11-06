@@ -37,7 +37,9 @@ export function cleanSpoken(raw: string): string {
     .replace(/[*_#]{2,}/g, " ")
     .replace(/\s+([.,!?;:।])/g, "$1")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    // "The equals button is at [POINT:b21]." loses its object with the marker: say "here" instead of a dangling "at".
+    .replace(/\b(at|in|on|under|near|by|see|click|press|tap)([.!?।])$/i, (m, w, p) => (/^(at|in|on|under|near|by)$/i.test(w) ? "here" + p : w + " this" + p));
 }
 const hasWords = (s: string) => /[\p{L}\p{N}]/u.test(s);
 

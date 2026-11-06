@@ -5,6 +5,8 @@ import type { Action, ActEvent, ActRequest } from "../src/types.ts";
 import type { AskActResult } from "../src/zg.ts";
 import { verifyCtx, page } from "./act-helpers.ts";
 
+process.env.ISHARA_AUTO = "0"; // these tests are about the ask-first path; act-auto.test.ts covers auto mode
+
 const ctx = verifyCtx();
 const A = (action: any, say = "Doing it", extra: Partial<Extract<AskActResult, { ok: true }>> = {}): AskActResult =>
   ({ ok: true, args: { action, say }, raw: "", requestId: "req-" + Math.random().toString(16).slice(2, 8), chatId: "chat-1", provider: "0xprov", ms: 5, ...extra });
@@ -246,4 +248,10 @@ test("act-form regression: 'Create account' needs approval; with 'don't submit' 
   assert.equal(b.log.approvals.length, 0); assert.equal(b.log.executed.length, 0);
   assert.match((r2.events[1].data as any).detail, /You said not to submit/);
   assert.match(b.log.asks[1][1].content, /REFUSED, nothing was done: You said not to submit/);
+});
+test("audit 5: a step without the model's sentence gets a plain one, never the debug form", async () => {
+  const { plainSay } = await import("../src/act-loop.ts");
+  const c = { source: "browser", url: "x", title: "t", viewport: { w: 1, h: 1 }, blocks: [], controls: [{ id: "b2", role: "input", label: "Email address", rect: { x: 0, y: 0, w: 1, h: 1 } }], errors: [] } as any;
+  assert.equal(plainSay({ type: "type", id: "b2", text: "harsh@example.com", clear: true }, c), "Typing into “Email address”");
+  assert.doesNotMatch(plainSay({ type: "open_url", url: "https://www.youtube.com/x" }, c), /https|id=/);
 });

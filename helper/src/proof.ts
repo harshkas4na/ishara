@@ -42,7 +42,7 @@ export function attestationProblem(svc: ServiceRecord): string | null {
   return null;
 }
 /** The signed text format seen from the Router on 6 Nov 2026. Anything else is not the record we know how to read. */
-export const SIGNED_TEXT = /^zg-sig-v1\/[a-z0-9-]+:[0-9a-f]{64}:[0-9a-f]{64}$/i;
+export const SIGNED_TEXT = /^(?:zg-sig-v1\/[a-z0-9-]+:[0-9a-f]{64}:[0-9a-f]{64}|[0-9a-f]{64}:[0-9a-f]{64})$/i; // brain: tagged record; laya (measured 6 Nov 2026 evening): bare "requestHash:responseHash"
 
 /** Pick the signer per the SDK: teeSignerAddress unless additionalInfo says TargetSeparated (capitalised keys). */
 export function pickSigner(teeSignerAddress: string, additionalInfo: string): string {

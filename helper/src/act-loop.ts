@@ -6,7 +6,7 @@
 import { VERIFY_MIN_P } from "./config.ts";
 import { decidePointer, checkPointer, type PointerCheck, type PointerTarget } from "./pointer-gate.ts";
 import { validateAction, TERMINAL, lookup } from "./act.ts";
-import { classify } from "./act-risk.ts";
+import { classify, runsWithoutTap } from "./act-risk.ts";
 import { ACT_TOOL_CHOICE, actTools, buildActMessages, describeAction, type HistoryItem } from "./act-prompt.ts";
 import { askAct as realAskAct, askVerifyRef, BRAIN_MODEL, LAYA_MODEL, type AskActResult } from "./zg.ts";
 import type { OutlineElement, Action, ActEvent, ActIds, ActRequest, ActRisk, Cause, ChatMessage, PageContext } from "./types.ts";
@@ -59,6 +59,29 @@ export function newState(req: Pick<ActRequest, "sessionId" | "task" | "context">
 }
 /** The person's own words: the task and every answer they gave. What `classify` may trust. */
 export const authorityOf = (s: Pick<ActState, "task" | "answers">): string => [s.task, ...(s.answers ?? [])].join("\n");
+
+/** A short sentence for a step when the model gave none: what the person sees in the pill and hears. Never ids or raw fields. */
+export function plainSay(a: Action, ctx: PageContext): string {
+  const lab = (id: string) => { const h = lookup(ctx, id); return h ? `“${clip(h.label, 40)}”` : "that control"; };
+  switch (a.type) {
+    case "click": return `Pressing ${lab(a.id)}`;
+    case "type": return `Typing into ${lab(a.id)}`;
+    case "select": return `Choosing “${clip(a.option, 30)}” in ${lab(a.id)}`;
+    case "check": return `${a.checked ? "Ticking" : "Unticking"} ${lab(a.id)}`;
+    case "key": return `Pressing ${a.combo}`;
+    case "scroll": return `Scrolling ${a.direction}`;
+    case "open_url": { try { return `Opening ${new URL(a.url).hostname.replace(/^www\./, "")}`; } catch { return "Opening the page"; } }
+    case "search": return `Searching for “${clip(a.query, 40)}”`;
+    case "tab": return a.op === "switch" ? `Switching to ${clip(a.match ?? "the tab", 30)}` : a.op === "close" ? "Closing a tab" : a.op === "new" ? "Opening a new tab" : a.op === "back" ? "Going back" : "Going forward";
+    case "read_file": return "Reading the file";
+    case "open_app": return `Opening ${clip(a.name, 30)}`;
+    case "quit_app": return `Quitting ${clip(a.name, 30)}`;
+    case "copy": return "Copying to the clipboard";
+    case "screenshot": return "Taking a screenshot";
+    case "wait": return "Waiting a moment";
+    default: return "Working on it";
+  }
+}
 
 /** A receipt line that never carries typed or copied text (it lands in the episode log): only its length. */
 export function receiptOf(a: Action): string {
@@ -180,7 +203,8 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
       continue;
     }
     const action = v.action;
-    const say = clip(r.args.say || ("say" in action ? action.say : "") || describeAction(action), 160);
+    // The model often sends no sentence for a step; the pill and the voice then got the debug form ("type id=\"b2\" text=...").
+    const say = clip(r.args.say || ("say" in action ? action.say : "") || plainSay(action, state.context), 160);
 
     // ---- terminal actions
     if (action.type === "done") { yield end("done", action.say, "act-done"); return; }
@@ -237,10 +261,11 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
     }
 
     // ---- tell the UI, then approval if needed
-    const needsApproval = confirm === "off" ? false : c.risk === "high" || (c.risk === "medium" && confirm === "all");
+    const autoRun = runsWithoutTap(c); // default: every HIGH step runs on the person's own order (act-risk.ts autoLevel); refused steps never reach here
+    const needsApproval = confirm === "off" ? false : (c.risk === "high" && !autoRun) || (c.risk === "medium" && confirm === "all");
     yield { event: "action", data: { n, action, risk: c.risk, say, needsApproval, ...(targetLabel ? { targetLabel } : {}), ...(point ? { point } : {}), ...(confirm === "off" ? { rehearsal: true as const } : {}) } };
     state.rejects = 0;
-    let approvedNote = "";
+    let approvedNote = autoRun && confirm !== "off" ? ", auto" : "";
     if (needsApproval) {
       yield { event: "approval", data: { n, action, risk: c.risk, why: c.why } };
       const w0 = now();
