@@ -68,16 +68,20 @@
   //  - a stream that ends after some events but without done/refused: a synthetic done with outcome "cutoff".
   //  - an abort (new question, port closed) is silent: the caller already moved on.
   // NOTE the helper keeps draining 0G for the proof when we cancel the reader; cancelling here only stops relaying.
-  async function relay({ fetchFn, url, init, signal, post }) {
+  // Options for other streams (POST /act, docs/AGENT-MODE.md): `known` replaces the event names let through, `terminals` the events
+  // that end the stream, `cutoff(seen)` and `offline(cause)` build the synthetic {event, data} used when it ends without one / cannot start.
+  // The defaults are the /tutor stream, unchanged.
+  async function relay({ fetchFn, url, init, signal, post, known: knownList, terminals, cutoff, offlineEvent }) {
     // "speaking" (the helper started playing a sentence) arrives AFTER `done` too, so it must not count as terminal.
-    const known = new Set(["thinking", "say", "point", "step", "speaking", "done", "refused"]);
+    const known = new Set(knownList || ["thinking", "say", "point", "step", "speaking", "done", "refused"]);
+    const ends = new Set(terminals || ["done", "refused"]);
     let seen = 0, terminal = false;
-    const emit = (event, data) => { if (signal && signal.aborted) return; if (event === "done" || event === "refused") terminal = true; seen++; post({ event, data }); };
-    const offline = () => emit("refused", { cause: "offline", say: "" });
+    const emit = (event, data) => { if (signal && signal.aborted) return; if (ends.has(event)) terminal = true; seen++; post({ event, data }); };
+    const offline = () => { const o = offlineEvent ? offlineEvent("offline") : { event: "refused", data: { cause: "offline", say: "" } }; emit(o.event, o.data); };
     let res;
     try { res = await fetchFn(url, { ...init, signal }); } catch { if (!(signal && signal.aborted)) offline(); return; }
     if (res.status === 404 || res.status === 405) { if (!(signal && signal.aborted)) post({ event: "noroute", data: {} }); return; }
-    if (!res.ok || !res.body) { emit("refused", { cause: "unavailable", say: "" }); return; }
+    if (!res.ok || !res.body) { const o = offlineEvent ? offlineEvent("unavailable") : { event: "refused", data: { cause: "unavailable", say: "" } }; emit(o.event, o.data); return; }
     const parser = createParser(({ event, data }) => {
       if (!known.has(event)) return; // unknown events are skipped, not fatal: the contract may grow
       let d; try { d = JSON.parse(data || "{}"); } catch { return; } // one bad frame must not kill the stream
@@ -99,6 +103,7 @@
     if (signal && signal.aborted) return;
     if (!terminal) {
       if (!seen) offline();
+      else if (cutoff) { const o = cutoff(); emit(o.event, o.data); }
       else emit("done", { mode: "explain", outcome: "cutoff", requestIds: { laya: [] }, ms: { total: 0 } });
     }
   }

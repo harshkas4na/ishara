@@ -8,10 +8,13 @@
     "activeTab",
     "storage",
     "offscreen",
-    "alarms"
+    "alarms",
+    "downloads",
+    "clipboardWrite"
   ],
   "host_permissions": [
-    "http://127.0.0.1:7777/*"
+    "http://127.0.0.1:7777/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js",
@@ -27,6 +30,7 @@
         "blocks-core.js",
         "blocks.js",
         "overlay.js",
+        "act.js",
         "content.js"
       ],
       "run_at": "document_idle",

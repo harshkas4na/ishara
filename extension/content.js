@@ -11,7 +11,7 @@
   // them to the top frame through the service worker. Not by postMessage: any script in any frame (an ad) could post
   // the same message and switch the microphone on. And only real key presses (isTrusted), never script-made events.
   if (window !== window.top) {
-    const CHORD = (e) => !e.ctrlKey && !e.metaKey && e.altKey && (e.code === "Space" || (e.shiftKey && (e.code === "KeyO" || e.code === "KeyD" || e.code === "KeyC" || e.code === "KeyP" || e.code === "KeyM")));
+    const CHORD = (e) => !e.ctrlKey && !e.metaKey && e.altKey && (e.code === "Space" || (e.shiftKey && (e.code === "KeyO" || e.code === "KeyD" || e.code === "KeyC" || e.code === "KeyP" || e.code === "KeyM" || e.code === "KeyA")));
     const up = (m) => { try { chrome.runtime.sendMessage({ type: "chord", d: m }).catch(() => {}); } catch { /* extension reloaded */ } };
     addEventListener("keydown", (e) => {
       if (!e.isTrusted) return;
@@ -29,6 +29,13 @@
   let sessionId = crypto.randomUUID();
   let recording = false, busy = false, pending = null, inspecting = false; // pending: outline compiled at key-down
   let startP = null, transcribing = false;
+  // Agent mode (extension/act.js): the executor and the task loop. Off by default; Option+Shift+A turns it on for this browser session.
+  if (NS.act) {
+    NS.act.init({ sessionId, getSessionId: () => sessionId });
+    NS.act.installDevHook(); // only answers on http://127.0.0.1:7777/test/ pages
+    // A task that was mid-flight when the previous page unloaded carries on here (a link, open_url, back/forward).
+    NS.act.restoreAgent().then(() => NS.act.resume()).catch(() => {});
+  }
 
   // If the extension was reloaded or updated while this page was open, this page's script is orphaned: sendMessage
   // throws "Extension context invalidated" or never answers. Say so plainly instead of leaving "thinking" on screen.
@@ -71,6 +78,14 @@
   }
 
   async function ask(question, compiled, voice) {
+    // Agent mode ON and the request is an order ("fill the form", "open youtube"): the task loop, not an explanation. Every
+    // other request, and every request while Agent mode is off, takes the normal tutor path below (the helper tells the user
+    // to turn Agent mode on when it recognises a task, so the sentence comes from the router, not from here).
+    if (NS.act && NS.act.isAgent() && NS.act.isTask(question)) {
+      if (NS.act.isBusy()) return NS.overlay.say("I am still working on the last task. Press Esc to stop it first.");
+      cancelTurn(); send({ type: "speech-stop" });
+      return NS.act.start(question);
+    }
     if (classic) return askClassic(question, compiled);
     const my = ++turn; closePort(); ownsVoice = true;
     inspecting = false; if (stopWatch) stopWatch();
@@ -91,7 +106,7 @@
     if (!context) context = { source: "browser", url: location.href, title: document.title, viewport: { w: innerWidth, h: innerHeight }, blocks: [], controls: c.outline.elements, errors: [] };
     last = { outline: c.outline, map: c.map };
     T.setOutlineMs(c.ms);
-    runStream(my, { type: "ask", body: { sessionId, question, context, mode: "auto" } }, { question, voice, compiled: c, blocks: context.blocks || [] });
+    runStream(my, { type: "ask", body: { sessionId, question, context, mode: "auto", armed: !!(NS.act && NS.act.isAgent()) } }, { question, voice, compiled: c, blocks: context.blocks || [] });
   }
 
   // Walk buttons (Next / Back / Stop): no 0G call, the helper answers from its walk state.
@@ -296,6 +311,7 @@
   }
 
   async function onKeyDown(e) {
+    if (NS.act && NS.act.handleKey(e)) return; // Y / N answer an approval prompt
     // Ctrl or Cmd held means it is some other chord (e.g. the desktop push-to-talk Control+Option+Space): not ours.
     // Without this, one press started a browser recording AND the desktop recording at the same time.
     if (e.ctrlKey || e.metaKey) return;
@@ -314,6 +330,8 @@
       e.preventDefault(); classic = !classic; NS.overlay.tutor.setClassic(classic);
       try { chrome.storage.local.set({ classic }); } catch { /* extension reloaded */ }
       NS.overlay.say(classic ? "Classic mode: pointing only. Option+Shift+P goes back to the tutor." : "Tutor mode: answers, steps and follow-ups.");
+    } else if (e.altKey && e.shiftKey && e.code === "KeyA") { // Agent mode on / off (default off)
+      e.preventDefault(); if (NS.act) NS.act.toggleAgent();
     } else if (e.altKey && e.shiftKey && e.code === "KeyM") { // mute / unmute the spoken answers
       e.preventDefault();
       send({ type: "speech-toggle" }).then((r) => NS.overlay.say(r.data ? (r.data.muted ? "Voice muted" : "Voice on") : "Voice: " + (r.error || "unavailable")));
@@ -333,6 +351,7 @@
       NS.overlay.toggleDebug({
         sessionId,
         proof: (id) => send({ type: "proof", requestId: id }),
+        agent: () => NS.act && NS.act.toggleAgent(),
         speech: (toggle) => send({ type: toggle ? "speech-toggle" : "speech-status" }), // debug panel Mute button
         endSession: async () => {
           const r = await send({ type: "session-end", sessionId });
@@ -340,7 +359,11 @@
           return r;
         },
       });
-    } else if (e.key === "Escape") { cancelTurn(); NS.overlay.clear(); }
+    } else if (e.key === "Escape") {
+      // Esc stops a running task at once and cancels any approval prompt (the stop flag is checked between every action).
+      if (NS.act && NS.act.isBusy()) NS.act.stop("esc");
+      else { cancelTurn(); NS.overlay.clear(); }
+    }
   }
   // isTrusted: a page can dispatch a fake Alt+Space; it must never start the microphone or spend 0G calls.
   addEventListener("keydown", (e) => { if (e.isTrusted) onKeyDown(e); }, true);

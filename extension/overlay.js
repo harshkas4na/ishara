@@ -88,6 +88,19 @@
   .pill .pctl button:hover:not(:disabled){background:#4a33a0}
   .pill .pctl button:disabled{opacity:.35;cursor:default}
   @media (prefers-reduced-motion:reduce){.pill .ind i{animation:none!important;transition:none}.pill .pt.fi{animation:none}}
+  /* Agent mode (docs/AGENT-MODE.md): the chip, progress dots, amber approval, text buttons. */
+  .agc{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);display:none;padding:3px 12px;border-radius:99px;pointer-events:none;
+       background:rgba(245,158,11,.95);color:#1c1100;font:700 12px/1.4 system-ui,sans-serif;letter-spacing:.04em;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+  .pill.amber{background:rgba(120,70,8,.96)}
+  .pill.s-acting .ind i:first-child{width:12px;height:12px;background:#60a5fa;animation:pp 1s ease-in-out infinite}
+  .pill.s-approval .ind i:first-child{width:12px;height:12px;background:#fbbf24;animation:pp .8s ease-in-out infinite}
+  .pill .dots{display:inline-flex;gap:4px;align-items:center}
+  .pill .dots i{display:block;width:7px;height:7px;border-radius:50%;background:#a78bfa}
+  .pill .dots i.cur{background:#f59e0b;animation:pp 1s ease-in-out infinite}
+  .pill .pctl button.w{width:auto;padding:0 12px;font:600 14px/1 system-ui,sans-serif}
+  .pill .pctl button.ok{background:#15803d;border-color:#22c55e}
+  .pill .pctl button.no{background:#7f1d1d;border-color:#ef4444}
+  .pill .pctl button kbd{font:inherit;opacity:.65;margin-left:5px}
   .cv{position:fixed;left:12px;bottom:12px;width:340px;max-height:62vh;overflow:auto;pointer-events:auto;display:none;
       background:#0f172a;color:#e2e8f0;border-radius:12px;font-size:13px;line-height:1.4;box-shadow:0 8px 30px rgba(0,0,0,.45)}
   .cv .hd{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px}
@@ -178,7 +191,7 @@
   function showPill(state, text, o = {}) {
     build();
     clearTimeout(tut.linger);
-    pill.classList.toggle("stop", !!o.stop);
+    pill.classList.toggle("stop", !!o.stop); pill.classList.toggle("amber", !!o.amber);
     setPillState(state); setPillText(text);
     pillPart("pc").textContent = ""; pillPart("pa").textContent = ""; pillPart("ps").style.display = "none";
     if (!o.keepCtl) pillPart("pctl").style.display = "none";
@@ -187,7 +200,7 @@
   function hidePill() {
     if (!pill) return;
     clearTimeout(tut.linger); clearTimeout(tut.pump); clearTimeout(tut.safety); clearTimeout(tut.safetyFb); tut.pump = 0;
-    pill.style.display = "none"; pill.classList.remove("stop", "top");
+    pill.style.display = "none"; pill.classList.remove("stop", "top", "amber");
     tut.rect = null; tut.active = false;
   }
   // The pill sits bottom-centre; if the pointed target is under it, it hops to the top edge.
@@ -509,6 +522,11 @@
       NS._dbgHandlers.speech(false).then(show);
       mb.onclick = () => NS._dbgHandlers.speech(true).then(() => NS._dbgHandlers.speech(false)).then(show);
     }
+    // Agent mode switch (same as Option+Shift+A). Off by default; the label shows the current state.
+    if (NS._dbgHandlers.agent) {
+      const ab = el("button", "", NS.act && NS.act.isAgent() ? "Agent mode: ON (turn off)" : "Agent mode: off (turn on)", btns);
+      ab.onclick = () => { NS._dbgHandlers.agent(); setTimeout(() => { ab.textContent = NS.act && NS.act.isAgent() ? "Agent mode: ON (turn off)" : "Agent mode: off (turn on)"; }, 50); };
+    }
 
     // 4. End the session: encrypt the log, store it on 0G, record its root on the chain.
     el("div", "sec", "Save this session", panel);
@@ -781,5 +799,50 @@
     _state: () => ({ sentences: tut.sentences.slice(), points: tut.points.slice(), step: tut.step, walkActive: tut.walkActive, convo: convo.length }),
   };
 
-  NS.overlay = { tutor, clear, say, point, pointAtFrameElement, ringBoth, thinking, openTypeBox, setDebug, toggleDebug, showOutline, setListening, setLevel };
+
+  // ---- Agent mode UI (docs/AGENT-MODE.md). The logic (loop, executor, approval) lives in act.js; this is only what is drawn. ----
+  // Every string (a model's `say`, a page's control label) goes in through textContent. The pill is click-through except these
+  // buttons, so a page cannot be clicked through them and the user can always reach Stop.
+  const ag = { chip: null };
+  function agentChip(on) {
+    build();
+    if (!ag.chip) { ag.chip = document.createElement("div"); ag.chip.className = "agc"; ag.chip.textContent = "Agent mode"; root.append(ag.chip); }
+    ag.chip.style.display = on ? "block" : "none";
+  }
+  // state: thinking | acting | approval | idle | refused. buttons: [{label, kbd, cls, onClick}]. n: step number for the dots row.
+  function agentPill(state, text, o = {}) {
+    build();
+    tut.active = false; clearTimeout(tut.pump); clearTimeout(tut.safety); clearTimeout(tut.safetyFb);
+    showPill(state, text, { stop: !!o.red, amber: !!o.amber });
+    const pc = pillPart("pc"), ctl = pillPart("pctl");
+    if (o.n) {
+      const d = node("span", "dots", null, pc); const shown = Math.min(o.n, 12);
+      for (let i = 0; i < shown; i++) node("i", i === shown - 1 && o.live !== false ? "cur" : "", null, d);
+      pillPart("ps").style.display = "flex";
+    }
+    if (o.why) pillNote(o.why);
+    ctl.textContent = "";
+    if (o.buttons && o.buttons.length) {
+      ctl.style.display = "flex";
+      for (const bt of o.buttons) {
+        const b = node("button", "w " + (bt.cls || ""), bt.label, ctl); b.type = "button";
+        if (bt.kbd) node("kbd", "", bt.kbd, b);
+        b.onmousedown = (e) => e.preventDefault(); // keep focus (and the typed text) where the page has it
+        b.onclick = () => bt.onClick();
+      }
+    }
+    placePill();
+    clearTimeout(tut.linger);
+    if (o.linger) tut.linger = setTimeout(hidePill, o.linger);
+  }
+  const agent = {
+    chip: agentChip, pill: agentPill,
+    point: (el) => point(el, "", null, { quiet: true, glide: true }),
+    clearMarks: clearStage,
+    hide: () => { clearStage(); hidePill(); },
+    _pill: () => pill ? { state: (pill.className.match(/s-(\w+)/) || [])[1], text: pillPart("pt").textContent, amber: pill.classList.contains("amber"), red: pill.classList.contains("stop"), visible: pill.style.display === "flex",
+      buttons: [...pillPart("pctl").querySelectorAll("button")].map((b) => b.firstChild.textContent), dots: pill.querySelectorAll(".dots i").length, chip: !!ag.chip && ag.chip.style.display === "block" } : null,
+  };
+
+  NS.overlay = { agent, tutor, clear, say, point, pointAtFrameElement, ringBoth, thinking, openTypeBox, setDebug, toggleDebug, showOutline, setListening, setLevel };
 })();

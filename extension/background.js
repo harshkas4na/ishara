@@ -83,6 +83,13 @@ async function handle(msg, sender) {
       if (s.error) return s;
       return helper("/speech/mute", json({ muted: !s.data.muted }), 3000);
     }
+    // ---- Agent mode (extension/act.js). Only content scripts of this extension can send these (sender.tab). ----
+    case "act-post": { // plain POSTs of the act protocol, through the worker for the same reason as /tutor: Host/Origin and CORS
+      if (!ACT_PATHS.has(msg.path)) return { error: "path not allowed" };
+      return helper(msg.path, json(msg.body || {}), 20000);
+    }
+    case "act-state": return actState(msg, sender);
+    case "act-tab": return actTab(msg, sender);
     case "open-setup": chrome.tabs.create({ url: chrome.runtime.getURL("setup.html") }); return {};
   }
   return { error: "unknown message " + msg.type };
@@ -93,6 +100,103 @@ chrome.runtime.onMessage.addListener((msg, sender, send) => {
   // A thrown error (offscreen document missing, tab gone) must still answer, or the page waits on a closed port.
   handle(msg, sender).then(send, (e) => send({ error: String(e?.message ?? e) }));
   return true; // async response
+});
+
+// ---- Agent mode: state, tab actions, relay ----
+// Which helper paths the page may reach through the worker. /act/clipboard is the optional pbcopy route (coordinated with the helper).
+const ACT_PATHS = new Set(["/act/result", "/act/approve", "/act/stop", "/act/clipboard", "/speech/say"]);
+const ACT_EVENTS = ["thinking", "action", "approval", "result", "done", "failed", "stopped", "refused", "ask"];
+const ACT_END = ["done", "failed", "stopped", "refused", "ask"];
+
+// The running task of a tab, so the next page of the same tab can carry on (a link, open_url, back/forward). chrome.storage.session
+// is cleared when the browser closes and is not readable by pages. Keyed by tab id; dropped when the tab closes or after 10 minutes.
+// The task text lives here only for those minutes and never goes anywhere but the helper.
+const STATE_TTL = 10 * 60 * 1000;
+const stateKey = (tabId) => "act:" + tabId;
+async function actState(msg, sender) {
+  if (msg.op === "agent-get") { const r = await chrome.storage.session.get("agentOn"); return { on: !!r.agentOn }; }
+  if (msg.op === "agent-set") { await chrome.storage.session.set({ agentOn: !!msg.on }); return { ok: true }; }
+  const tabId = sender?.tab?.id;
+  if (tabId == null) return { error: "no tab" };
+  const key = stateKey(tabId);
+  if (msg.op === "get") {
+    const r = await chrome.storage.session.get(key), s = r[key];
+    if (s && Date.now() - (s.startedAt || 0) > STATE_TTL) { await chrome.storage.session.remove(key); return { state: null }; }
+    return { state: s || null };
+  }
+  if (msg.op === "set") {
+    const s = msg.state;
+    if (!s || typeof s !== "object" || typeof s.task !== "string" || typeof s.actId !== "string") return { error: "bad state" };
+    await chrome.storage.session.set({ [key]: { actId: s.actId.slice(0, 64), task: s.task.slice(0, 2000), startedAt: Number(s.startedAt) || Date.now(), history: (Array.isArray(s.history) ? s.history : []).slice(-12).map((h) => String(h).slice(0, 100)), done: Number(s.done) || 0, awaiting: !!s.awaiting } });
+    return { ok: true };
+  }
+  if (msg.op === "clear") { await chrome.storage.session.remove(key); return { ok: true }; }
+  return { error: "unknown op" };
+}
+chrome.tabs.onRemoved.addListener((tabId) => { chrome.storage.session.remove(stateKey(tabId)).catch(() => {}); });
+
+// Tab-level actions a page cannot do for itself. open_url navigates the CURRENT tab (so the content script of the next page can
+// resume the task) unless newTab is set; a new tab inherits the task state so the work carries on there.
+async function actTab(msg, sender) {
+  const tab = sender?.tab;
+  if (!tab || tab.id == null) return { error: "no tab" };
+  switch (msg.cmd) {
+    case "open_url": {
+      let u; try { u = new URL(String(msg.url)); } catch { return { error: "not a URL" }; }
+      if (u.protocol !== "http:" && u.protocol !== "https:") return { error: "only http and https links can be opened" };
+      if (msg.newTab) {
+        const nt = await chrome.tabs.create({ url: u.href, active: true });
+        const r = await chrome.storage.session.get(stateKey(tab.id));
+        if (r[stateKey(tab.id)] && nt.id != null) { await chrome.storage.session.set({ [stateKey(nt.id)]: { ...r[stateKey(tab.id)], awaiting: true } }); await chrome.storage.session.remove(stateKey(tab.id)); }
+        return { ok: true };
+      }
+      await chrome.tabs.update(tab.id, { url: u.href });
+      return { ok: true };
+    }
+    case "new_tab": { const nt = await chrome.tabs.create({ active: true }); return nt ? { ok: true, detail: "opened a new tab" } : { ok: false, detail: "could not open a tab" }; }
+    case "close_tab": await chrome.storage.session.remove(stateKey(tab.id)); setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 300); return { ok: true, detail: "closing this tab" };
+    case "reload": await chrome.tabs.reload(tab.id); return { ok: true, detail: "reloading" };
+    case "back": try { await chrome.tabs.goBack(tab.id); return { ok: true, detail: "went back" }; } catch { return { ok: false, detail: "there is no page to go back to" }; }
+    case "forward": try { await chrome.tabs.goForward(tab.id); return { ok: true, detail: "went forward" }; } catch { return { ok: false, detail: "there is no page to go forward to" }; }
+    case "screenshot": {
+      // The picture is returned to the asking page only (to place on the clipboard) and is never sent to the helper or 0G.
+      try { const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }); return { ok: true, dataUrl }; }
+      catch (e) { return { ok: false, detail: "the browser would not take a screenshot of this page" }; }
+    }
+    case "download": {
+      if (typeof msg.dataUrl !== "string" || !msg.dataUrl.startsWith("data:image/png;base64,")) return { error: "not a png" };
+      const d = new Date(), p2 = (n) => String(n).padStart(2, "0");
+      const filename = `Ishara-screenshot-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.png`;
+      try { await chrome.downloads.download({ url: msg.dataUrl, filename, saveAs: false }); return { ok: true, filename }; }
+      catch { return { ok: false, detail: "could not save the screenshot" }; }
+    }
+  }
+  return { error: "unknown tab command" };
+}
+
+// The same relay as /tutor, for POST /act: the content script posts {type:"start", body}; events come back as {event, data}. The task
+// text is in the body and is never logged here. A new "start" or a disconnect aborts the fetch (stopping is POST /act/stop, separate).
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "act" || port.sender?.id !== chrome.runtime.id) return;
+  let ctl = null, ping = 0;
+  const stop = () => { if (ctl) ctl.abort(); ctl = null; clearInterval(ping); ping = 0; };
+  port.onMessage.addListener((m) => {
+    if (m?.type !== "start" || !m.body) return;
+    stop();
+    const mine = (ctl = new AbortController());
+    const post = (x) => { try { port.postMessage(x); } catch { stop(); } };
+    // A task runs up to 3 minutes (hard cap) plus approvals; the keep-alive ping stops the worker sleeping through the gaps.
+    ping = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
+    const cap = setTimeout(() => { post({ event: "failed", data: { say: "That took too long.", steps: 0, requestIds: { brain: [], laya: [] }, ms: 300000 } }); mine.abort(); }, 5 * 60 * 1000);
+    globalThis.IsharaSSE.relay({
+      fetchFn: fetch, url: HELPER + "/act", signal: mine.signal, post,
+      known: ACT_EVENTS, terminals: ACT_END,
+      offlineEvent: (cause) => ({ event: "refused", data: { cause, say: "I could not reach Ishara's helper." } }),
+      cutoff: () => ({ event: "failed", data: { say: "The helper stopped answering.", steps: 0, requestIds: { brain: [], laya: [] }, ms: 0 } }),
+      init: { method: "POST", headers: { "content-type": "application/json", accept: "text/event-stream" }, body: JSON.stringify(m.body) },
+    }).finally(() => { clearTimeout(cap); if (ctl === mine) { clearInterval(ping); ping = 0; ctl = null; } });
+  });
+  port.onDisconnect.addListener(stop);
 });
 
 // ---- Tutor stream relay ----
