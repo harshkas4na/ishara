@@ -52,17 +52,26 @@ project. There is no non-0G fallback by design. The "How do I know?" page (`/app
 answer, and the replay page (`/app/replay.html`) reads a whole session back from 0G Storage and verifies it.
 
 ## CROPS
-- **Censorship resistant:** no account, server or key of ours sits between you and 0G, and the tutor never substitutes a
-  different model when 0G is unreachable. The honest limit: the Router is a single path to 0G.
-- **Open source:** MIT, public repository; the plan, the audits and the AI use are in the repository.
-- **Private:** audio and the voice model stay on your laptop; spoken answers are synthesised locally; no screenshot is
-  ever sent. What leaves is your question and the page's visible text with secrets removed, only to sealed providers.
-  0GM-1.0 is end-to-end encrypted; laya and storage are sealed hardware but not end-to-end encrypted, and we say so.
-- **Secure:** the 0G key lives only in the local helper, never in the extension. Page text is treated as untrusted data
-  (fenced, marker look-alikes neutralized); the model has no tools and can only speak and request a pointer. Answers
-  have a signature checked against the on-chain signer. Logs are AES-256-GCM encrypted before upload. The extension
-  has no third-party scripts or analytics, and the helper listens only on 127.0.0.1 and refuses every website except this
-  extension (a foreign Host or Origin gets a 403). Local programs without an Origin header can still call it.
+Lead property: **Private**. The other three hold, and where we trade something away it is stated here.
+
+- **C, censorship resistant.** What we control that you depend on: nothing. There is no domain, server, relayer or
+  account of ours; the helper runs on your laptop and talks straight to the 0G Router. If 0G refuses or cannot be
+  reached, Ishara says so and stops; it never swaps in another model or answers from a cache. **Trade-off:** the Router
+  is a single path to 0G, so when it is down Ishara is down (it was, twice, during this hackathon, and failed closed).
+- **O, open source.** MIT licence. You can build and run it from this repository alone (needs your own 0G Router key and
+  the free local speech models, see "Run it"). The plan, audits and AI use are in the repository.
+- **P, private.** Your voice becomes text on your laptop and the spoken answer is made on your laptop; no audio and no
+  screenshot is ever sent. Third parties learn this: the 0G Router and the sealed provider see your question and the
+  page's visible text with secrets removed (password, seed, key and card fields and anything shaped like a secret are
+  stripped first, in the tab and again in the helper). 0GM-1.0 is end-to-end encrypted; laya and 0G Storage run on
+  sealed hardware but are not end-to-end encrypted. No analytics, trackers or third-party scripts anywhere in the client.
+- **S, secure.** The 0G key lives only in the local helper, never in the extension, and the helper accepts only this
+  extension (a foreign Host or Origin gets a 403; local programs with no Origin header can still call it). Page text is
+  untrusted data (fenced, marker look-alikes neutralized). In tutor mode the model can only speak and ask for a pointer,
+  and every pointer needs a second model's yes. Agent mode is off until you arm it, asks you before risky steps,
+  refuses secret fields and wallet-approval flows, and stops on Esc. Answers carry a signature checked against the
+  on-chain signer; session logs are AES-256-GCM encrypted before upload. **Trust assumption:** you trust 0G's sealed
+  hardware and its signer registry.
 
 ## Measured (not claimed)
 All on the real 0G router (6 Nov 2026), mechanical checks, no model judging itself.
