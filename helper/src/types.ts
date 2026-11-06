@@ -63,8 +63,8 @@ export type TutorEvent =
   | { event: "thinking"; data: { mode: TutorMode } }
   | { event: "say"; data: { seq: number; text: string } }
   | { event: "point"; data: { seq: number; targetId: string; kind: "control" | "block"; status: PointStatus; layaP?: number; reason: string } }
-  | { event: "step"; data: { n: number; m: number; say: string; targetId?: string; kind?: "control" | "block" } }
-  | { event: "done"; data: { mode: TutorMode; outcome: TutorOutcome; cause?: Cause; requestIds: { brain?: string; laya: string[] }; ms: { firstToken?: number; total: number }; testRouter?: true; calls: TutorCallRef[] } }
+  | { event: "step"; data: { n: number; m: number; say: string; targetId?: string; kind?: "control" | "block"} }
+  | { event: "done"; data: { mode: TutorMode; outcome: TutorOutcome; cause?: Cause; requestIds: { brain?: string; laya: string[] }; ms: { firstToken?: number; total: number }; testRouter?: true; calls: TutorCallRef[]; plan?: Array<{ n: number; m: number; say: string; targetId?: string }> } }
   | { event: "refused"; data: { cause: Cause; say: string } };
 // What a streamed 0GM call yields: text chunks, then exactly one of meta (the stream ended, maybe cut off) or error (nothing usable arrived).
 export type TutorStreamItem =
@@ -78,6 +78,6 @@ export type PointerVerdict =
   | { ok: false; cause: Cause };
 export type TutorDeps = {
   askStream: (messages: ChatMessage[], opts?: { timeoutMs?: number }) => AsyncGenerator<TutorStreamItem>;
-  checkPointer: (question: string, target: { id: string; kind: "control" | "block"; label: string; role?: string }) => Promise<PointerVerdict>;
+  checkPointer: (question: string, target: { id: string; kind: "control" | "block"; label: string; role?: string; sentence?: string }) => Promise<PointerVerdict>;
   now?: () => number;
 };

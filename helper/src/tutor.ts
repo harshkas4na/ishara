@@ -16,7 +16,7 @@ import type { Cause, PageContext, PointerVerdict, TutorCallRef, TutorDeps, Tutor
 export type TutorDepsFull = TutorDeps & { convo?: ConvoStore; walks?: WalkStore };
 
 // ---- default deps. The pointer gate is another module; if it is missing, behave as "laya unreachable".
-async function defaultCheckPointer(question: string, target: { id: string; kind: "control" | "block"; label: string; role?: string }): Promise<PointerVerdict> {
+async function defaultCheckPointer(question: string, target: { id: string; kind: "control" | "block"; label: string; role?: string; sentence?: string }): Promise<PointerVerdict> {
   try {
     const mod: any = await import("./pointer-gate.ts");
     if (typeof mod.checkPointer !== "function") return { ok: false, cause: "unavailable" };
@@ -52,13 +52,13 @@ const verdictStatus = (v: PointerVerdict) => (!v.ok ? "suppressed" : v.p >= VERI
 type Ctl = { ch: Channel<TutorEvent>; calls: TutorCallRef[]; layaIds: string[]; pending: Promise<void>[]; testRouter: boolean; pointedLabels: string[] };
 
 /** Check one pointer with laya, then emit its `point` event (and `then`, e.g. a step event). Never throws, never blocks the caller. */
-function launchPointer(ctl: Ctl, deps: TutorDeps, question: string, ctx: PageContext, seq: number, id: string, then?: () => void): void {
+function launchPointer(ctl: Ctl, deps: TutorDeps, question: string, ctx: PageContext, seq: number, id: string, sentence?: string, then?: () => void): void {
   const target = lookupTarget(ctx, id);
   if (!target) { then?.(); return; } // cannot happen after parser validation; harmless if it does
   const kind = target.kind;
   const p = (async () => {
     let v: PointerVerdict;
-    try { v = await deps.checkPointer(question, { id, kind, label: target.label, ...(target.role ? { role: target.role } : {}) }); }
+    try { v = await deps.checkPointer(question, { id, kind, label: target.label, ...(target.role ? { role: target.role } : {}), ...(sentence ? { sentence } : {}) }); }
     catch { v = { ok: false, cause: "unavailable" }; }
     if (v.ok) {
       ctl.calls.push({ role: "laya", model: LAYA_MODEL, requestId: v.requestId, chatId: v.chatId, provider: v.provider });
@@ -77,7 +77,7 @@ function launchPointer(ctl: Ctl, deps: TutorDeps, question: string, ctx: PageCon
   ctl.pending.push(p);
 }
 
-type CoreOpts = { req: TutorRequest; tabId: string; mode: TutorMode; deps: TutorDepsFull; turns: ReturnType<ConvoStore["turns"]>; walkReplan?: { index: number; steps: PlanStep[]; replans: number }; seqBase?: number };
+type CoreOpts = { req: TutorRequest; tabId: string; mode: TutorMode; deps: TutorDepsFull; turns: ReturnType<ConvoStore["turns"]>; walkReplan?: { index: number; steps: PlanStep[]; replans: number }; vague?: boolean };
 
 /** The streaming core shared by a normal turn and a walk re-plan. Yields everything except `thinking`. */
 async function* turnCore(o: CoreOpts): AsyncGenerator<TutorEvent> {
@@ -87,7 +87,7 @@ async function* turnCore(o: CoreOpts): AsyncGenerator<TutorEvent> {
   const convo = deps.convo ?? globalConvo;
   const t0 = now();
   const ctx = req.context;
-  const messages = buildTutorMessages({ mode, question: req.question, context: ctx, turns: o.turns, ...(o.walkReplan ? { walk: { index: o.walkReplan.index, steps: o.walkReplan.steps, replan: true } } : {}) });
+  const messages = buildTutorMessages({ mode, question: req.question, context: ctx, turns: o.turns, ...(o.vague ? { vague: true } : {}), ...(o.walkReplan ? { walk: { index: o.walkReplan.index, steps: o.walkReplan.steps, replan: true } } : {}) });
   const parser = new TutorStreamParser({ validIds: contextIds(ctx), mode });
   const ch = new Channel<TutorEvent>();
   const ctl: Ctl = { ch, calls: [], layaIds: [], pending: [], testRouter: false, pointedLabels: [] };
@@ -110,6 +110,13 @@ async function* turnCore(o: CoreOpts): AsyncGenerator<TutorEvent> {
     }
   };
   let step1Point: Promise<void> | undefined;
+  // laya is asked about the SENTENCE that holds the pointer (the user's question is often not about one control). A tag
+  // can arrive mid-sentence, before the sentence is complete, so such pointers wait for their sentence (or the stream's end).
+  const sayBySeq = new Map<number, string>();
+  const waiting: Array<{ seq: number; id: string; fire: (sentence?: string) => void }> = [];
+  const releaseWaiting = (seq?: number): void => {
+    for (let i = waiting.length - 1; i >= 0; i--) if (seq === undefined || waiting[i].seq === seq) { const w = waiting.splice(i, 1)[0]; w.fire(seq === undefined ? sayBySeq.get(w.seq) : sayBySeq.get(seq)); }
+  };
 
   const handle = (events: ParseEvent[]): void => {
     for (const e of events) {
@@ -120,12 +127,19 @@ async function* turnCore(o: CoreOpts): AsyncGenerator<TutorEvent> {
         if (step) step.says.push(e.text);
         if (held) continue;
         spoken.push(e.text);
+        sayBySeq.set(e.seq, e.text);
         ch.push({ event: "say", data: { seq: e.seq, text: e.text } });
+        releaseWaiting(e.seq);
       } else if (e.type === "point") {
         if (step) { if (!step.point) step.point = { id: e.targetId, kind: e.kind }; }
         if (held) continue;
-        launchPointer(ctl, deps, req.question, ctx, e.seq, e.targetId);
-        if (step && (step as { n: number }).n === 1 && !step1Point) step1Point = ctl.pending[ctl.pending.length - 1];
+        const isStep1 = step !== null && (step as { n: number }).n === 1;
+        let settle: () => void = () => {};
+        const done = new Promise<void>((r) => { settle = r; });
+        ctl.pending.push(done);
+        if (isStep1 && !step1Point) step1Point = done;
+        const fire = (sentence?: string) => launchPointer(ctl, deps, req.question, ctx, e.seq, e.targetId, sentence, settle);
+        if (sayBySeq.has(e.seq)) fire(sayBySeq.get(e.seq)); else waiting.push({ seq: e.seq, id: e.targetId, fire });
       }
     }
   };
@@ -139,6 +153,7 @@ async function* turnCore(o: CoreOpts): AsyncGenerator<TutorEvent> {
       }
       if (!failed) { handle(parser.end()); finishStep(); }
     } catch { failed = failed ?? { cause: "unavailable" }; }
+    releaseWaiting(); // a pointer whose sentence never completed is still checked, with whatever was said
     await Promise.allSettled(ctl.pending);
     ch.close();
   })();
@@ -172,6 +187,8 @@ async function* turnCore(o: CoreOpts): AsyncGenerator<TutorEvent> {
     ms: { ...(m?.firstTokenMs !== undefined ? { firstToken: m.firstTokenMs } : {}), total },
     ...(ctl.testRouter ? { testRouter: true as const } : {}),
     calls,
+    // Guide mode: the whole plan, so a client can show "step 1 of 5" and the eval can count steps; only step 1 is a live `step` event.
+    ...(mode === "guide" && plan.length ? { plan: plan.map((x) => ({ n: x.n, m: plan.length, say: x.say, ...(x.targetId ? { targetId: x.targetId } : {}) })) } : {}),
   } };
   // Remember the turn for follow-ups (RAM only). What was said is what the person heard, so that is what is stored.
   try { convo.record(o.tabId, ctx.url, { q: req.question, a: spoken.join(" "), mode, ...(ctl.pointedLabels[0] ? { pointedLabel: ctl.pointedLabels[0] } : {}) }); } catch { /* memory never breaks an answer */ }
@@ -185,7 +202,7 @@ export async function* runTutorTurn(req: TutorRequest, deps: TutorDepsFull = rea
   const route = routeQuestion({ question: req.question, requested: req.mode, hasHistory: turns.length > 0, walkActive: walks.active(tabId) });
   if (route.kind === "walk") { yield* runWalkCommand({ sessionId: req.sessionId, tabId, cmd: route.cmd, context: req.context }, deps); return; }
   yield { event: "thinking", data: { mode: route.mode } };
-  yield* turnCore({ req, tabId, mode: route.mode, deps, turns });
+  yield* turnCore({ req, tabId, mode: route.mode, deps, turns, ...(route.vague ? { vague: true } : {}) });
 }
 
 /** next / back / repeat / stop / where. No 0G call, except one fresh plan when a step's target left the page. */
@@ -212,7 +229,7 @@ export async function* runWalkCommand(req: WalkRequest, deps: TutorDepsFull = re
     const ctl: Ctl = { ch: new Channel<TutorEvent>(), calls: [], layaIds: [], pending: [], testRouter: false, pointedLabels: [] };
     const stepData = { n: move.step.n, m: move.step.m, say: move.step.say, ...(move.targetId ? { targetId: move.targetId, kind: move.kind } : {}) } as { n: number; m: number; say: string; targetId?: string; kind?: "control" | "block" };
     if (move.targetId && w?.context) {
-      launchPointer(ctl, deps, question, w.context, 1, move.targetId);
+      launchPointer(ctl, deps, question, w.context, 1, move.targetId, move.step.say);
       await Promise.allSettled(ctl.pending);
       ctl.ch.close();
       for await (const ev of ctl.ch) yield ev;

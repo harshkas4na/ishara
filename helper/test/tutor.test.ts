@@ -130,3 +130,25 @@ test("spoken text never carries ids, tags, urls or markdown across messy streams
   const messy = "**Great** question (b2)! See https://x.io and [b3] t3 `code`.\n- item one\n[POINT:b3] The end [WAIT]";
   for (const n of [1, 3, 8]) noLeaks(await collect(runTutorTurn(req("what is this"), deps(chunks(messy, n)))));
 });
+
+test("laya is given the sentence that holds the pointer, markers stripped, even when the tag comes mid-sentence", async () => {
+  const seen: Array<{ id: string; sentence?: string }> = [];
+  const laya = async (_q: string, t: { id: string; sentence?: string }) => { seen.push({ id: t.id, sentence: t.sentence }); return { ok: true as const, p: 0.9 }; };
+  await collect(runTutorTurn(req("where"), deps(chunks("Pick the version [POINT:b2] from this list. Then press the button. [POINT:b3]", 5), { laya })));
+  assert.deepEqual(seen.sort((a, b) => a.id.localeCompare(b.id)), [{ id: "b2", sentence: "Pick the version from this list." }, { id: "b3", sentence: "Then press the button." }]);
+});
+test("guide: the walk step's sentence reaches laya and done carries the whole plan", async () => {
+  const seen: string[] = [];
+  const laya = async (_q: string, t: { sentence?: string }) => { seen.push(t.sentence ?? ""); return { ok: true as const, p: 0.9 }; };
+  const d = deps(["[STEP 1/3] Paste the address. [POINT:b1] [WAIT] [STEP 2/3] Pick the version. [POINT:b2] [WAIT] [STEP 3/3] Press verify. [POINT:b3] [WAIT]"], { laya });
+  const evs = await collect(runTutorTurn(req("walk me through this"), d));
+  assert.deepEqual(ofType(evs, "done")[0].data.plan!.map((p) => p.n), [1, 2, 3]);
+  await collect(runTutorTurn(req("next"), d));
+  assert.deepEqual(seen, ["Paste the address.", "Pick the version."]);
+});
+test("vague ask: runs in explain mode with the one-question hint and no pointer", async () => {
+  const d = deps(["What are you trying to do?"]); let sent = "";
+  const d2 = { ...d, askStream: (m: any[]) => { sent = m[1].content; return d.askStream(m); } };
+  const evs = await collect(runTutorTurn(req("help"), d2));
+  assert.match(sent, /Mode: vague/); assert.equal(ofType(evs, "point").length, 0);
+});

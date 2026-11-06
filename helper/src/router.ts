@@ -19,16 +19,21 @@ export function parseWalkCommand(question: string): WalkCmd | null {
   return null;
 }
 
-const GUIDE = /(walk me through|step by step|step-by-step|guide me|what do i do next|what should i do next|what s next|how do i (fill|complete|set up|do|submit|verify|get started)|help me (fill|complete|set)|kaise karu|kaise karun|kaise bhar|kaise kare|kaise karte|kya karu|kya karun|aage kya|samjhate hue|step by step batao|ek ek karke)/;
-const POINT = /(^|\s)(where|kahan|kaha|show me|dikhao|dikha do|find|locate|point|which (button|field|link|one|input|box|option))(\s|$)|where s |where is |kidhar|kaun ?sa|kon ?sa|konsa|konsi|kaun ?si/;
+const GUIDE = /(walk me through|step by step|step-by-step|guide me|what do i do next|what should i do next|what do i do to|what s next|how (do|can|should) i (fill|complete|set up|run|connect|fix|use|start|try|install|deploy|verify|get started|begin|do this)|how to (run|connect|use|start|fix|fill)|help me (fill|complete|set|fix|start|get)|kaise karu|kaise karun|kaise bhar|kaise kare|kaise karte|kya karu|kya karun|aage kya|samjhate hue|step by step batao|ek ek karke)/;
+const POINT = /how (do|can) i (choose|pick|select|submit|paste|put|enter|accept|click|press|upload|add)|(^|\s)(where|kahan|kaha|show me|dikhao|dikha do|find|locate|point|which (button|field|link|one|input|box|option))(\s|$)|where s |where is |kidhar|kaun ?sa|kon ?sa|konsa|konsi|kaun ?si/;
 
-export type Route = { kind: "walk"; cmd: WalkCmd } | { kind: "ask"; mode: TutorMode };
+// Too little to act on ("help", "I am stuck"): the model is told to ask ONE short question instead of lecturing.
+const VAGUE = /^(help|help me|help karo|help karo na|madad|madad karo|i m stuck|im stuck|i am stuck|stuck|what now|now what|what should i do|i need help|i dont know|i don t know|kuch samajh nahi aa raha|fas gaya|atak gaya)$/;
+export const isVague = (q: string): boolean => VAGUE.test(norm(q));
+
+export type Route = { kind: "walk"; cmd: WalkCmd } | { kind: "ask"; mode: TutorMode; vague?: true };
 
 export function routeQuestion(o: { question: string; requested?: "auto" | "point" | "explain" | "guide"; hasHistory: boolean; walkActive: boolean }): Route {
   if (o.walkActive) { const cmd = parseWalkCommand(o.question); if (cmd) return { kind: "walk", cmd }; }
   // An explicit mode from the UI (a button) wins; the regexes only decide for "auto".
   if (o.requested && o.requested !== "auto") return { kind: "ask", mode: o.requested };
   const q = norm(o.question);
+  if (isVague(o.question) && !o.hasHistory) return { kind: "ask", mode: "explain", vague: true };
   if (GUIDE.test(q)) return { kind: "ask", mode: "guide" };
   if (o.hasHistory && isFollowUp(o.question)) return { kind: "ask", mode: "follow-up" };
   if (POINT.test(q)) return { kind: "ask", mode: "point" };

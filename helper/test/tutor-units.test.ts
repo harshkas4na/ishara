@@ -41,7 +41,7 @@ test("context is compact: blocks, controls with state and errors, selection, foc
 test("turns and walk replan hint reach the user message; mode hints differ", () => {
   const m = buildTutorMessages({ mode: "follow-up", question: "why?", context: page(), turns: [{ q: "what is gas", a: "Gas is a fee.", pointedLabel: "Verify" }], walk: { index: 1, steps: [{ n: 1, say: "a" }, { n: 2, say: "b" }], replan: true } })[1].content;
   assert.match(m, /Person: what is gas\nIshara: Gas is a fee\. \(pointed at: Verify\)/); assert.match(m, /Mode: follow-up/); assert.match(m, /fresh plan/);
-  assert.match(buildTutorMessages({ mode: "point", question: "q", context: page() })[1].content, /always include one \[POINT:id\]/);
+  assert.match(buildTutorMessages({ mode: "point", question: "q", context: page() })[1].content, /exactly one \[POINT:id\]/);
 });
 
 // ---- convo
@@ -127,4 +127,21 @@ test("walk: idle for 10 minutes expires it", () => {
   let t = 0; const w = new WalkStore(() => t); w.start("t", "q", steps, page());
   t = 9 * 60_000; assert.ok(w.active("t")); w.command("t", "repeat", page()); t = 18 * 60_000; assert.ok(w.active("t")); // command refreshed it
   t = 29 * 60_000; assert.equal(w.active("t"), false);
+});
+
+test("router: run/connect/fix questions are guides, choose/submit/paste are points, bare help is vague", () => {
+  for (const q of ["how do I run this", "how do I connect my wallet", "help me fix this form", "what do I do to try again", "guide me", "walk me through where to start learning", "ise kaise karu"])
+    assert.deepEqual(r(q), { kind: "ask", mode: "guide" }, q);
+  for (const q of ["how do I choose the compiler version", "how do I submit this for verification", "kaunsa button dabana hai"])
+    assert.deepEqual(r(q), { kind: "ask", mode: "point" }, q);
+  for (const q of ["help", "I am stuck", "madad karo"]) assert.deepEqual(r(q), { kind: "ask", mode: "explain", vague: true }, q);
+  assert.deepEqual(r("help", { hasHistory: true }), { kind: "ask", mode: "explain" });
+});
+test("prompt: vague hint asks one short question; Hinglish questions are tagged as Hinglish", async () => {
+  const { detectLanguage } = await import("../src/prompt.ts");
+  const v = buildTutorMessages({ mode: "explain", question: "help", context: page(), vague: true })[1].content;
+  assert.match(v, /Ask ONE short clarifying question/); assert.match(v, /no pointer\.$/);
+  assert.equal(detectLanguage("contract address kahan daalna hai"), "Hinglish (Hindi in Roman letters)");
+  assert.equal(detectLanguage("what does this mean"), "English");
+  assert.equal(detectLanguage("यह क्या है"), "Hindi (Devanagari)");
 });
