@@ -26,7 +26,9 @@ Ethereum Foundation Best CROPS App.
 1. You ask (Option+Space in the browser, hold Right Option on the desktop, or type with Option+Shift+Space).
 2. Your voice becomes text **on your laptop** (whisper.cpp with a local Hinglish model). No audio leaves the machine.
 3. The page is read into text blocks and a control list. **Secrets are removed first, in the tab:** password
-   fields, seed/key/token fields, anything shaped like a key; inputs are reported as "filled, 38 chars", not their value.
+   fields, seed/key/token/card fields, anything shaped like a key, a recovery phrase (also inside a sentence or spread
+   over 12 elements) or a card number, in page text and in control labels alike; inputs are reported as "filled, 38
+   chars", not their value. The helper applies the same redaction again before anything goes to 0G.
 4. Only your question and that redacted text go to the **0G Private Computer Router**, in `private` trust mode, to
    **0GM-1.0** (sealed, end-to-end encrypted). It streams the answer sentence by sentence.
 5. For every pointer the answer asks for, **laya** (a second sealed 0G model) is asked a yes/no: is this control the one
@@ -59,7 +61,8 @@ answer, and the replay page (`/app/replay.html`) reads a whole session back from
 - **Secure:** the 0G key lives only in the local helper, never in the extension. Page text is treated as untrusted data
   (fenced, marker look-alikes neutralized); the model has no tools and can only speak and request a pointer. Answers
   have a signature checked against the on-chain signer. Logs are AES-256-GCM encrypted before upload. The extension
-  has no third-party scripts or analytics, and the helper accepts requests only from this extension.
+  has no third-party scripts or analytics, and the helper listens only on 127.0.0.1 and refuses every website except this
+  extension (a foreign Host or Origin gets a 403). Local programs without an Origin header can still call it.
 
 ## Measured (not claimed)
 All on the real 0G router (6 Nov 2026), mechanical checks, no model judging itself.
@@ -69,18 +72,20 @@ All on the real 0G router (6 Nov 2026), mechanical checks, no model judging itse
 | 12 clear questions | 11 pointed at the right control, 0 wrong points; 1 asked instead |
 | 6 vague questions | 6 of 6 asked instead of pointing |
 
-| Tutor eval (`scripts/eval-tutor.ts`, 62 frozen cases on 11 saved pages) | Pass |
+| Tutor eval (`scripts/eval-tutor.ts`, 62 frozen cases on 11 saved pages; one full run, 6 Nov 09:20 IST) | Pass |
 |---|---|
-| explain | 15 / 15 |
+| explain | 13 / 15 |
 | judgement | 6 / 6 |
-| follow-up | 8 / 8 |
-| point | 8 / 8 |
+| follow-up | 6 / 8 |
+| point | 7 / 8 |
 | prompt-injection canaries | 6 / 6 |
 | Hinglish questions | 6 / 6 |
 | walk-through (guide) | 6 / 8 |
-| asking about something not on the page | 4 / 5 |
+| asking about something not on the page | 2 / 5 (3 of the misses are answers a few words over the length limit or an unasked pointer) |
 
-Latency: first spoken sentence about 1.9 s (p50), full answer about 3 s; local voice starts about 0.3 s after the
+Runs vary: the same suite scored point 8/8 and absent 4/5 in an earlier run. Quote one full run, per class.
+
+Latency: first spoken sentence about 1.9 s (p50), full answer about 2.9 s (p50); local voice starts about 0.3 s after the
 text. Hinglish speech recognition: word error 28% on synthetic Hinglish voices (it was 67% before we replaced the
 English-only model); English 0%. Live receipts: for both 0GM-1.0 and laya the signature recovers to the signer
 registered on-chain. A session log uploaded to 0G Storage in about 10-15 s, its root is on the contract, and the
@@ -105,8 +110,10 @@ Details: `docs/TESTING-extension.md`, `docs/DESKTOP.md`, `docs/SPEECH.md`.
 - **The proof is limited:** it shows a sealed provider with this on-chain signer answered this chat id, not the exact
   words. The signature is only served for about 20 minutes, so it is fetched right after each answer.
 - **A hostile page can still make the tutor say something wrong.** It cannot act (no tools), and every pointer needs laya's
-  yes, but laya checks the pointer against the tutor's own sentence, so a prompt-injected instruction the model repeats
-  depends on the model's own guard (6 of 6 canaries passed).
+  yes. laya checks the pointer against the tutor's own sentence, so in an audit a fake transcript planted in page text got a
+  confirmed pointer at "Sign in". Since then a gate rule refuses a pointer at any control that page text addressed to an
+  assistant asks for, unless you named it yourself. Plain page instructions ("sign in first") are not caught by that rule
+  and can still shape what the tutor says.
 - **Hinglish is measured on synthetic voices.** Real-voice results are not in yet; the spoken answer is an English voice.
 - **Tested on a limited set of pages:** a mock page and 11 saved contexts (some text hand-authored), plus manual runs on
   real sites. Iframes work in the browser; canvas and closed shadow DOM are not read.
