@@ -31,6 +31,9 @@ async function ensureOffscreen() {
 
 const json = (body) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
+// Create the offscreen document at worker start so the first key-down does not pay for it (creating it does not touch the mic).
+ensureOffscreen().catch(() => {});
+
 // The tab that is recording, so live mic levels go back to it.
 let recTab = null;
 
@@ -39,9 +42,12 @@ async function handle(msg, sender) {
     case "level":
       if (recTab != null) chrome.tabs.sendMessage(recTab, { type: "level", rms: msg.rms }).catch(() => {});
       return {};
+    case "mic-live": // the offscreen recorder's first buffer of a take: tell the tab that is recording (PREPARING -> LISTENING)
+      if (recTab != null) chrome.tabs.sendMessage(recTab, { type: "mic-live", ms: msg.ms, warm: msg.warm }).catch(() => {});
+      return {};
     case "rec-start": {
       recTab = sender?.tab?.id ?? null;
-      await ensureOffscreen();
+      await ensureOffscreen(); // already there after the first use or the startup call below, so this is a cheap check
       return chrome.runtime.sendMessage({ target: "offscreen", cmd: "start" });
     }
     case "rec-stop": {

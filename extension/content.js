@@ -54,7 +54,10 @@
 
   function closePort() { if (port) { try { port.disconnect(); } catch { /* already gone */ } port = null; } streaming = false; }
   // A new question or Esc: end the old stream (the worker aborts its fetch; the helper keeps draining 0G for the proof).
-  function cancelTurn() { turn++; closePort(); send({ type: "speech-stop" }); }
+  // /speech/stop is global to the helper, so a stray one from this tab would cut ANOTHER browser's answer (Esc pressed in a page
+  // while a different browser is being read to). Only a tab that started a question may stop the voice on Esc.
+  let ownsVoice = false;
+  function cancelTurn() { turn++; closePort(); if (ownsVoice) { ownsVoice = false; send({ type: "speech-stop" }); } }
 
   // Block ids come from the page reader. It may hand back an Element or a Range; no resolver (or no match) means we
   // show the sentence and skip the ring, never guess a position.
@@ -69,7 +72,7 @@
 
   async function ask(question, compiled, voice) {
     if (classic) return askClassic(question, compiled);
-    const my = ++turn; closePort();
+    const my = ++turn; closePort(); ownsVoice = true;
     inspecting = false; if (stopWatch) stopWatch();
     send({ type: "speech-stop" }); // silence the previous spoken answer at once; the worker also does it when the stream starts
     const T = NS.overlay.tutor;
@@ -214,12 +217,43 @@
     return same.length === 1 ? now.map.get(same[0].id) : null;
   }
 
-  // Live mic level while the key is held: a row of blocks that grows with your voice. Silence stays empty,
-  // which is how you can tell the mic is not hearing you before you let go.
+  // Listening states (docs/UI-PILL.md): PREPARING from the key-down, LISTENING ("Speak now" + a soft tick) the moment the
+  // offscreen recorder delivers its first buffer (`mic-live`). The overlay's setListening owns the pill; the say() text is
+  // only the fallback for an overlay without it. Everything said before "Speak now" is already being recorded (pre-roll).
+  let tAt = 0, micLive = false;
+  function showListening(state) {
+    if (NS.overlay.setListening) NS.overlay.setListening(state);
+    else if (state === "preparing") NS.overlay.say("Getting ready…");
+    else if (state === "listening") NS.overlay.say("Speak now");
+  }
+  // The tick: 40 ms of 880 Hz, 10 ms fades, quiet. The AudioContext is created inside the key-down (a user gesture) so the
+  // browser lets it play. It sounds before the user speaks and is far quieter than speech; Whisper was measured not to hear
+  // it as a word (docs/TESTING-extension.md), so nothing is cut from the recording. `tickOff` in chrome.storage.local mutes it.
+  let tickCtx = null, tickOff = false;
+  try { chrome.storage.local.get("tickOff", (r) => { tickOff = !!(r && r.tickOff); }); chrome.storage.onChanged.addListener((c) => { if (c.tickOff) tickOff = !!c.tickOff.newValue; }); } catch { /* extension reloaded */ }
+  function primeTick() { try { tickCtx = tickCtx || new AudioContext(); if (tickCtx.state === "suspended") tickCtx.resume(); } catch { tickCtx = null; } }
+  function playTick() {
+    if (tickOff || !tickCtx) return;
+    try {
+      const t = tickCtx.currentTime, o = tickCtx.createOscillator(), g = tickCtx.createGain();
+      o.frequency.value = 880; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 0.01);
+      g.gain.setValueAtTime(0.06, t + 0.03); g.gain.linearRampToValueAtTime(0, t + 0.04);
+      o.connect(g); g.connect(tickCtx.destination); o.start(t); o.stop(t + 0.045);
+    } catch { /* a missing tick never breaks a take */ }
+  }
   chrome.runtime.onMessage.addListener((m) => {
-    if (m.type !== "level" || !recording) return;
-    const n = Math.min(10, Math.round(Math.sqrt(m.rms) * 28));
-    NS.overlay.say("Listening… release to send\n" + "▮".repeat(n) + "▯".repeat(10 - n));
+    if (m.type === "mic-live" && !micLive && tAt) {
+      micLive = true;
+      const ms = Math.round(performance.now() - tAt);
+      document.documentElement.dataset.isharaMicLiveMs = String(ms); // measurement hook: key-down -> mic live, in this page
+      console.debug("[ishara] mic live", ms, "ms after key-down", m.warm ? "(warm)" : "(cold)");
+      if (recording) { showListening("listening"); playTick(); } // a tap released before the mic went live gets neither
+    } else if (m.type === "level" && micLive && recording) {
+      // Live mic level: bars that grow with your voice. Silence stays empty, so you can tell the mic is not hearing you.
+      const n = Math.min(10, Math.round(Math.sqrt(m.rms) * 28));
+      if (NS.overlay.setLevel) NS.overlay.setLevel(n);
+      else NS.overlay.say("Speak now\n" + "▮".repeat(n) + "▯".repeat(10 - n));
+    }
   });
 
   // Noise, blank and non-Latin garbage are rejected by the helper (transcript-guard.ts), which returns text "". Not here:
@@ -227,21 +261,23 @@
 
   async function startTalking() {
     if (recording || busy || transcribing) return;
-    recording = true;
-    send({ type: "speech-stop" }); // stop the spoken answer before the mic opens, so it can never be recorded
+    recording = true; micLive = false; tAt = performance.now(); primeTick();
+    // rec-start goes out FIRST: nothing below may delay the recorder, and the offscreen document buffers from its first sample.
+    startP = send({ type: "rec-start" });
+    send({ type: "speech-stop" }); // stop the spoken answer so it can never be recorded
     cancelTurn(); // and end a stream still being read
     NS.overlay.clear();
+    showListening("preparing");
     // Compile now, in parallel with the speech, so the outline is ready the moment we have text.
     pending = NS.compileOutlineAsync(); // a promise: frames get ~250 ms to answer while the user speaks
-    NS.overlay.say("Listening… release to send");
-    startP = send({ type: "rec-start" });
     const r = await startP;
-    if (r && r.error) { recording = false; showError(r.error); if (/microphone/.test(r.error)) send({ type: "open-setup" }); }
+    if (r && r.error) { recording = false; if (NS.overlay.setListening) NS.overlay.setListening(null); showError(r.error); if (/microphone/.test(r.error)) send({ type: "open-setup" }); }
   }
 
   async function stopTalking() {
     if (!recording) return;
     recording = false;
+    if (NS.overlay.setListening) NS.overlay.setListening(null); // the pill moves on to "Transcribing…"
     NS.overlay.say("Transcribing…");
     const compiled = pending; pending = null;
     transcribing = true;
