@@ -298,15 +298,18 @@ const QUESTION = /^(what|why|how|when|where|who|which|whose|is|are|was|were|does
 // First-word imperatives, and the Hinglish verbs that END the sentence ("settings kholo", "naam bharo").
 const VERBS = /^(open|launch|go to|click|tap|press|hit|fill|fill in|fill out|type|enter|scroll|copy|play|pause|resume|search|select|choose|close|quit|exit|screenshot|take a screenshot|take screenshot|turn on|turn off|switch to|uncheck|toggle|paste)\b/;
 const HINGLISH_END = /\b(kholo|khol do|kholiye|bharo|bhar do|likho|likh do|chalao|chala do|dabao|daba do|band karo|band kar do|select karo|click karo|copy karo|search karo|scroll karo|screenshot lo|le lo)$/;
+const HINGLISH_MID = /\b(likho|likh do|bharo|bhar do)\b/; // "yahan likho hello": the verb comes before the thing to write
 /** A sentence that asks Ishara to DO something (not to explain it). Questions and walk words ("next", "stop") are never tasks. */
 export function isTaskUtterance(text: string): boolean {
   const raw = text.trim();
   if (!raw || raw.endsWith("?")) return false;
   const q = stripFiller(squash(raw));
   if (!q || q.split(" ").length < 2 && !/^screenshot$/.test(q)) return false;
-  if (QUESTION.test(q) || parseWalkCommand(raw)) return false;
-  if (agentModeCommand(raw)) return false;
-  return VERBS.test(q) || HINGLISH_END.test(q);
+  if (parseWalkCommand(raw) || agentModeCommand(raw)) return false;
+  // A Hinglish sentence that ends in a verb is a command even when it starts with "is" ("is window ko band karo" = close THIS window).
+  if (HINGLISH_END.test(q) && !/^(kya|kaise|kyun|kab|kaun)\b/.test(q)) return true;
+  if (QUESTION.test(q)) return false;
+  return VERBS.test(q) || HINGLISH_END.test(q) || HINGLISH_MID.test(q);
 }
 
 const YES = /^(yes|yeah|yep|yup|yes please|haan|han|haan karo|ha|ji haan|ok|okay|ok do it|okay do it|do it|yes do it|go ahead|approve|approved|sure|theek hai|thik hai|kar do|karo|confirm|yes go ahead|yes approve)$/;
