@@ -9,21 +9,29 @@ import { existsSync } from "node:fs";
 import type { Decision, Outline, OutlineElement, PageContext, Control, ControlState } from "./types.ts";
 import { readerCore } from "./redact.ts";
 import { speaker } from "./speech.ts";
+import { parseWalkCommand } from "./router.ts";
 
 const DESKTOP_DIR = fileURLToPath(new URL("../../desktop/", import.meta.url));
 export const AX_BIN = DESKTOP_DIR + "ishara-ax";
 export const OVERLAY_BIN = DESKTOP_DIR + "ishara-overlay";
 const AX_TIMEOUT_MS = 6000;
 
+export type PillState = "preparing" | "listening" | "thinking" | "speaking" | "refused" | "idle";
 export type DecideFn = (sessionId: string, question: string, outline: Outline) => Promise<Decision>;
 export type OverlayCmd =
   // rect (screen points, top-left origin) lets the overlay draw the marker loop/underline; x,y is its centre.
   // keep: true = the bubble already shows the streamed answer; only move it next to the target (tutor path).
-  | { cmd: "point"; x: number; y: number; text: string; rect?: { x: number; y: number; w: number; h: number }; keep?: boolean }
-  | { cmd: "think"; text: string }
-  | { cmd: "say"; text: string; append: boolean }   // one streamed sentence; append:false starts a fresh bubble
-  | { cmd: "step"; n: number; m: number }           // bubble header "Step n of m"
-  | { cmd: "done" }                                 // the turn ended: let the bubble linger, then fade
+  // kind (docs/UI-PILL.md): "control" gets a pen-drawn boundary, "block" (text) a highlighter band; absent = control.
+  | { cmd: "point"; x: number; y: number; text: string; rect?: { x: number; y: number; w: number; h: number }; keep?: boolean; kind?: "control" | "block" }
+  | { cmd: "think"; text: string }                  // legacy: the pill in THINKING state (kept for scripts and old callers)
+  | { cmd: "say"; text: string; append: boolean }   // one streamed sentence; the pill queues it (shown >= 1.5 s) until `speaking` events take over
+  | { cmd: "step"; n: number; m: number }           // legacy name of `steps`
+  | { cmd: "done" }                                 // the turn ended: let the pill linger, then fade
+  // The pill (docs/UI-PILL.md). state "idle" hides it; text is optional (each state has a default).
+  | { cmd: "state"; state: PillState; text?: string; sub?: string }
+  | { cmd: "level"; rms: number }                   // microphone level for the LISTENING bars
+  | { cmd: "speaking"; text: string }               // the voice STARTED this sentence; "" = the voice went quiet
+  | { cmd: "steps"; n: number; m: number }          // guide mode chip "n/m" and the ‹ › ✕ buttons; m <= 1 hides them
   | { cmd: "ask"; text: string }
   | { cmd: "stop"; text: string; sub?: string }
   | { cmd: "clear" };
@@ -144,11 +152,47 @@ export function warmDesktop(): Promise<void> {
 }
 
 let child: ChildProcess | null = null;
+
+// The overlay prints one JSON line per button the user pressed in the pill: {"ev":"walk","cmd":"next"}.
+// Anything else (its {"ready":true}, noise) is ignored. Pure, tested.
+export type WalkButton = "next" | "back" | "repeat" | "stop";
+const WALK_BUTTONS: readonly string[] = ["next", "back", "repeat", "stop"];
+export function parseOverlayLine(line: string): WalkButton | null {
+  let o: any;
+  try { o = JSON.parse(line); } catch { return null; }
+  return o && o.ev === "walk" && WALK_BUTTONS.includes(o.cmd) ? o.cmd : null;
+}
+// A button is the same thing as saying the word: the router treats exactly these utterances as walk commands for the
+// active conversation key (desktop:<bundle id>), so a button reuses that path and invents no second one.
+export const WALK_UTTERANCE: Record<WalkButton, string> = { next: "next", back: "back", repeat: "repeat", stop: "stop" };
+
+/** Turns overlay stdout lines into walk turns. A new press cuts the previous button turn off. `ask` is injected. */
+export function createWalkButtons(ask: (utterance: string, signal: AbortSignal) => Promise<unknown>) {
+  let ctl: AbortController | null = null;
+  return {
+    onLine(line: string): WalkButton | null {
+      const cmd = parseOverlayLine(line);
+      if (!cmd) return null;
+      ctl?.abort();
+      ctl = new AbortController();
+      ask(WALK_UTTERANCE[cmd], ctl.signal).catch(() => {}); // desktopAsk reports its own failures in the pill
+      return cmd;
+    },
+  };
+}
+const walkButtons = createWalkButtons((u, signal) => desktopAsk(u, { signal }));
+
 function startOverlay(): ChildProcess {
   if (child && child.exitCode === null && !child.killed) return child;
   need(OVERLAY_BIN);
-  const p = spawn(OVERLAY_BIN, [], { stdio: ["pipe", "ignore", "inherit"] });
+  const p = spawn(OVERLAY_BIN, [], { stdio: ["pipe", "pipe", "inherit"] });
   p.stdin!.on("error", () => {}); // a dead overlay must not crash the helper; the next send restarts it
+  let buf = "";
+  p.stdout!.on("data", (c) => {
+    buf += c;
+    let i: number;
+    while ((i = buf.indexOf("\n")) >= 0) { walkButtons.onLine(buf.slice(0, i)); buf = buf.slice(i + 1); }
+  });
   p.on("exit", () => { if (child === p) child = null; });
   child = p;
   return p;
@@ -324,44 +368,83 @@ export type TutorEv = { event?: string; type?: string; data?: any; [k: string]: 
 export type MapState = { ctx: PageContext; heard: string; said: number };
 const finiteRect = (r: any) => rectOf(r);
 
-/** One tutor event -> what to draw, or null for "nothing to draw". The rule that matters: the ring moves ONLY on a
+/** One tutor event -> the commands to draw (usually one). The rule that matters: the cursor moves ONLY on a
  *  `confirmed` pointer whose target exists in THIS context and has a rect on screen; rejected and suppressed draw nothing. */
-export function eventToOverlay(ev: TutorEv, st: MapState): OverlayCmd | null {
+export function eventToCmds(ev: TutorEv, st: MapState): OverlayCmd[] {
   const name = String(ev.event ?? ev.type ?? "");
   const d = ev.data ?? ev;
   switch (name) {
-    case "thinking": return { cmd: "think", text: st.heard ? `I heard: “${st.heard}” …thinking` : "Thinking…" };
-    case "say": {
-      if (typeof d.text !== "string" || !d.text.trim()) return null;
-      return { cmd: "say", text: d.text, append: st.said++ > 0 };
+    case "thinking": {
+      const c: OverlayCmd[] = [{ cmd: "state", state: "thinking", text: st.heard ? `I heard: “${st.heard}”` : "Thinking…" }];
+      // Only a guide answer (or a walk command, which also says guide) keeps the step chip and buttons; any other mode
+      // is a new kind of question, so a stale "3/5" must not stay on screen.
+      if (d.mode && d.mode !== "guide") c.push({ cmd: "steps", n: 0, m: 0 });
+      return c;
     }
+    case "say": {
+      if (typeof d.text !== "string" || !d.text.trim()) return [];
+      return [{ cmd: "say", text: d.text, append: st.said++ > 0 }];
+    }
+    case "speaking": // the pill shows exactly this sentence; seq null = the voice went quiet
+      return [{ cmd: "speaking", text: d.seq !== null && d.seq !== undefined && typeof d.text === "string" ? d.text : "" }];
     case "point": {
-      if (d.status !== "confirmed") return null; // rejected / suppressed: explain, never point
+      if (d.status !== "confirmed") return []; // rejected / suppressed: explain, never point
       const t = d.kind === "block" ? st.ctx.blocks.find((b) => b.id === d.targetId && b.inView) : st.ctx.controls.find((c) => c.id === d.targetId);
       const r = finiteRect(t?.rect);
-      if (!r) return null;
-      return { cmd: "point", x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2), text: "", rect: r, keep: true };
+      if (!r) return [];
+      return [{ cmd: "point", x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2), text: "", rect: r, keep: true, kind: d.kind === "block" ? "block" : "control" }];
     }
-    case "step": return Number.isFinite(d.n) && Number.isFinite(d.m) ? { cmd: "step", n: d.n, m: d.m } : null;
-    case "refused": return { cmd: "stop", text: String(d.say || "I can't answer right now. I won't guess.") };
-    case "done": return { cmd: "done" };
-    default: return null;
+    case "step": return Number.isFinite(d.n) && Number.isFinite(d.m) ? [{ cmd: "steps", n: d.n, m: d.m }] : [];
+    case "refused": return [{ cmd: "stop", text: String(d.say || "I can't answer right now. I won't guess.") }] // (the overlay drops the guide chip on stop);
+    case "done": return [{ cmd: "done" }];
+    default: return [];
   }
+}
+/** The first command of eventToCmds, or null (kept for callers that draw one thing per event). */
+export const eventToOverlay = (ev: TutorEv, st: MapState): OverlayCmd | null => eventToCmds(ev, st)[0] ?? null;
+
+/** Push-to-talk daemon events -> pill commands. `down` is PREPARING (the mic is not live yet); a `live` event from the
+ *  daemon means the mic really is recording and switches to LISTENING. Until a daemon sends `live`, the first `level`
+ *  does the same (a level can only exist once audio flows). One mapper per hold; `down` resets it. */
+export function createPttMapper() {
+  let live = false;
+  return {
+    map(ev: { ev?: string; rms?: number }): OverlayCmd[] {
+      switch (ev?.ev) {
+        case "down": live = false; return [{ cmd: "state", state: "preparing" }];
+        case "live": live = true; return [{ cmd: "state", state: "listening" }];
+        case "level": {
+          const out: OverlayCmd[] = [];
+          if (!live) { live = true; out.push({ cmd: "state", state: "listening" }); }
+          out.push({ cmd: "level", rms: Math.max(0, Number(ev.rms) || 0) });
+          return out;
+        }
+        default: return [];
+      }
+    },
+  };
 }
 
 // ---------- speech seam ----------
-export type SpeechSeam = { start(): void; say(t: string): void; end(): void };
+// onPlay (optional): the speaker tells us when it STARTS playing a sentence (text) and when it has gone quiet (null), the
+// desktop twin of the `speaking` SSE event. Returns an unsubscribe. A speaker without it just means the pill falls back
+// to showing each streamed sentence for >= 1.5 s.
+export type SpeechSeam = { start(): void; say(t: string, seq?: number): void; end(): void; onPlay?(cb: (text: string | null) => void): () => void };
 // Same wiring as /tutor in server.ts: a new question cuts the old answer off, each sentence is queued as it arrives
 // (unless muted), and flush() lets the tail of a sentence be spoken.
 export const realSpeech: SpeechSeam = {
   start: () => speaker.interrupt(),
-  say: (t) => { if (!speaker.isMuted()) speaker.enqueue(t); },
+  say: (t, seq) => { if (!speaker.isMuted()) speaker.enqueue(t, seq); }, // seq: so the speaker can say which `say` it is playing
   end: () => speaker.flush(),
+  // The speaker's per-turn hooks (speech.ts setHooks) are the same signal /tutor turns into `speaking` SSE events.
+  onPlay: (cb) => { speaker.setHooks({ onSentenceStart: (_seq, text) => cb(text), onIdle: () => cb(null) }); return () => speaker.setHooks({}); },
 };
 
 // The conversation / walk key: one per frontmost app, so "next" and "why?" find their walk across PTT turns in the same
 // app, and a different app starts clean. convo.ts / walk.ts expire it after 10 idle minutes by themselves.
 export const tabKey = (bundleId: string) => `desktop:${bundleId || "unknown"}`;
+
+let offPlay: (() => void) | null = null;
 
 export type DesktopResult = {
   outcome: "answered" | "refused" | "cutoff" | "browser" | "aborted";
@@ -397,7 +480,8 @@ export async function desktopAsk(question: string, deps: AskDeps = {}): Promise<
   const front = await (deps.front ?? frontApp)();
   if (front && isBrowserBundle(front.bundleId)) { send({ cmd: "ask", text: BROWSER_HINT }); result.outcome = "browser"; return finish(); }
 
-  if (!deps.alreadyThinking) send({ cmd: "think", text: `I heard: “${question}” …thinking` });
+  if (!deps.alreadyThinking) send({ cmd: "state", state: "thinking", text: `I heard: “${question}”` });
+  if (parseWalkCommand(question) === "stop") send({ cmd: "steps", n: 0, m: 0 }); // "stop" ends the guide: the buttons go with it
   const got = await (deps.context ?? desktopContext)();
   result.ms.context = Date.now() - t0;
   if (isBrowserBundle(got.bundleId)) { send({ cmd: "ask", text: BROWSER_HINT }); result.outcome = "browser"; return finish(); } // front changed between the two reads
@@ -408,18 +492,26 @@ export async function desktopAsk(question: string, deps: AskDeps = {}): Promise<
   const turn = deps.turn ?? ((await import("./decide.ts")).tutorTurn as (req: any) => AsyncGenerator<TutorEv>);
   const req = { sessionId: deps.sessionId ?? "desktop", tabId: tabKey(got.bundleId), question, context: ctx };
   const st: MapState = { ctx, heard: question, said: 0 };
+  offPlay?.(); offPlay = null;  // BEFORE start(): interrupting the old voice would otherwise report "quiet" to this turn's pill
   speaking?.start();
+  // The pill shows the sentence that is being SPOKEN. The subscription outlives this turn on purpose: audio is still
+  // playing when the stream ends, and the voice's own "quiet" (null) is what ends it. A newer question replaces it.
+  if (speaking?.onPlay) {
+    const off = speaking.onPlay((text) => { send({ cmd: "speaking", text: text ?? "" }); if (text === null && offPlay === off) { off(); offPlay = null; } });
+    offPlay = off;
+  }
   const gen = turn(req);
   try {
     for await (const ev of gen) {
       if (deps.signal?.aborted) { result.outcome = "aborted"; break; }
       const name = String(ev.event ?? ev.type ?? ""), d = ev.data ?? ev;
-      const cmd = eventToOverlay(ev, st);
-      if (cmd) send(cmd);
+      const cmds = eventToCmds(ev, st);
+      const cmd = cmds[0];
+      for (const c of cmds) send(c);
       if (name === "say" && typeof d.text === "string") {
         if (result.said.length === 0) result.ms.firstSay = Date.now() - t0;
         result.said.push(d.text);
-        try { speaking?.say(d.text); } catch { /* the voice must never break an answer */ }
+        try { speaking?.say(d.text, typeof d.seq === "number" ? d.seq : undefined); } catch { /* the voice must never break an answer */ }
       } else if (name === "point" && cmd?.cmd === "point") result.pointed.push(String(d.targetId));
       else if (name === "step") result.steps.push({ n: d.n, m: d.m });
       else if (name === "refused") result.outcome = "refused";

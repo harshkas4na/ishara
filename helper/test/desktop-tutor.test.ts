@@ -134,14 +134,14 @@ const ev = (event: string, data: any) => ({ event, data });
 
 test("overlay mapping: thinking, say (first replaces, then appends), step, done, refused", () => {
   const st = mctx();
-  assert.deepEqual(eventToOverlay(ev("thinking", { mode: "point" }), st), { cmd: "think", text: "I heard: “where is search” …thinking" });
+  assert.deepEqual(eventToOverlay(ev("thinking", { mode: "point" }), st), { cmd: "state", state: "thinking", text: "I heard: “where is search”" });
   assert.deepEqual(eventToOverlay(ev("say", { seq: 1, text: "It is at the top." }), st), { cmd: "say", text: "It is at the top.", append: false });
   assert.deepEqual(eventToOverlay(ev("say", { seq: 2, text: "Type there." }), st), { cmd: "say", text: "Type there.", append: true });
   assert.equal(eventToOverlay(ev("say", { seq: 3, text: "  " }), st), null);
-  assert.deepEqual(eventToOverlay(ev("step", { n: 2, m: 4, say: "x" }), st), { cmd: "step", n: 2, m: 4 });
+  assert.deepEqual(eventToOverlay(ev("step", { n: 2, m: 4, say: "x" }), st), { cmd: "steps", n: 2, m: 4 });
   assert.equal(eventToOverlay(ev("step", { m: 4 }), st), null);
   assert.deepEqual(eventToOverlay(ev("done", { outcome: "answered" }), st), { cmd: "done" });
-  assert.deepEqual(eventToOverlay(ev("refused", { cause: "timeout", say: "0G took too long." }), st), { cmd: "stop", text: "0G took too long." });
+  assert.deepEqual(eventToOverlay(ev("refused", { cause: "timeout", say: "0G took too long." }), st), { cmd: "stop", text: "0G took too long." }); // (eventToCmds adds the steps reset)
   assert.equal(eventToOverlay(ev("nonsense", {}), st), null);
 });
 
@@ -149,7 +149,7 @@ test("overlay mapping: only a confirmed pointer draws, with the rect from THIS c
   const st = mctx();
   const search = st.ctx.controls.find((c) => c.label === "Search")!;
   const cmd = eventToOverlay(ev("point", { seq: 1, targetId: search.id, kind: "control", status: "confirmed" }), st) as Extract<OverlayCmd, { cmd: "point" }>;
-  assert.deepEqual(cmd, { cmd: "point", x: 220, y: 82, text: "", rect: { x: 120, y: 70, w: 200, h: 24 }, keep: true });
+  assert.deepEqual(cmd, { cmd: "point", x: 220, y: 82, text: "", rect: { x: 120, y: 70, w: 200, h: 24 }, keep: true, kind: "control" });
   assert.equal(eventToOverlay(ev("point", { targetId: search.id, kind: "control", status: "rejected" }), st), null);
   assert.equal(eventToOverlay(ev("point", { targetId: search.id, kind: "control", status: "suppressed" }), st), null);
   assert.equal(eventToOverlay(ev("point", { targetId: "b99", kind: "control", status: "confirmed" }), st), null, "an id not in this context never draws");
@@ -176,8 +176,8 @@ function rig(over: Record<string, any> = {}) {
 test("desktopAsk: reads, streams, draws each event in order, speaks each sentence, tags the walk key", async () => {
   const r = rig();
   const res = await desktopAsk("where is the search box", r.deps);
-  assert.deepEqual(r.sent.map((c) => c.cmd), ["think", "think", "say", "point", "say", "done"]);
-  assert.equal((r.sent[0] as any).text, "I heard: “where is the search box” …thinking");
+  assert.deepEqual(r.sent.map((c) => c.cmd), ["state", "state", "steps", "say", "point", "say", "done"]);
+  assert.equal((r.sent[0] as any).text, "I heard: “where is the search box”");
   assert.deepEqual(r.spoken, ["Search is at the top.", "Type there."]);
   assert.deepEqual(r.log, ["start", "end"], "a new question cuts the old voice, and the tail is flushed at the end");
   assert.equal(res.outcome, "answered"); assert.deepEqual(res.pointed, ["b0"]); assert.equal(res.said.length, 2);
@@ -189,8 +189,8 @@ test("desktopAsk: reads, streams, draws each event in order, speaks each sentenc
 test("desktopAsk: alreadyThinking skips the duplicate heard bubble; speak:false is silent", async () => {
   const r = rig();
   await desktopAsk("q", { ...r.deps, alreadyThinking: true, speak: false });
-  assert.equal(r.sent[0].cmd, "think"); assert.equal((r.sent[0] as any).text, "I heard: “q” …thinking"); // from the `thinking` event
-  assert.equal(r.sent.filter((c) => c.cmd === "think").length, 1);
+  assert.equal(r.sent[0].cmd, "state"); assert.equal((r.sent[0] as any).text, "I heard: “q”"); // from the `thinking` event
+  assert.equal(r.sent.filter((c) => c.cmd === "state").length, 1);
   assert.deepEqual(r.spoken, []);
 });
 
@@ -237,7 +237,7 @@ test("a walk persists across consecutive turns in the same app and not in anothe
   const r = rig({ turn });
   const first = await desktopAsk("walk me through saving", r.deps);
   assert.deepEqual(first.steps, [{ n: 1, m: 2 }]);
-  const step1 = r.sent.filter((c) => c.cmd === "step"); assert.deepEqual(step1, [{ cmd: "step", n: 1, m: 2 }]);
+  const step1 = r.sent.filter((c) => c.cmd === "steps"); assert.deepEqual(step1, [{ cmd: "steps", n: 1, m: 2 }]);
   r.sent.length = 0;
   // "next" is a normal PTT question; the router sees the active walk under the same tab key and answers with no model call
   let modelCalls = 0;
@@ -246,7 +246,7 @@ test("a walk persists across consecutive turns in the same app and not in anothe
   assert.equal(modelCalls, 0);
   assert.deepEqual(second.steps, [{ n: 2, m: 2 }]);
   assert.match(second.said.join(" "), /Save/);
-  assert.ok(r.sent.some((c) => c.cmd === "step" && (c as any).n === 2));
+  assert.ok(r.sent.some((c) => c.cmd === "steps" && (c as any).n === 2));
   // another app: a different key, so the walk is not found and "next" is just a question (here: the fake model is asked)
   const other = await collect(runTutorTurn({ sessionId: "s1", tabId: tabKey("com.apple.Notes"), question: "next", context: buildContext(raw(), { book: newIdBook() }) }, tutorDeps(["Nothing is going on."]) as any));
   assert.ok(!other.some((e: any) => e.event === "step"));

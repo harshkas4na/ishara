@@ -1,19 +1,22 @@
-// ishara-overlay: draws Ishara's pointer ring and answer bubble on top of ANY app.
+// ishara-overlay: draws Ishara's cursor, marks and speaking pill on top of ANY app (docs/UI-PILL.md, docs/DESKTOP.md).
 // Reads one JSON command per line on stdin:
-//   {"cmd":"point","x":..,"y":..,"text":"..","rect":{"x","y","w","h"}?}
-//        needle cursor glides to (x,y), ripples, then (with rect) a hand-drawn ink loop or underline, then bobs
-//   {"cmd":"think","text":".."}                 bubble + cursor traces a figure-eight until the next command
-//   {"cmd":"ask","text":".."}                   bubble only
-//   {"cmd":"stop","text":"..","sub":".."}       red bubble (safe-stop)
+//   {"cmd":"state","state":"preparing|listening|thinking|speaking|refused|idle","text":"..","sub":".."}   the pill's state
+//   {"cmd":"level","rms":0.02}                  microphone level: moves the LISTENING bars
+//   {"cmd":"speaking","text":".."}              the voice STARTED this sentence: the pill shows exactly it ("" = quiet)
+//   {"cmd":"steps","n":2,"m":6}                 guide mode: chip "2/6" and the clickable buttons (m <= 1 hides them)
+//   {"cmd":"point","x":..,"y":..,"rect":{"x","y","w","h"}?,"kind":"control|block"?,"keep":true?,"text":".."?}
+//        needle cursor glides to (x,y), ripples, then marks the rect: a control gets a pen-drawn blue boundary, a text
+//        block (kind "block") a yellow highlighter band. A second point in one answer dims the first.
+//   {"cmd":"say","text":"..","append":bool}     a streamed sentence: queued in the pill (>= 1.5 s each) until `speaking` takes over
+//   {"cmd":"done"}                              the turn ended: let the pill linger, then fade
 //   {"cmd":"clear"}                             hide everything
-// Tutor commands (the streaming path, helper/src/desktop.ts eventToOverlay):
-//   {"cmd":"say","text":"..","append":true|false}   one streamed sentence; append:false starts a fresh answer
-//   {"cmd":"step","n":2,"m":4}                      bubble header "Step 2 of 4"
-//   {"cmd":"point",...,"keep":true}                 like point, but the bubble text is left as streamed and only moves
-//   {"cmd":"done"}                                  the turn ended: linger, then fade; a cursor that never pointed goes away
+// Older commands keep working: think (= state thinking; "Listening..." texts = state listening), ask (note pill),
+// stop (= state refused), step (= steps).
+// The pill lives in its OWN non-activating panel so buttons can be clicked; the big drawing window stays click-through.
+// Button presses are printed on stdout: {"ev":"walk","cmd":"next|back|stop"}.
 // x,y are SCREEN POINTS with a top-left origin (what the Accessibility API reports and what ishara-ax emits).
-// Look mirrors extension/overlay.js (.ptr, inkPath, drawInk, thinking) so the tutor feels the same in every app:
-// needle cursor, saffron ripple + marker, bubble #1f1147, stop bubble #7f1d1d. Reduce Motion: final state only.
+// Look mirrors extension/overlay.js: needle cursor, pill #1f1147, refused #7f1d1d, boundary #3b82f6, highlighter #fde047.
+// Reduce Motion: final state only (no pulse, dance, pen stroke, glide).
 //
 // Build: swiftc -O -swift-version 5 desktop/ishara-overlay.swift -o desktop/ishara-overlay
 import AppKit
@@ -107,40 +110,10 @@ let ripples: [CAShapeLayer] = (0..<2).map { _ in
 }
 stage.addSublayer(host)
 
-// The marker. Sits under the cursor so the needle tip is never hidden by ink.
-let ink = CAShapeLayer()
-ink.fillColor = nil; ink.strokeColor = saffron.cgColor
-ink.lineWidth = 3.5; ink.lineCap = .round; ink.lineJoin = .round
-ink.shadowColor = NSColor.white.cgColor; ink.shadowOpacity = 0.9; ink.shadowRadius = 1.5; ink.shadowOffset = .zero // slight white glow
-ink.isHidden = true
-stage.insertSublayer(ink, below: host)
-
-// Same construction as inkPath() in extension/overlay.js, in canvas points. Wide targets get an underline because
-// a loop around a full-width box looks wrong; the wobble is deterministic so the same rect always draws alike.
-func inkPath(_ r: CGRect) -> CGPath {
-    let d = CGMutablePath()
-    if r.width > 420 || r.height > 150 {
-        let y = r.minY + r.height + 6, x0 = r.minX + 4, x1 = r.maxX - 4, n = 14
-        d.move(to: CGPoint(x: x0, y: y))
-        for i in 1...n {
-            d.addLine(to: CGPoint(x: x0 + (x1 - x0) * CGFloat(i) / CGFloat(n), y: y + sin(Double(i) * 1.9) * 2.2))
-        }
-        return d
-    }
-    let pad: CGFloat = 9, cx = r.midX, cy = r.midY, rx = r.width / 2 + pad + 8, ry = r.height / 2 + pad
-    let n = 28, over = 0.16
-    var pts: [CGPoint] = []
-    for i in 0...Int((Double(n) * (1 + over)).rounded()) {
-        let a = -Double.pi * 0.78 + Double(i) / Double(n) * Double.pi * 2
-        let w = 1 + sin(Double(i) * 1.7) * 0.022 + Double(i) / Double(n) * 0.035
-        pts.append(CGPoint(x: cx + cos(a) * rx * w, y: cy + sin(a) * ry * w))
-    }
-    d.move(to: pts[0])
-    for i in 1..<(pts.count - 1) {
-        d.addQuadCurve(to: CGPoint(x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2), control: pts[i])
-    }
-    return d
-}
+// Marks (boundary / highlighter) live in their own layer UNDER the cursor so the needle tip is never hidden by ink.
+let markLayer = CALayer()
+markLayer.frame = stage.bounds
+stage.insertSublayer(markLayer, below: host)
 
 // Where the cursor tip is drawn right now (host + dance offsets, from the presentation layers), so a new
 // command glides from the real spot even mid-figure-eight.
@@ -155,7 +128,6 @@ func stopMotion() {
     thinking = false
     fx.removeAllAnimations(); fy.removeAllAnimations()
     ripples.forEach { $0.removeAllAnimations() }
-    ink.removeAllAnimations()
 }
 func setNoImplicit(_ f: () -> Void) {
     CATransaction.begin(); CATransaction.setDisableActions(true); f(); CATransaction.commit()
@@ -192,14 +164,9 @@ func glide(to p: CGPoint) {
     host.add(a, forKey: "glide")
 }
 
-// Landing: ripples at 0.65 s (the browser's arriveTimer), the marker drawn like a pen, then a gentle bob.
-func arrive(rect: CGRect?) {
-    ink.isHidden = true
-    if let r = rect {
-        ink.path = inkPath(r)
-        ink.isHidden = false
-    }
-    if reduceMotion { return } // final state only: no ripple, no pen stroke, no bob
+// Landing: ripples at 0.65 s (the browser's arriveTimer), then a gentle bob. The mark is drawn by addMark at the same beat.
+func arrive() {
+    if reduceMotion { return } // final state only: no ripple, no bob
     let t0 = CACurrentMediaTime() + 0.65
     for r in ripples {
         let s = CABasicAnimation(keyPath: "transform.scale"); s.fromValue = 0.3; s.toValue = 3.2
@@ -208,12 +175,6 @@ func arrive(rect: CGRect?) {
         g.beginTime = t0; g.fillMode = .backwards
         g.timingFunction = CAMediaTimingFunction(name: .easeOut)
         r.add(g, forKey: "rip")
-    }
-    if rect != nil {
-        let pen = CABasicAnimation(keyPath: "strokeEnd"); pen.fromValue = 0; pen.toValue = 1
-        pen.duration = 0.6; pen.beginTime = t0; pen.fillMode = .backwards
-        pen.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        ink.add(pen, forKey: "pen")
     }
     // bob: about 2 px right, 5 px down, -3 degrees, 1.8 s ease-in-out loop
     var down = CATransform3DMakeTranslation(2, 5, 0)
@@ -226,6 +187,62 @@ func arrive(rect: CGRect?) {
     fy.add(bob, forKey: "bob")
 }
 
+// ---- marks ----
+// CONTROLS: a rounded rectangle hugging the element, 2.5 pt blue with a soft glow, drawn like a pen stroke (strokeEnd).
+// TEXT (kind "block"): a translucent yellow highlighter band over the block's rect, sweeping in left to right.
+// A second mark in one answer dims the first (it stays as context); at most two live at once.
+let BLUE: UInt32 = 0x3b82f6, YELLOW: UInt32 = 0xfde047
+var marks: [CALayer] = []
+var markRectsAX: [CGRect] = []        // where marks (and the cursor tip) are, in AX space: the pill must never cover them
+
+func clearMarks() {
+    marks.forEach { $0.removeFromSuperlayer() }
+    marks = []; markRectsAX = []
+}
+func addMark(_ r: CGRect, block: Bool) {
+    // dim what is already there; drop the oldest beyond two
+    for m in marks {
+        if reduceMotion { m.opacity = 0.35 } else {
+            let a = CABasicAnimation(keyPath: "opacity"); a.fromValue = m.opacity; a.toValue = 0.35; a.duration = 0.3
+            m.opacity = 0.35; m.add(a, forKey: "dim")
+        }
+    }
+    while marks.count >= 2 { marks.removeFirst().removeFromSuperlayer() }
+    let t0 = CACurrentMediaTime() + 0.65 // after the cursor lands, like the ripple
+    let layer: CALayer
+    if block {
+        let band = CALayer()
+        let f = r.insetBy(dx: -3, dy: -2)
+        band.anchorPoint = CGPoint(x: 0, y: 0.5)  // grows from the left edge
+        band.bounds = CGRect(origin: .zero, size: f.size)
+        band.position = CGPoint(x: f.minX, y: f.midY)
+        band.backgroundColor = rgb(YELLOW, 0.35).cgColor
+        band.cornerRadius = 4
+        if !reduceMotion {
+            let a = CABasicAnimation(keyPath: "transform.scale.x"); a.fromValue = 0.001; a.toValue = 1
+            a.duration = 0.45; a.beginTime = t0; a.fillMode = .backwards
+            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            band.add(a, forKey: "sweep")
+        }
+        layer = band
+    } else {
+        let box = CAShapeLayer()
+        box.path = CGPath(roundedRect: r.insetBy(dx: -5, dy: -5), cornerWidth: 8, cornerHeight: 8, transform: nil)
+        box.fillColor = nil; box.strokeColor = rgb(BLUE).cgColor
+        box.lineWidth = 2.5; box.lineCap = .round; box.lineJoin = .round
+        box.shadowColor = rgb(BLUE).cgColor; box.shadowOpacity = 0.85; box.shadowRadius = 6; box.shadowOffset = .zero // soft glow
+        if !reduceMotion {
+            let a = CABasicAnimation(keyPath: "strokeEnd"); a.fromValue = 0; a.toValue = 1
+            a.duration = 0.5; a.beginTime = t0; a.fillMode = .backwards
+            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            box.add(a, forKey: "pen")
+        }
+        layer = box
+    }
+    markLayer.addSublayer(layer)
+    marks.append(layer)
+}
+
 // Thinking: a figure-eight around 55% of the screen height on the active window's screen. x sweeps +-46 over
 // 3.6 s (alternating) while y sweeps +-22 over 1.8 s, which is a Lissajous 1:2 figure-eight.
 func think() {
@@ -234,7 +251,6 @@ func think() {
     let c = toCanvas(Double(sr.midX), Double(sr.minY + sr.height * 0.55))
     let from = host.isHidden ? c : currentTip()
     stopMotion()
-    ink.isHidden = true
     setNoImplicit { host.position = c; host.isHidden = false }
     if reduceMotion { thinking = true; return } // static cursor, no dance
     thinking = true
@@ -256,177 +272,391 @@ func think() {
     fy.add(ay, forKey: "fy")
 }
 
-// ---- bubble ----
-// Layout: a small "Ishara" label (and "Step n of m" on the right), then the answer. It wraps at 420 pt, keeps the NEWEST
-// sentences when the text outgrows its height, sits next to the pointed target (below it, flipping above at the screen
-// edge, beside it for a tall target, never on top of it) or, with no target, bottom-centre above the Dock. It lives on
-// the screen that holds the target or the frontmost window. Click-through like the rest of the window.
-let BUBBLE_W: CGFloat = 420, BODY_MAX_H: CGFloat = 230, PAD: CGFloat = 12
-let bubble = NSView()
-bubble.wantsLayer = true
-bubble.layer!.cornerRadius = 10
-bubble.layer!.shadowOpacity = 0.3
-bubble.layer!.shadowRadius = 9
-bubble.layer!.shadowOffset = CGSize(width: 0, height: -3)
-bubble.isHidden = true
-func smallLabel(_ s: String, _ color: NSColor, _ weight: NSFont.Weight) -> NSTextField {
-    let t = NSTextField(labelWithString: s)
-    t.font = NSFont.systemFont(ofSize: 11, weight: weight); t.textColor = color
-    return t
+// ---- the pill ----
+// One compact pill, bottom-centre of the screen that holds the frontmost window (or the pointed target), ~120 pt above the
+// bottom edge. It shows the sentence being SPOKEN, never the whole answer. It lives in its own non-activating panel so the
+// guide buttons can be clicked while the big drawing window above stays click-through. The panel itself ignores the mouse
+// (so a click on the pill's text goes to the app below); the buttons are a second tiny panel that covers only the
+// buttons, which is the one place a click is taken.
+enum Look { case preparing, listening, thinking, speaking, refused, note }
+
+final class NonKeyPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }
-let brand = smallLabel("Ishara", saffron, .bold)
-let stepTag = smallLabel("", NSColor(white: 1, alpha: 0.72), .medium)
-let label = NSTextField(wrappingLabelWithString: "")
-label.textColor = .white
-label.font = NSFont.systemFont(ofSize: 14)
-label.maximumNumberOfLines = 0
-bubble.addSubview(brand); bubble.addSubview(stepTag); bubble.addSubview(label)
-canvas.addSubview(bubble)
+func makePanel(_ rect: NSRect, level: Int) -> NonKeyPanel {
+    let p = NonKeyPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
+    p.level = NSWindow.Level(rawValue: level)
+    p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+    p.becomesKeyOnlyIfNeeded = true; p.hidesOnDeactivate = false; p.isReleasedWhenClosed = false
+    return p
+}
 
-// What the bubble shows now. `sentences` is the streamed answer; think/ask/stop put a single message in it.
-var sentences: [String] = []
-var bubbleStop = false
-var stepText = ""
-var anchor: CGRect? = nil        // canvas coords of the pointed target; nil = bottom-centre of the active screen
+let PILL_MAX_W: CGFloat = 520, PILL_MIN_W: CGFloat = 150, SHADOW_M: CGFloat = 26
+let PILL_FONT = NSFont.systemFont(ofSize: 15, weight: .regular)
+let BTN: CGFloat = 26, BTN_GAP: CGFloat = 4
+let pillPanel = makePanel(NSRect(x: 0, y: 0, width: 300, height: 100), level: Int(CGWindowLevelForKey(.screenSaverWindow)) + 1)
+pillPanel.ignoresMouseEvents = true
+let pillRoot = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
+pillPanel.contentView = pillRoot
+let pillBox = NSView()
+pillBox.wantsLayer = true
+pillBox.layer!.cornerRadius = 16
+pillBox.layer!.shadowColor = NSColor.black.cgColor
+pillBox.layer!.shadowOpacity = 0.35; pillBox.layer!.shadowRadius = 12; pillBox.layer!.shadowOffset = CGSize(width: 0, height: -4)
+pillRoot.addSubview(pillBox)
+
+let pillText = NSTextField(wrappingLabelWithString: "")
+pillText.font = PILL_FONT; pillText.textColor = .white
+pillText.maximumNumberOfLines = 2; pillText.lineBreakMode = .byWordWrapping // (.byTruncatingTail would stop it wrapping at all)
+pillText.cell?.truncatesLastVisibleLine = true
+pillBox.addSubview(pillText)
+let chip = NSTextField(labelWithString: "")
+chip.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold); chip.textColor = NSColor(white: 1, alpha: 0.75)
+chip.alignment = .center
+pillBox.addSubview(chip)
+
+// indicator: a 30x30 area at the left. A dot (preparing / refused / note), four bars (listening / speaking), three dots (thinking).
+let ind = CALayer(); ind.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
+pillBox.layer!.addSublayer(ind)
+let dot = CALayer(); dot.bounds = CGRect(x: 0, y: 0, width: 12, height: 12); dot.cornerRadius = 6; dot.position = CGPoint(x: 15, y: 15)
+let bars: [CALayer] = (0..<4).map { i in
+    let b = CALayer(); b.bounds = CGRect(x: 0, y: 0, width: 4, height: 6); b.cornerRadius = 2
+    b.position = CGPoint(x: 4.5 + CGFloat(i) * 7, y: 15); return b
+}
+let tdots: [CALayer] = (0..<3).map { i in
+    let b = CALayer(); b.bounds = CGRect(x: 0, y: 0, width: 7, height: 7); b.cornerRadius = 3.5
+    b.position = CGPoint(x: 5 + CGFloat(i) * 10, y: 15); return b
+}
+ind.addSublayer(dot); bars.forEach { ind.addSublayer($0) }; tdots.forEach { ind.addSublayer($0) }
+
 var pointedThisTurn = false
+var look: Look = .note
+var pillVisible = false
+var stepChip = ""            // "2/6", empty = not a guide
+var stepsOn = false
+var curText = "", curSub = ""
+var micLevel: CGFloat = 0
+let BAR_GAIN: [CGFloat] = [0.6, 1.0, 0.8, 0.5]
 
+// Page the sentence: at most two lines of 15 pt fit, so a long sentence is shown in 2-line pages, paced like speech.
+func textWidthAvail() -> CGFloat {
+    let reserve: CGFloat = stepsOn ? (8 + 38 + 8 + BTN * 3 + BTN_GAP * 2) : 0
+    return PILL_MAX_W - 16 - 30 - 12 - 16 - reserve
+}
+func lineHeight() -> CGFloat { ceil(("Ag" as NSString).size(withAttributes: [.font: PILL_FONT]).height) }
+// NSTextField's cell insets its text by a few points, so measuring at the full width undercounts and the label then wraps or
+// truncates ("Getting read…"). Measure inside a margin and give the label that margin back.
+let CELL_PAD: CGFloat = 8
+func measure(_ s: String, _ w: CGFloat) -> NSSize {
+    let r = (s as NSString).boundingRect(with: NSSize(width: w - CELL_PAD, height: 10000), options: [.usesLineFragmentOrigin], attributes: [.font: PILL_FONT])
+    return NSSize(width: ceil(r.width), height: ceil(r.height))
+}
+func pages(_ text: String) -> [String] {
+    let w = textWidthAvail(), maxH = lineHeight() * 2 + 2
+    var out: [String] = [], cur = ""
+    for word in text.split(whereSeparator: { $0 == " " || $0 == "\n" }) {
+        let trial = cur.isEmpty ? String(word) : cur + " " + word
+        if measure(trial, w).height <= maxH || cur.isEmpty { cur = trial } else { out.append(cur); cur = String(word) }
+    }
+    if !cur.isEmpty { out.append(cur) }
+    return out
+}
+func wordCount(_ s: String) -> Int { s.split(separator: " ").count }
+func pageSeconds(_ p: String) -> TimeInterval { max(1.5, Double(wordCount(p)) / 2.8) }
+
+func setIndicator(_ l: Look) {
+    ind.sublayers?.forEach { $0.removeAllAnimations() }
+    dot.isHidden = true; bars.forEach { $0.isHidden = true }; tdots.forEach { $0.isHidden = true }
+    switch l {
+    case .preparing:
+        dot.isHidden = false; dot.backgroundColor = rgb(0xf59e0b).cgColor
+        if !reduceMotion {
+            let o = CABasicAnimation(keyPath: "opacity"); o.fromValue = 1; o.toValue = 0.3
+            let s = CABasicAnimation(keyPath: "transform.scale"); s.fromValue = 1; s.toValue = 0.7
+            let g = CAAnimationGroup(); g.animations = [o, s]; g.duration = 0.7; g.autoreverses = true; g.repeatCount = .infinity
+            dot.add(g, forKey: "pulse")
+        }
+    case .listening:
+        bars.forEach { $0.isHidden = false; $0.backgroundColor = rgb(0x60a5fa).cgColor }
+        setLevel(micLevel)
+    case .thinking:
+        tdots.forEach { $0.isHidden = false; $0.backgroundColor = rgb(0xa5b4fc).cgColor }
+        if !reduceMotion {
+            for (i, d) in tdots.enumerated() {
+                let a = CAKeyframeAnimation(keyPath: "transform.translation.y")
+                a.values = [0, 6, 0, 0]; a.keyTimes = [0, 0.25, 0.5, 1]; a.duration = 1.0; a.repeatCount = .infinity
+                a.beginTime = CACurrentMediaTime() + Double(i) * 0.16; a.fillMode = .backwards
+                d.add(a, forKey: "dance")
+            }
+        }
+    case .speaking:
+        bars.forEach { $0.isHidden = false; $0.backgroundColor = rgb(0xc4b5fd).cgColor }
+        for (i, b) in bars.enumerated() {
+            if reduceMotion { b.bounds.size.height = [10, 20, 14, 8][i]; continue }
+            b.bounds.size.height = 22
+            let a = CABasicAnimation(keyPath: "transform.scale.y"); a.fromValue = 0.25; a.toValue = 1
+            a.duration = 0.38 + Double(i) * 0.09; a.autoreverses = true; a.repeatCount = .infinity
+            a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            b.add(a, forKey: "wave")
+        }
+    case .refused:
+        dot.isHidden = false; dot.backgroundColor = rgb(0xf87171).cgColor
+    case .note:
+        dot.isHidden = false; dot.backgroundColor = rgb(0xa78bfa).cgColor
+    }
+}
+func setLevel(_ lv: CGFloat) {
+    micLevel = lv
+    guard look == .listening else { return }
+    CATransaction.begin(); CATransaction.setAnimationDuration(0.12)
+    for (i, b) in bars.enumerated() { b.bounds.size.height = 6 + 22 * min(1, lv * BAR_GAIN[i] + (lv > 0.02 ? 0.05 : 0)) }
+    CATransaction.commit()
+}
+
+// ---- buttons: their own tiny panel on top of the pill's right end ----
+final class ButtonsView: NSView {
+    let items: [(String, String)] = [("‹", "back"), ("›", "next"), ("✕", "stop")]
+    var pressed = -1
+    override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true } // the panel is never key: the first click must count
+    func cell(_ i: Int) -> NSRect { NSRect(x: CGFloat(i) * (BTN + BTN_GAP), y: 0, width: BTN, height: BTN) }
+    // Anything that is not a button returns nil, so even a click in the gap between buttons is not taken by this view.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let p = convert(point, from: superview)
+        return items.indices.contains { cell($0).contains(p) } ? self : nil
+    }
+    override func draw(_ dirty: NSRect) {
+        for (i, it) in items.enumerated() {
+            let r = cell(i)
+            NSColor(white: 1, alpha: pressed == i ? 0.34 : 0.16).setFill()
+            NSBezierPath(ovalIn: r).fill()
+            let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: it.0 == "✕" ? 12 : 19, weight: .medium), .foregroundColor: NSColor.white]
+            let sz = (it.0 as NSString).size(withAttributes: a)
+            (it.0 as NSString).draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2 + (it.0 == "✕" ? 0 : 1)), withAttributes: a)
+        }
+    }
+    func index(_ e: NSEvent) -> Int { let p = convert(e.locationInWindow, from: nil); return items.indices.first { cell($0).contains(p) } ?? -1 }
+    override func mouseDown(with e: NSEvent) { pressed = index(e); needsDisplay = true }
+    override func mouseUp(with e: NSEvent) {
+        let i = index(e); let was = pressed
+        pressed = -1; needsDisplay = true
+        guard i >= 0, i == was else { return }
+        // The helper reads this line and runs the SAME walk command the voice words next / back / stop run.
+        print("{\"ev\":\"walk\",\"cmd\":\"\(items[i].1)\"}"); fflush(stdout)
+    }
+}
+let btnPanel = makePanel(NSRect(x: 0, y: 0, width: BTN * 3 + BTN_GAP * 2, height: BTN), level: Int(CGWindowLevelForKey(.screenSaverWindow)) + 2)
+btnPanel.ignoresMouseEvents = false
+let btnView = ButtonsView(frame: NSRect(x: 0, y: 0, width: BTN * 3 + BTN_GAP * 2, height: BTN))
+btnPanel.contentView = btnView
+
+// ---- state ----
+var pageQueue: [String] = []      // pages waiting behind the one on screen
+var pageTimer: Timer?             // non-nil while the page on screen is still inside its minimum time
+var speakingMode = false          // `speaking` events are arriving: they own the text, `say` is ignored
+var doneSeen = false
 var hideTimer: Timer?
-// Auto-hide so a stale pointer never lingers over someone's work; any new command re-arms it. Thinking waits
-// for the sealed models, so it gets a longer leash than an answer.
-func armHide(_ secs: TimeInterval = 12) {
+func armHide(_ secs: TimeInterval) {
     hideTimer?.invalidate()
     hideTimer = Timer.scheduledTimer(withTimeInterval: secs, repeats: false) { _ in clearAll() }
 }
+// How long a finished answer lingers. A guide stays much longer: the person is doing the step.
+func lingerSecs() -> TimeInterval { stepsOn ? 180 : 7 }
+
+func hopsToTop(_ pill: CGRect, _ scr: CGRect) -> Bool {
+    markRectsAX.contains { $0.insetBy(dx: -14, dy: -14).intersects(pill) }
+}
+
+func layoutPill() {
+    guard pillVisible else { return }
+    let tw = textWidthAvail()
+    let full = curSub.isEmpty ? curText : curText + "\n" + curSub
+    pillText.stringValue = full
+    let lh = lineHeight()
+    let m = measure(full, tw)
+    let textW = max(40, min(tw, m.width + CELL_PAD + 2)), textH = min(m.height, lh * 2)
+    let reserve: CGFloat = stepsOn ? (8 + 38 + 8 + BTN * 3 + BTN_GAP * 2) : 0
+    let w = min(PILL_MAX_W, max(PILL_MIN_W, 16 + 30 + 12 + textW + 16 + reserve))
+    let h = max(52, textH + 26)
+    // placement in AX space (top-left origin) on the screen of the target, else of the frontmost window
+    var scr = activeScreenRect()
+    if let t = markRectsAX.last {
+        for s in screens {
+            let r = CGRect(x: s.frame.minX, y: primaryH - s.frame.maxY, width: s.frame.width, height: s.frame.height)
+            if r.contains(CGPoint(x: t.midX, y: t.midY)) { scr = r }
+        }
+    }
+    var pill = CGRect(x: scr.midX - w / 2, y: scr.maxY - 120 - h, width: w, height: h)
+    if hopsToTop(pill, scr) { pill.origin.y = scr.minY + 44 }
+    let cocoaY = primaryH - (pill.minY + h)
+    let panelRect = NSRect(x: pill.minX - SHADOW_M, y: cocoaY - SHADOW_M, width: w + SHADOW_M * 2, height: h + SHADOW_M * 2)
+    pillPanel.setFrame(panelRect, display: false)
+    pillRoot.frame = NSRect(origin: .zero, size: panelRect.size)
+    pillBox.frame = NSRect(x: SHADOW_M, y: SHADOW_M, width: w, height: h)
+    pillBox.layer!.backgroundColor = (look == .refused ? rgb(0x7f1d1d, 0.94) : rgb(0x1f1147, 0.92)).cgColor
+    ind.frame = CGRect(x: 16, y: (h - 30) / 2, width: 30, height: 30)
+    pillText.preferredMaxLayoutWidth = textW
+    pillText.frame = NSRect(x: 58, y: (h - textH) / 2, width: textW, height: textH)
+    chip.stringValue = stepChip
+    chip.isHidden = !stepsOn
+    chip.frame = NSRect(x: w - 16 - BTN * 3 - BTN_GAP * 2 - 8 - 38, y: (h - 16) / 2, width: 38, height: 16)
+    if stepsOn {
+        btnPanel.setFrame(NSRect(x: pill.maxX - 16 - (BTN * 3 + BTN_GAP * 2), y: cocoaY + (h - BTN) / 2, width: BTN * 3 + BTN_GAP * 2, height: BTN), display: true)
+        btnPanel.orderFrontRegardless()
+    } else { btnPanel.orderOut(nil) }
+    pillPanel.orderFrontRegardless()
+    if stepsOn { btnPanel.orderFrontRegardless() }
+}
+
+func showPill(_ l: Look, _ text: String, sub: String = "") {
+    let changed = !pillVisible || l != look
+    look = l; curText = text; curSub = sub; pillVisible = true
+    if changed { setIndicator(l) }
+    layoutPill()
+}
+func hidePill() {
+    pillVisible = false
+    pillPanel.orderOut(nil); btnPanel.orderOut(nil)
+}
+func resetPages() {
+    pageTimer?.invalidate(); pageTimer = nil; pageQueue = []
+}
+// Show the next queued page; it holds the screen for its pace (>= 1.5 s), then the next one follows.
+func advancePage() {
+    pageTimer?.invalidate(); pageTimer = nil
+    guard !pageQueue.isEmpty else {
+        if doneSeen { armHide(lingerSecs()) } else { armHide(25) }
+        return
+    }
+    let p = pageQueue.removeFirst()
+    showPill(.speaking, p)
+    pageTimer = Timer.scheduledTimer(withTimeInterval: pageSeconds(p), repeats: false) { _ in advancePage() }
+    armHide(45)
+}
+func enqueue(_ text: String) {
+    pageQueue.append(contentsOf: pages(text))
+    if pageTimer == nil { advancePage() }
+}
 
 func clearAll() {
-    hideTimer?.invalidate()
+    hideTimer?.invalidate(); resetPages()
     stopMotion()
     host.removeAllAnimations(); fy.removeAllAnimations()
     host.isHidden = true
-    ink.isHidden = true
-    bubble.isHidden = true
-    sentences = []; anchor = nil; stepText = ""; pointedThisTurn = false
+    clearMarks()
+    stepsOn = false; stepChip = ""; speakingMode = false; doneSeen = false; micLevel = 0
+    hidePill()
+}
+func clearCursor() {
+    stopMotion(); host.removeAllAnimations(); fy.removeAllAnimations()
+    host.isHidden = true
 }
 
 // A screen rect in canvas coordinates (flipped, union-local) from an AX-space rect.
 func canvasRect(_ r: CGRect) -> CGRect { CGRect(origin: toCanvas(Double(r.minX), Double(r.minY)), size: r.size) }
-// The screen (AX space) that holds a canvas point.
-func screenRectAX(containingCanvas p: CGPoint) -> CGRect? {
-    for s in screens {
-        let r = CGRect(x: s.frame.minX, y: primaryH - s.frame.maxY, width: s.frame.width, height: s.frame.height)
-        if canvasRect(r).contains(p) { return r }
-    }
-    return nil
-}
 
-func placeBubble(_ bw: CGFloat, _ bh: CGFloat) -> CGPoint {
-    let m: CGFloat = 8
-    if let t = anchor {
-        let scr = canvasRect(screenRectAX(containingCanvas: CGPoint(x: t.midX, y: t.midY)) ?? activeScreenRect())
-        let gap: CGFloat = 26 // clears the marker loop (pad 9 + stroke) and the cursor needle below the tip
-        let x = min(max(scr.minX + m, t.midX - bw / 2), scr.maxX - bw - m)
-        let below = t.maxY + gap
-        if below + bh <= scr.maxY - m { return CGPoint(x: x, y: below) }
-        let above = t.minY - gap - bh
-        if above >= scr.minY + m { return CGPoint(x: x, y: above) }
-        let y = min(max(scr.minY + m, t.midY - bh / 2), scr.maxY - bh - m)
-        if t.maxX + gap + bw <= scr.maxX - m { return CGPoint(x: t.maxX + gap, y: y) }
-        if t.minX - gap - bw >= scr.minX + m { return CGPoint(x: t.minX - gap - bw, y: y) }
-        return CGPoint(x: x, y: max(scr.minY + m, scr.maxY - 120 - bh)) // a target that fills the screen: bottom, as with none
-    }
-    let scr = canvasRect(activeScreenRect())
-    return CGPoint(x: scr.midX - bw / 2, y: max(scr.minY + m, scr.maxY - 120 - bh)) // ~120 pt above the bottom edge (Dock area)
-}
-
-func renderBubble() {
-    guard !sentences.isEmpty else { bubble.isHidden = true; return }
-    // Keep the newest sentences: drop from the front until the body fits its maximum height.
-    var start = 0
-    var body = sentences.joined(separator: " ")
-    var sz = NSSize.zero
-    label.preferredMaxLayoutWidth = BUBBLE_W - PAD * 2
-    while true {
-        label.stringValue = body
-        sz = label.sizeThatFits(NSSize(width: BUBBLE_W - PAD * 2, height: 4000))
-        if sz.height <= BODY_MAX_H || start >= sentences.count - 1 { break }
-        start += 1
-        body = "… " + sentences[start...].joined(separator: " ")
-    }
-    if sz.height > BODY_MAX_H { sz.height = BODY_MAX_H } // one enormous sentence: clipped by the frame, newest end not guaranteed
-    let headH: CGFloat = 16
-    let bw = min(BUBBLE_W, max(sz.width, 150) + PAD * 2), bh = PAD + headH + 4 + sz.height + PAD - 2
-    bubble.layer!.backgroundColor = (bubbleStop ? rgb(0x7f1d1d) : rgb(0x1f1147)).cgColor
-    // bubble is a plain (non-flipped) NSView inside a flipped canvas: its own subviews use bottom-left origin
-    label.frame = NSRect(x: PAD, y: PAD - 2, width: bw - PAD * 2, height: sz.height)
-    brand.frame = NSRect(x: PAD, y: bh - PAD - 13, width: 90, height: 14)
-    stepTag.stringValue = stepText
-    let tw = stepTag.sizeThatFits(NSSize(width: 200, height: 14)).width
-    stepTag.frame = NSRect(x: bw - PAD - tw, y: bh - PAD - 13, width: tw, height: 14)
-    let o = placeBubble(bw, bh)
-    bubble.frame = NSRect(x: o.x, y: o.y, width: bw, height: bh)
-    bubble.isHidden = false
-}
-
-func showMessage(_ text: String, stop: Bool) {
-    sentences = text.isEmpty ? [] : [text]
-    bubbleStop = stop
-    stepText = ""
-    renderBubble()
+// A new question starts: the old answer's marks, queue and speaking mode go; the guide chip stays (a walk turn keeps it).
+func beginTurn() {
+    resetPages(); clearMarks(); speakingMode = false; doneSeen = false; pointedThisTurn = false
 }
 
 func handle(_ obj: [String: Any]) {
     let cmd = obj["cmd"] as? String ?? ""
     let text = obj["text"] as? String ?? ""
+    let sub = obj["sub"] as? String ?? ""
+    func num(_ k: String) -> Double? { (obj[k] as? NSNumber)?.doubleValue }
     switch cmd {
+    case "state":
+        switch obj["state"] as? String ?? "" {
+        case "preparing":
+            beginTurn(); clearCursor(); micLevel = 0
+            showPill(.preparing, text.isEmpty ? "Getting ready…" : text); armHide(45)
+        case "listening":
+            beginTurn(); clearCursor()
+            showPill(.listening, text.isEmpty ? "Speak now" : text); armHide(60)
+        case "thinking":
+            beginTurn(); think()
+            showPill(.thinking, text.isEmpty ? "Thinking…" : text); armHide(40)
+        case "speaking":
+            showPill(.speaking, text); armHide(45)
+        case "refused":
+            beginTurn(); clearCursor(); stepsOn = false; stepChip = ""
+            showPill(.refused, text, sub: sub); armHide(12)
+        default: // idle
+            clearAll()
+        }
+    case "level":
+        setLevel(CGFloat(min(1, sqrt(max(0, num("rms") ?? 0)) * 2.8)))
+    case "speaking":
+        // The voice started this sentence: show exactly it. Empty = the voice went quiet; let the last one linger.
+        if text.isEmpty { // only meaningful inside a spoken answer; a stray "quiet" must not hide a pill that is thinking
+            guard speakingMode else { return }
+            pageTimer?.invalidate(); pageTimer = nil; pageQueue = []; doneSeen = true; armHide(lingerSecs()); return
+        }
+        speakingMode = true
+        resetPages()
+        enqueue(text)
+    case "say":
+        if (obj["append"] as? Bool) != true { resetPages(); speakingMode = false; doneSeen = false }
+        if speakingMode || text.isEmpty { return }
+        enqueue(text)
+    case "steps", "step":
+        let n = (obj["n"] as? NSNumber)?.intValue ?? 0, m = (obj["m"] as? NSNumber)?.intValue ?? 0
+        stepsOn = m > 1; stepChip = stepsOn ? "\(n)/\(m)" : ""
+        layoutPill(); if stepsOn { armHide(lingerSecs()) }
     case "point":
-        guard let x = (obj["x"] as? NSNumber)?.doubleValue, let y = (obj["y"] as? NSNumber)?.doubleValue else { return }
+        guard let x = num("x"), let y = num("y") else { return }
         let p = toCanvas(x, y)
-        var rect: CGRect? = nil
+        var rectAX: CGRect? = nil, rect: CGRect? = nil
         if let r = obj["rect"] as? [String: Any],
            let rx = (r["x"] as? NSNumber)?.doubleValue, let ry = (r["y"] as? NSNumber)?.doubleValue,
            let rw = (r["w"] as? NSNumber)?.doubleValue, let rh = (r["h"] as? NSNumber)?.doubleValue, rw > 0, rh > 0 {
+            rectAX = CGRect(x: rx, y: ry, width: rw, height: rh)
             rect = CGRect(origin: toCanvas(rx, ry), size: CGSize(width: rw, height: rh))
         }
+        // Not a continuation of a streamed answer (old callers): this point is its own answer.
+        if (obj["keep"] as? Bool) != true { resetPages(); clearMarks(); speakingMode = false }
         glide(to: p)
-        arrive(rect: rect)
+        arrive()
         pointedThisTurn = true
-        anchor = rect ?? CGRect(x: p.x - 1, y: p.y - 1, width: 2, height: 2)
-        if (obj["keep"] as? Bool) == true && !sentences.isEmpty { renderBubble() }
-        else { var t = text; if let sub = obj["sub"] as? String, !sub.isEmpty { t += "\n" + sub }; showMessage(t, stop: false) }
-        armHide((obj["keep"] as? Bool) == true ? 25 : 12)
+        if let r = rect { addMark(r, block: (obj["kind"] as? String) == "block") }
+        markRectsAX.append(rectAX ?? CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+        if markRectsAX.count > 2 { markRectsAX.removeFirst() }
+        if (obj["keep"] as? Bool) != true && !text.isEmpty { var t = text; if !sub.isEmpty { t += "\n" + sub }; showPill(.note, t) }
+        else { layoutPill() }  // the pill may need to hop away from the new target
+        armHide(25)
     case "think":
-        anchor = nil; pointedThisTurn = false
-        think()
-        showMessage(text.isEmpty ? "Thinking…" : text, stop: false)
-        armHide(30)
-    case "say":
-        if (obj["append"] as? Bool) != true {
-            sentences = []; stepText = ""; bubbleStop = false; anchor = nil; pointedThisTurn = false
+        // legacy: the old push-to-talk texts. "Listening…" plus ▮ blocks is the old level meter.
+        if text.hasPrefix("Getting ready") {
+            beginTurn(); clearCursor(); micLevel = 0
+            showPill(.preparing, text); armHide(45)
+        } else if text.hasPrefix("Listening") || text.hasPrefix("Speak now") {
+            if look != .listening { beginTurn(); clearCursor() }
+            micLevel = CGFloat(text.filter { $0 == "▮" }.count) / 10
+            showPill(.listening, "Speak now"); setLevel(micLevel); armHide(60)
+        } else {
+            var t = text
+            if let r = t.range(of: " …thinking") { t.removeSubrange(r) }
+            if look != .thinking || !thinking { beginTurn() }
+            think(); showPill(.thinking, t.isEmpty ? "Thinking…" : t); armHide(40)
         }
-        if !text.isEmpty { sentences.append(text) }
-        renderBubble()
-        armHide(25)
-    case "step":
-        if let n = (obj["n"] as? NSNumber)?.intValue, let m = (obj["m"] as? NSNumber)?.intValue { stepText = "Step \(n) of \(m)"; renderBubble() }
-        armHide(25)
     case "done":
+        doneSeen = true
         if !pointedThisTurn { clearCursor() } // an explanation with no pointer: the figure-eight stops with the answer
-        armHide(15)
-    case "ask", "stop":
-        clearCursor()
-        anchor = nil
-        var t = text; if let sub = obj["sub"] as? String, !sub.isEmpty { t += "\n" + sub }
-        showMessage(t, stop: cmd == "stop")
-        armHide()
+        if pageTimer == nil && pageQueue.isEmpty { armHide(lingerSecs()) }
+    case "ask":
+        beginTurn(); clearCursor()
+        var t = text; if !sub.isEmpty { t += "\n" + sub }
+        showPill(.note, t); armHide(12)
+    case "stop":
+        beginTurn(); clearCursor(); stepsOn = false; stepChip = "" // a refusal ends any guide
+        showPill(.refused, text, sub: sub); armHide(12)
     case "clear":
         clearAll()
     default: break
     }
-}
-
-func clearCursor() {
-    stopMotion(); host.removeAllAnimations(); fy.removeAllAnimations()
-    host.isHidden = true; ink.isHidden = true
 }
 
 win.orderFrontRegardless() // shows without activating the app
