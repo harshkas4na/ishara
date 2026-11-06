@@ -3,16 +3,24 @@
 // tested to death, and the executor (readFileForAgent) takes its fs and redactor as arguments so tests never touch a disk.
 import { homedir } from "node:os";
 import { resolve, sep, basename } from "node:path";
-import { promises as fsp } from "node:fs";
+import { promises as fsp, constants as FS } from "node:fs";
 import { readerCore } from "./redact.ts";
 
 export const MAX_FILE_BYTES = 200 * 1024;
 export const MAX_FILE_CHARS = 12_000;       // what reaches the model, after redaction
 const SNIFF_BYTES = 8192;
 
-// The name rule from the plan. Case-insensitive, on the file name only; dotfiles are refused by the dot rule before this.
-export const SECRET_NAME = /key|secret|token|password|wallet|seed|\.env|\.pem/i;
+// The name rule from the plan, widened by audit 4 (section 2). Case-insensitive, on the NORMALISED file name only (NFKC,
+// look-alike letters mapped), so "kеy.txt" with a Cyrillic е is still "key"; dotfiles are refused by the dot rule before this.
+export const SECRET_NAME = /key|secret|token|password|passwd|passphrase|wallet|seed|mnemonic|private|credential|\.env|\.pem|\.p12|\.pfx|\.jks|\.kdbx|\.ovpn|keychain|id_(?:rsa|dsa|ecdsa|ed25519)|\.ppk|cookies|login data|recovery|backup.?codes?|2fa|otp/i;
 const BLOCKED_TOP = new Set([".ssh", ".config", ".aws", ".gnupg"]);
+// ~/Library holds mail, messages, browser profiles and app tokens as plain files, so none of it is read (audit 4, section 2).
+const BLOCKED_TOP_CI = new Set(["library", "applications"]);
+// Cyrillic and Greek letters that look Latin, for the name rule only.
+const LOOKALIKE: Record<string, string> = { "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ѕ": "s", "ј": "j", "к": "k", "м": "m", "т": "t", "в": "b", "н": "h", "α": "a", "ε": "e", "ο": "o", "ρ": "p", "ν": "v", "ι": "i", "κ": "k", "τ": "t", "υ": "u" };
+const plainName = (n: string): string => n.normalize("NFKC").toLowerCase().replace(/[\u00ad\u200b-\u200f\u2060\ufeff]/g, "").replace(/./gu, (c) => LOOKALIKE[c] ?? c);
+/** A private key in the text (PEM/OpenSSH/PuTTY): the whole file is refused, not redacted line by line. */
+export const PRIVATE_KEY_TEXT = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----|-----BEGIN OPENSSH PRIVATE KEY-----|PuTTY-User-Key-File|-----BEGIN PGP PRIVATE KEY BLOCK-----/;
 
 export type PathCheck = { ok: true; path: string } | { ok: false; why: string };
 
@@ -29,10 +37,11 @@ export function checkReadPath(raw: string, home: string = homedir()): PathCheck 
   const top = segs[0] ?? "";
   if (BLOCKED_TOP.has(top)) return { ok: false, why: `${top} holds credentials, so I never read it` };
   if (segs.length >= 2 && top.toLowerCase() === "library" && segs[1].toLowerCase() === "keychains") return { ok: false, why: "Keychains hold passwords, so I never read them" };
+  if (BLOCKED_TOP_CI.has(top.toLowerCase())) return { ok: false, why: `~/${top} holds mail, messages, browser data and app tokens, so I never read it` };
   const dot = segs.find((x) => x.startsWith("."));
   if (dot) return { ok: false, why: `"${dot.slice(0, 40)}" is hidden (a dotfile or dot folder), so I do not read it` };
   const name = basename(p);
-  if (SECRET_NAME.test(name)) return { ok: false, why: `"${name.slice(0, 40)}" looks like it holds a key, token, password or seed, so I do not read it` };
+  if (SECRET_NAME.test(plainName(name)) || segs.slice(0, -1).some((d) => /^(?:keys?|secrets?|credentials?|wallets?|private)$/i.test(plainName(d)))) return { ok: false, why: `"${name.slice(0, 40)}" looks like it holds a key, token, password or seed, so I do not read it` };
   return { ok: true, path: p };
 }
 
@@ -40,8 +49,9 @@ export type ReadOut = { ok: boolean; detail: string; data?: string };
 export type FileDeps = {
   home: string;
   realpath: (p: string) => Promise<string>;
-  stat: (p: string) => Promise<{ isFile: boolean; size: number }>;
-  read: (p: string, max: number) => Promise<Buffer>;
+  stat: (p: string) => Promise<{ isFile: boolean; size: number; nlink?: number; ino?: number; dev?: number }>;
+  /** Reads at most `max` bytes. The real one opens without following links and checks it is the file `expect` describes. */
+  read: (p: string, max: number, expect?: { ino?: number; dev?: number }) => Promise<Buffer>;
   /** The helper's redaction, applied to the text before it can reach 0GM. */
   redact: (text: string) => string;
 };
@@ -57,8 +67,16 @@ export function redactText(text: string): string {
 export const realFileDeps = (): FileDeps => ({
   home: homedir(),
   realpath: (p) => fsp.realpath(p),
-  stat: async (p) => { const s = await fsp.stat(p); return { isFile: s.isFile(), size: s.size }; },
-  read: async (p, max) => { const fh = await fsp.open(p, "r"); try { const b = Buffer.alloc(max); const { bytesRead } = await fh.read(b, 0, max, 0); return b.subarray(0, bytesRead); } finally { await fh.close(); } },
+  stat: async (p) => { const s = await fsp.lstat(p); return { isFile: s.isFile(), size: s.size, nlink: s.nlink, ino: s.ino, dev: s.dev }; },
+  // O_NOFOLLOW + fstat: a file swapped for a link (or another file) between the checks and the read is refused (TOCTOU, audit 4).
+  read: async (p, max, expect) => {
+    const fh = await fsp.open(p, FS.O_RDONLY | FS.O_NOFOLLOW);
+    try {
+      const st = await fh.stat();
+      if (!st.isFile() || st.nlink > 1 || (expect?.ino !== undefined && (st.ino !== expect.ino || st.dev !== expect.dev))) throw new Error("the file changed while I was reading it");
+      const b = Buffer.alloc(max); const { bytesRead } = await fh.read(b, 0, max, 0); return b.subarray(0, bytesRead);
+    } finally { await fh.close(); }
+  },
   redact: redactText,
 });
 
@@ -77,12 +95,15 @@ export async function readFileForAgent(rawPath: string, d: FileDeps = realFileDe
     if (!c2.ok) return { ok: false, detail: c2.why };
     const st = await d.stat(c2.path);
     if (!st.isFile) return { ok: false, detail: "that is a folder or special file, not a text file" };
+    // A hard link is a second name for the same file: ~/Documents/notes.txt may BE ~/.ssh/id_ed25519 (audit 4, section 2).
+    if ((st.nlink ?? 1) > 1) return { ok: false, detail: "that file has more than one name (a hard link), so I can't tell where it really lives; I do not read it" };
     if (st.size > MAX_FILE_BYTES) return { ok: false, detail: `that file is ${Math.round(st.size / 1024)} KB; I read text files up to 200 KB` };
-    const buf = await d.read(c2.path, MAX_FILE_BYTES + 1);
+    const buf = await d.read(c2.path, MAX_FILE_BYTES + 1, { ino: st.ino, dev: st.dev });
     if (buf.length > MAX_FILE_BYTES) return { ok: false, detail: "that file is over 200 KB; I read text files up to 200 KB" };
     if (buf.subarray(0, SNIFF_BYTES).includes(0)) return { ok: false, detail: "that looks like a binary file, not text" };
     let text: string;
     try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch { return { ok: false, detail: "that file is not UTF-8 text" }; }
+    if (PRIVATE_KEY_TEXT.test(text)) return { ok: false, detail: "that file holds a private key, so I do not read it" };
     const clean = d.redact(text).replace(/\r\n/g, "\n");
     const cut = clean.length > MAX_FILE_CHARS;
     const shown = tilde(c.path, d.home);

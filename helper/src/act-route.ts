@@ -28,17 +28,21 @@ export class Run {
   state: ActState;
   executor: ActExecutor = "client";
   stop = false;
+  stopReason: string | undefined;
   running = false;
+  /** The step whose `approval` event was sent and is not answered yet. Only that step can be approved (audit 4, 1.9). */
+  approvalOpen: number | null = null;
   private wakers = new Set<() => void>();
   private approvals = new Map<number, (ok: boolean) => void>();
   private earlyApprovals = new Map<number, boolean>();
   private results = new Map<number, (r: ExecResult) => void>();
   private earlyResults = new Map<number, ExecResult>();
+  taskId = "";
   constructor(state: ActState) { this.state = state; }
 
   /** Stop at once: every wait the loop is in resolves now (deny / not executed). */
-  requestStop(): void { this.stop = true; for (const w of [...this.wakers]) w(); }
-  reset(): void { this.stop = false; this.approvals.clear(); this.earlyApprovals.clear(); this.results.clear(); this.earlyResults.clear(); this.wakers.clear(); }
+  requestStop(reason?: string): void { this.stop = true; if (reason && !this.stopReason) this.stopReason = reason; for (const w of [...this.wakers]) w(); }
+  reset(): void { this.stop = false; this.stopReason = undefined; this.approvalOpen = null; this.approvals.clear(); this.earlyApprovals.clear(); this.results.clear(); this.earlyResults.clear(); this.wakers.clear(); }
 
   /** Waits for the person's tap on Approve/Deny for step n; false on deny, 60 s of silence, or Stop. */
   waitApproval(n: number, ms: number): Promise<boolean> {
@@ -47,16 +51,22 @@ export class Run {
     if (early !== undefined) { this.earlyApprovals.delete(n); return Promise.resolve(early); }
     return new Promise<boolean>((resolve) => {
       let t: ReturnType<typeof setTimeout>;
-      const finish = (v: boolean) => { clearTimeout(t); this.wakers.delete(wake); this.approvals.delete(n); resolve(v); };
+      const finish = (v: boolean) => { clearTimeout(t); this.wakers.delete(wake); this.approvals.delete(n); if (this.approvalOpen === n) this.approvalOpen = null; resolve(v); };
       const wake = () => finish(false);
       t = setTimeout(() => finish(false), ms); // no answer is a no
       this.wakers.add(wake);
       this.approvals.set(n, finish);
     });
   }
-  answerApproval(n: number, approve: boolean): void {
+  /**
+   * The person's answer for step n. True only when that step is asking right now, so the client may act on it: a late tap
+   * (the 60 s ran out) or an approval for a step that has not asked yet is refused and must not run (audit 4, 1.9).
+   */
+  answerApproval(n: number, approve: boolean): boolean {
     const w = this.approvals.get(n);
-    if (w) w(approve); else if (n >= 1 && n <= this.state.steps + 2) this.earlyApprovals.set(n, approve); // tapped before the wait began
+    if (w) { w(approve); return true; }
+    if (this.approvalOpen === n) { this.earlyApprovals.set(n, approve); return true; } // the event went out, the wait is a tick away
+    return false;
   }
 
   /** The client executor: waits for POST /act/result for step n. The caller (the loop) adds the 15 s cut-off. */
@@ -89,9 +99,27 @@ export class ActRuns {
   get(id: string): Run | undefined { this.sweep(); return this.runs.get(id); }
   create(run: Run): Run { this.sweep(); this.runs.set(run.state.actId, run); return run; }
   delete(id: string): void { this.runs.delete(id); }
+  /** Stop every run; idle ones are forgotten. Returns how many there were. */
+  stopAll(): number { const n = this.runs.size; for (const [id, r] of [...this.runs]) { r.requestStop("person"); if (!r.running) this.runs.delete(id); } return n; }
   size(): number { return this.runs.size; }
 }
 export const actRuns = new ActRuns();
+
+// ---- one budget per TASK, across pages (audit 4, 1.6). The browser starts a new actId on every page load; the caps follow the
+// taskId it carries, so 25 actions and 3 minutes of agent time hold for the whole task, and no task runs past 10 minutes.
+export const TASK_WALL_MS = 10 * 60 * 1000;
+export type Chain = { steps: number; activeMs: number; startedAt: number; lastUsed: number };
+export class TaskChains {
+  private m = new Map<string, Chain>();
+  get(id: string, now: number): Chain {
+    for (const [k, c] of this.m) if (now - c.lastUsed > TASK_WALL_MS) this.m.delete(k);
+    let c = this.m.get(id);
+    if (!c) { c = { steps: 0, activeMs: 0, startedAt: now, lastUsed: now }; this.m.set(id, c); while (this.m.size > 200) this.m.delete(this.m.keys().next().value as string); }
+    return c;
+  }
+  save(id: string, s: { steps: number; activeMs: number }, now: number): void { const c = this.get(id, now); c.steps = Math.max(c.steps, s.steps); c.activeMs = Math.max(c.activeMs, s.activeMs); c.lastUsed = now; }
+}
+export const taskChains = new TaskChains();
 
 export type ActRouteDeps = {
   base: Pick<ActDeps, "askAct" | "checkTarget">;
@@ -99,6 +127,7 @@ export type ActRouteDeps = {
   helperExecute?: (action: Action, ctx: PageContext) => Promise<ExecResult>;
   record?: ActDeps["record"];
   runs?: ActRuns;
+  chains?: TaskChains;
   heartbeatMs?: number;
   confirm?: ActDeps["confirm"] | null;   // null = read ISHARA_ACT_CONFIRM
   limits?: ActDeps["limits"];
@@ -126,6 +155,7 @@ export async function handleActRoute(req: IncomingMessage, res: ServerResponse, 
   if (path !== "/act" && !path.startsWith("/act/")) return false;
   if (refuse(req.headers.host, req.headers.origin)) { json(res, 403, { error: "forbidden origin" }); return true; }
   const runs = d.runs ?? actRuns;
+  const chains = d.chains ?? taskChains;
   if (req.method === "GET" && path === "/act") { json(res, 200, { ok: true, version: 1, armedRequired: true, executors: ["client", "helper"], events: ["thinking", "action", "approval", "result", "done", "failed", "stopped", "ask", "refused"] }); return true; }
   if (req.method !== "POST") { json(res, 405, { error: "POST only" }); return true; }
   if (path !== "/act" && path !== "/act/result" && path !== "/act/approve" && path !== "/act/stop") { json(res, 404, { error: "no such route" }); return true; }
@@ -137,17 +167,20 @@ export async function handleActRoute(req: IncomingMessage, res: ServerResponse, 
 
   // ---- the small control posts
   if (path !== "/act") {
+    // Stop everything: the browser's Stop shortcut and "Agent mode off" (audit 4, 1.7). Needs no actId.
+    if (path === "/act/stop" && b.all === true) { const n = runs.stopAll(); json(res, 200, { ok: true, stopped: n }); return true; }
     if (typeof b.actId !== "string") { json(res, 400, { error: "need actId" }); return true; }
     const run = runs.get(b.actId);
     if (path === "/act/stop") {
-      if (run) { run.requestStop(); if (!run.running) runs.delete(b.actId); }
+      if (run) { run.requestStop(b.handoff === true ? "handoff" : "person"); if (!run.running) runs.delete(b.actId); }
       json(res, 200, { ok: true, found: !!run }); return true;
     }
     if (!run) { json(res, 404, { error: "no such task (finished, stopped or expired)" }); return true; }
     if (!Number.isInteger(b.n) || b.n < 1) { json(res, 400, { error: "need n (the step number)" }); return true; }
     if (path === "/act/approve") {
       if (typeof b.approve !== "boolean") { json(res, 400, { error: "need approve: true or false" }); return true; }
-      run.answerApproval(b.n, b.approve); json(res, 200, { ok: true }); return true;
+      const accepted = run.answerApproval(b.n, b.approve);
+      json(res, 200, { ok: true, accepted }); return true;
     }
     // /act/result
     if (typeof b.ok !== "boolean") { json(res, 400, { error: "need ok: true or false" }); return true; }
@@ -185,7 +218,18 @@ export async function handleActRoute(req: IncomingMessage, res: ServerResponse, 
     const bad = validateActBody(b);
     if (bad) { json(res, 400, { error: bad }); return true; }
     if (!actId) actId = "act-" + randomBytes(8).toString("hex");
-    run = runs.create(new Run(newState({ sessionId: String(b.sessionId ?? "default"), task: b.task.trim(), context: b.context }, actId, (d.now ?? Date.now)())));
+    const history = Array.isArray(b.history) ? b.history.filter((h: unknown) => typeof h === "string").slice(-12) : [];
+    run = runs.create(new Run(newState({ sessionId: String(b.sessionId ?? "default"), task: b.task.trim(), context: b.context, history }, actId, (d.now ?? Date.now)())));
+    // The caps carry over from earlier pages of the same task.
+    // Only a taskId the client carries across pages shares a budget; without one the run is a task of its own.
+    const taskId = typeof b.taskId === "string" && ACT_ID.test(b.taskId) ? b.taskId : "";
+    const chain = taskId ? chains.get(taskId, (d.now ?? Date.now)()) : { steps: 0, activeMs: 0, startedAt: (d.now ?? Date.now)(), lastUsed: 0 };
+    run.taskId = taskId;
+    run.state.steps = chain.steps; run.state.activeMs = chain.activeMs;
+    if ((d.now ?? Date.now)() - chain.startedAt > TASK_WALL_MS) {
+      runs.delete(actId);
+      stream(); res.write(frame("failed", { say: "This task has been going for 10 minutes, so I stopped. Please take it from here.", steps: chain.steps, requestIds: { brain: [], laya: [] }, ms: chain.activeMs })); res.end(); return true;
+    }
   }
   const r = run;
   r.executor = b.executor === "helper" ? "helper" : r.executor;
@@ -209,6 +253,7 @@ export async function handleActRoute(req: IncomingMessage, res: ServerResponse, 
       : (d.helperExecute ? d.helperExecute(action, c) : Promise.resolve({ ok: false, detail: "the desktop executor is not installed" })),
     approve: (n, _a, _risk, _why, ms) => r.waitApproval(n, ms),
     stopped: () => r.stop,
+    stopReason: () => r.stopReason,
     ...(d.now ? { now: d.now } : {}),
     ...(d.record ? { record: d.record } : {}),
     confirm: d.confirm === null || d.confirm === undefined ? confirmFromEnv() : d.confirm,
@@ -218,6 +263,7 @@ export async function handleActRoute(req: IncomingMessage, res: ServerResponse, 
   try {
     for await (const ev of runAct({ sessionId: r.state.sessionId, task: r.state.task, context: ctx, executor: r.executor, armed: true, actId, ...(typeof b.answer === "string" ? { answer: b.answer } : {}) }, deps, r.state) as AsyncGenerator<ActEvent>) {
       last = ev.event;
+      if (ev.event === "approval") r.approvalOpen = (ev.data as { n: number }).n;
       write(frame(ev.event, ev.data));
     }
   } catch (e: any) {
@@ -228,6 +274,7 @@ export async function handleActRoute(req: IncomingMessage, res: ServerResponse, 
     finished = true;
     clearInterval(ping);
     r.running = false; r.state.lastUsed = (d.now ?? Date.now)();
+    if (r.taskId) chains.save(r.taskId, r.state, r.state.lastUsed);
     if (last !== "ask") runs.delete(actId); // done/failed/stopped/refused are over; ask keeps its state for the answer
     if (open) res.end();
   }

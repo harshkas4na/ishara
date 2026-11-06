@@ -1,7 +1,7 @@
 // Agent mode: the search, tab and read_file actions (docs/AGENT-MODE.md). Fakes only: no network, no real home folder, no Chrome.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, realpathSync, linkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -105,7 +105,7 @@ test("read_file paths: dotfiles, credential folders, Keychains, secret-looking n
   deny("~/Documents/.hidden/a.txt", /hidden/);
   for (const n of ["api-key.txt", "my_secret.md", "token.txt", "Passwords.txt", "wallet.json", "seed-words.txt", "prod.env", "cert.pem", "MONKEY.txt", "AccessToken.json", "keyboard-notes.txt"]) deny("~/Documents/" + n, /looks like/);
   deny("~/Documents/.env", /hidden/);
-  allow("~/Library/Preferences/x.txt");        // Library itself is fine; only Keychains is not
+  deny("~/Library/Preferences/x.txt", /Library/);  // audit 4: all of ~/Library is closed (mail, messages, browser data)
 });
 
 // ---------------- read_file: the reader (fake fs) ----------------
@@ -151,6 +151,25 @@ test("read_file: a symlink that escapes home or points into .ssh is refused; the
   assert.equal((await readFileForAgent(join(root, "Documents", "ok.txt"), d)).data, "hello disk");
   const a = await readFileForAgent(join(root, "Documents", "link1.txt"), d); assert.equal(a.ok, false); assert.match(a.detail, /ssh/);
   const b = await readFileForAgent(join(root, "Documents", "link2.txt"), d); assert.equal(b.ok, false); assert.match(b.detail, /home folder/);
+});
+test("audit 4: hard links, copied keys, key files by name, look-alike names and ~/Library are refused (real fs)", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "ishara-home4-")));
+  mkdirSync(join(root, ".ssh")); mkdirSync(join(root, "Documents")); mkdirSync(join(root, "Library", "Mail"), { recursive: true });
+  writeFileSync(join(root, ".ssh", "id_ed25519"), "PRIVATE");
+  linkSync(join(root, ".ssh", "id_ed25519"), join(root, "Documents", "hard.txt"));
+  writeFileSync(join(root, "Documents", "id_rsa"), "x");
+  writeFileSync(join(root, "Documents", "credentials"), "x");
+  writeFileSync(join(root, "Documents", "k\u0435y.txt"), "x");                     // Cyrillic е
+  writeFileSync(join(root, "Documents", "notes.txt"), "-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbg==\n-----END OPENSSH PRIVATE KEY-----\n");
+  writeFileSync(join(root, "Library", "Mail", "m.emlx"), "Your OTP is 482913");
+  writeFileSync(join(root, "Documents", "todo.txt"), "my bank password is hunter2 and the otp: 482913");
+  const { realFileDeps } = await import("../src/act-files.ts");
+  const d = { ...realFileDeps(), home: root };
+  for (const [f, re] of [["Documents/hard.txt", /hard link/], ["Documents/id_rsa", /key, token/], ["Documents/credentials", /key, token/], ["Documents/k\u0435y.txt", /key, token/], ["Documents/notes.txt", /private key/], ["Library/Mail/m.emlx", /Library/]] as const) {
+    const r = await readFileForAgent(join(root, f), d); assert.equal(r.ok, false, f); assert.match(r.detail, re, f);
+  }
+  const t = await readFileForAgent(join(root, "Documents", "todo.txt"), d);
+  assert.ok(t.ok); assert.doesNotMatch(t.data!, /hunter2|482913/);
 });
 test("read_file: risk is medium, blocked paths are refused before any approval", () => {
   assert.equal(classify({ type: "read_file", path: "~/Documents/notes.txt" }, ctx, "read my notes").risk, "medium");
@@ -236,7 +255,7 @@ async function viaRouter(task: string, execute: ActDeps["execute"]) {
 }
 test("fake router: search then read the results page then done (testRouter flagged)", async () => {
   const seen: any[] = [];
-  const evs = await viaRouter("search the web for ishara", async (a) => { seen.push(a); return { ok: true, detail: "opened results", context: page([], ["Ishara is a sealed screen tutor"]) }; });
+  const evs = await viaRouter("search the web for ishara, the sealed screen tutor", async (a) => { seen.push(a); return { ok: true, detail: "opened results", context: page([], ["Ishara is a sealed screen tutor"]) }; });
   assert.deepEqual(seen, [{ type: "search", query: "ishara sealed screen tutor 0G" }]);
   assert.deepEqual(evs.map((e) => e.event), ["thinking", "action", "result", "thinking", "done"]);
   assert.equal(evs.at(-1).data.testRouter, true);

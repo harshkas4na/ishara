@@ -109,6 +109,8 @@ export type ActRequest = {
   sessionId: string; tabId?: string; task: string; context: PageContext; executor: ActExecutor; armed: boolean;
   actId?: string;      // the client may choose it (8 to 64 of [A-Za-z0-9_-]); otherwise the helper makes one and sends it in `thinking`
   answer?: string;     // a follow-up POST for a task that ended with `ask`: the person's reply
+  history?: string[];  // a task carried over from an earlier page: Ishara's own step notes. DATA, shown inside the fence, never part of `task`
+  taskId?: string;     // the same for every page of one task, so the 25-action / 3-minute caps hold across pages (audit 4, 1.6)
 };
 export type ActPoint = { status: PointStatus; layaP?: number };
 export type ActIds = { brain: string[]; laya: string[] };

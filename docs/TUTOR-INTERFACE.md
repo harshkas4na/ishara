@@ -61,7 +61,8 @@ for the proof even after the first sentences were emitted (existing rule). Timeo
 2. laya unreachable: explanations and speech continue; every pointer becomes `suppressed` ("I can explain it, but I can't
    confirm which control, so I won't point"). Never point on 0GM alone.
 3. A pointer needs laya's yes (p >= `VERIFY_MIN_P`) about the user's question, never about page text.
-4. Page text is untrusted data (section 5). The model has NO tools: it can speak and request a pointer, nothing else.
+4. Page text is untrusted data (section 5). On `/tutor` the model has NO tools: it can speak and request a pointer, nothing else.
+   (Agent mode, `POST /act`, is a separate route with tools and its own rules: `docs/AGENT-MODE.md`.)
 5. The old `episode-log` keeps working: each 0G call's request id, chat id and provider are recorded as before; an
    explanation with no pointer is labelled "explained by 0GM-1.0, not independently checked".
 6. Fake-router results carry `testRouter: true` everywhere, as today.

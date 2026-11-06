@@ -93,3 +93,18 @@ desktop both speak. Nothing leaves the machine. Mute with Option+Shift+M.
 A screenshot to the sealed end-to-end encrypted model fixed visual questions the text path got wrong (+1.2 s), but changing the
 privacy claim is Harsh's call and is deferred. Tool calling and web search are parked (0GM supports tools in Private mode:
 verified), because a search leaves the sealed boundary.
+
+## 15. Agent mode, and how it was hardened (6 Nov, audit 4)
+Decision 14 parked tool calling; the 0G booth asked for control, so Agent mode shipped (`docs/AGENT-MODE.md`): 0GM plans one
+tool call per step, laya checks each target, local executors act. An adversarial audit (`docs/audit/AUDIT-4-2026-11-06.md`)
+then broke it in ways the unit tests did not cover, and these changed:
+- **Approve lives outside the page.** The pill was in the page's DOM and Y approved: a page could hide it, show a fake one and
+  ask for Y. Approve/Deny is now an extension window; Option+Shift+X is a browser command no page can swallow.
+- **Unknown means ask.** A deny-list of commit words missed empty labels, other languages, look-alike letters and "Cancel
+  subscription". Now any button whose whole label is not a known look-around asks, on any page.
+- **Only the person's words count.** Notes from earlier pages had been appended to the task and then counted as the person
+  naming a control. They now travel separately, inside the fence.
+- **Caps per task, not per page**, through a `taskId`; arming per tab with a 10-minute idle timeout; resume refuses when
+  disarmed or stopped.
+- **Data out needs a tap**: text the person did not give, and search or link words they did not say.
+Cost: more Approve taps (a "Continue" with no form asks now). Not measured on the real router yet: 0G was down.

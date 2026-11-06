@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ishara: approve this step?</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#14161a; --muted:#5b6370; --line:#e3e6ea; --amber:#b45309; --ok:#166534; --no:#991b1b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16181c; --fg:#eef0f3; --muted:#a3abb7; --line:#2b2f36; --amber:#f59e0b; --ok:#4ade80; --no:#f87171; } }
+  body { margin:0; padding:18px 20px; background:var(--bg); color:var(--fg); font:15px/1.45 -apple-system, system-ui, sans-serif; }
+  .tag { color:var(--amber); font-weight:600; font-size:12px; letter-spacing:.04em; text-transform:uppercase; }
+  h1 { font-size:18px; margin:6px 0 4px; word-break:break-word; }
+  p { margin:4px 0; color:var(--muted); word-break:break-word; }
+  .row { display:flex; gap:10px; margin-top:16px; }
+  button { font:inherit; padding:9px 16px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--fg); cursor:pointer; }
+  #yes { border-color:var(--ok); color:var(--ok); font-weight:600; }
+  #no { border-color:var(--no); color:var(--no); }
+  #stop { margin-left:auto; }
+</style></head>
+<body>
+  <div class="tag">Ishara wants to</div>
+  <h1 id="words">…</h1>
+  <p id="why"></p>
+  <p id="site"></p>
+  <div class="row"><button id="yes">Approve</button><button id="no">Deny</button><button id="stop">Stop the task</button></div>
+  <script src="approve.js"></script>
+</body></html>

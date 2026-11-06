@@ -192,3 +192,18 @@ test("scrubContext: the helper redacts labels, values and blocks a client sent u
   assert.equal(s.selection, "[redacted]");
   assert.equal(ctx.controls[0].label, "Copy sk-abcdef1234567890abcd"); // input not mutated
 });
+
+// ---- audit 4: shapes the redaction missed ----
+test("redact (audit 4): capitals, hyphen-joined phrases, split keys, PEM, Aadhaar, PAN and secrets said in words", () => {
+  assert.match(B.redact(PHRASE12.toUpperCase()), /^\[redacted\]$/);
+  assert.match(B.redact(PHRASE12.replace(/ /g, "-")), /^\[redacted\]$/);
+  assert.match(B.redact("key " + HEX64.slice(0, 32) + " " + HEX64.slice(32)), /^key \[redacted\]$/);
+  assert.match(B.redact("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaA==\nAAAA\n-----END OPENSSH PRIVATE KEY-----"), /^\[redacted\]$/);
+  assert.equal(B.redact("aadhaar 2345 6789 0124"), "aadhaar [redacted]");
+  assert.equal(B.redact("PAN ABCDE1234F"), "PAN [redacted]");
+  assert.equal(B.redact("my bank password is hunter2"), "my bank password is [redacted]");
+  assert.equal(B.redact("Your OTP is 482913."), "Your OTP is [redacted].");
+  assert.equal(B.redact("upi pin 4411"), "upi pin [redacted]");
+  // ordinary text stays
+  for (const t of ["Password is required", "Enter your PIN code", "Wrong password, try again", "OTP sent to your phone", "Home About Help Contact Blog Careers Press Terms Privacy Cookies Status Jobs", "Order 1234 5678 9012 shipped"]) assert.equal(B.redact(t), t, t);
+});

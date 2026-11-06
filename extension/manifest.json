@@ -41,5 +41,14 @@
   ],
   "action": {
     "default_title": "Ishara mic setup"
+  },
+  "commands": {
+    "stop-agent": {
+      "suggested_key": {
+        "default": "Alt+Shift+X",
+        "mac": "Alt+Shift+X"
+      },
+      "description": "Stop Ishara's Agent mode now (works on any page)"
+    }
   }
 }

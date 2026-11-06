@@ -54,8 +54,11 @@ async function handle(msg, sender) {
       const tabId = sender?.tab?.id ?? null;
       try {
         const [act] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-        if (act && tabId != null && act.id !== tabId) { console.debug("[ishara] rec-start refused: tab", tabId, "is not the active tab", act.id); return { error: "not the active tab" }; }
-      } catch { /* no tab info: fall through to the single-recorder rule */ }
+        // Root cause of the 6 Nov report is still unknown (audit 4, section 3): log who asked, so the next repro names it.
+        console.debug("[ishara] rec-start from tab", tabId, "frame", sender?.frameId, "active", act && act.id, "window", sender?.tab?.windowId, "recTab", recTab);
+        // No active tab found (a DevTools or popup window has focus) is a refusal too, not a pass.
+        if (!act || tabId == null || act.id !== tabId) { console.debug("[ishara] rec-start refused: tab", tabId, "is not the active tab", act && act.id); return { error: "not the active tab" }; }
+      } catch { return { error: "could not tell which tab is active" }; }
       if (recTab != null && recTab !== tabId && Date.now() - recAt < 30000) { console.debug("[ishara] rec-start refused: tab", recTab, "is already recording"); return { error: "another tab is recording" }; }
       recTab = tabId; recAt = Date.now();
       await ensureOffscreen(); // already there after the first use or the startup call below, so this is a cheap check
@@ -97,9 +100,23 @@ async function handle(msg, sender) {
     // ---- Agent mode (extension/act.js). Only content scripts of this extension can send these (sender.tab). ----
     case "act-post": { // plain POSTs of the act protocol, through the worker for the same reason as /tutor: Host/Origin and CORS
       if (!ACT_PATHS.has(msg.path)) return { error: "path not allowed" };
+      if (msg.path === "/act/approve") return { error: "approvals go through the Ishara window" }; // never from a page (audit 4, 1.8)
+      if (msg.path === "/act/stop" && msg.body && typeof msg.body.actId === "string") for (const [k, a] of approvals) if (a.actId === msg.body.actId) finishApproval(k, { yes: false, accepted: false, closed: true });
       return helper(msg.path, json(msg.body || {}), 20000);
     }
     case "act-state": return actState(msg, sender);
+    case "act-approval": return askApproval(msg, sender);       // the content script waits here for the person's answer
+    case "approval-info": { const a = approvals.get(msg.token); return a ? { words: a.words, why: a.why, risk: a.risk, site: a.site } : { error: "this request is over" }; }
+    case "approval-answer": { // from approve.html only (an extension page: no sender.tab)
+      // Only the extension's own approve.html may answer; a content script's sender.url is the web page, so it cannot pass this.
+      if (sender?.id !== chrome.runtime.id || !String(sender?.url || "").startsWith(chrome.runtime.getURL("approve.html"))) return { error: "not from the approval window" };
+      if (msg.stop) { const a = approvals.get(msg.token); await answerApproval(msg.token, false); if (a) disarmAll("stop button"); return { ok: true }; }
+      await answerApproval(msg.token, msg.yes === true); return { ok: true };
+    }
+    case "act-stop-all": await disarmAll(msg.why || "stop"); return { ok: true };
+    case "session-id": { const t = sender?.tab?.id; if (t == null) return { id: null }; const s = await sessionFor(t, false); return { id: s.id }; }
+    case "session-rotate": { const t = sender?.tab?.id; if (t == null) return { id: null }; const s = await sessionFor(t, true); return { id: s.id }; }
+    case "session-touch": { const t = sender?.tab?.id; if (t == null) return {}; const s = await sessionFor(t, false); if (s.id === msg.sessionId) await chrome.storage.session.set({ [sessKey(t)]: { ...s, last: Date.now(), used: true } }); return {}; }
     case "act-tab": return actTab(msg, sender);
     case "open-setup": chrome.tabs.create({ url: chrome.runtime.getURL("setup.html") }); return {};
   }
@@ -123,28 +140,125 @@ const ACT_END = ["done", "failed", "stopped", "refused", "ask"];
 // is cleared when the browser closes and is not readable by pages. Keyed by tab id; dropped when the tab closes or after 10 minutes.
 // The task text lives here only for those minutes and never goes anywhere but the helper.
 const STATE_TTL = 10 * 60 * 1000;
+const ARM_IDLE_MS = 10 * 60 * 1000;      // Agent mode disarms itself after 10 minutes without a task (audit 4, 1.7)
 const stateKey = (tabId) => "act:" + tabId;
+const armKey = (tabId) => "agent:" + tabId;
+
+// Agent mode is armed PER TAB, not for the whole browser, and only for 10 idle minutes. A task that moves to another tab carries
+// its arming with it (copyTask). Turning it off anywhere turns it off everywhere and stops every task (disarmAll).
+async function isArmed(tabId) {
+  if (tabId == null) return false;
+  const r = (await chrome.storage.session.get(armKey(tabId)))[armKey(tabId)];
+  if (!r || !r.on) return false;
+  if (Date.now() - (r.at || 0) > ARM_IDLE_MS) { await chrome.storage.session.remove(armKey(tabId)); return false; }
+  return true;
+}
+async function allKeys(prefix) { const all = await chrome.storage.session.get(null); return Object.keys(all).filter((k) => k.startsWith(prefix)); }
+async function disarmAll(why) {
+  const keys = [...(await allKeys("agent:")), ...(await allKeys("act:"))].filter((k) => k !== "act:stopAt");
+  await chrome.storage.session.remove(keys);
+  await chrome.storage.session.set({ "act:stopAt": Date.now() });
+  helper("/act/stop", json({ all: true }), 3000).catch(() => {});
+  closeApprovals(false);
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  for (const t of tabs) if (t.id != null) chrome.tabs.sendMessage(t.id, { type: "act-stop-cmd", why }).catch(() => {});
+}
+// Move a running task (and its arming) to another tab.
+async function copyTask(fromId, toId) {
+  const r = await chrome.storage.session.get([stateKey(fromId), armKey(fromId)]);
+  const st = r[stateKey(fromId)];
+  if (!st) return false;
+  await chrome.storage.session.set({ [stateKey(toId)]: { ...st, awaiting: true, savedAt: Date.now() }, ...(r[armKey(fromId)] ? { [armKey(toId)]: { on: true, at: Date.now() } } : {}) });
+  await chrome.storage.session.remove(stateKey(fromId));
+  return true;
+}
+
 async function actState(msg, sender) {
-  if (msg.op === "agent-get") { const r = await chrome.storage.session.get("agentOn"); return { on: !!r.agentOn }; }
-  if (msg.op === "agent-set") { await chrome.storage.session.set({ agentOn: !!msg.on }); return { ok: true }; }
   const tabId = sender?.tab?.id;
+  if (msg.op === "agent-get") return { on: await isArmed(tabId) };
+  if (msg.op === "agent-set") {
+    if (msg.on) { if (tabId == null) return { error: "no tab" }; await chrome.storage.session.set({ [armKey(tabId)]: { on: true, at: Date.now() } }); return { ok: true }; }
+    await disarmAll("agent off"); return { ok: true };
+  }
+  if (msg.op === "agent-touch") { if (await isArmed(tabId)) await chrome.storage.session.set({ [armKey(tabId)]: { on: true, at: Date.now() } }); return { ok: true }; }
   if (tabId == null) return { error: "no tab" };
   const key = stateKey(tabId);
   if (msg.op === "get") {
-    const r = await chrome.storage.session.get(key), s = r[key];
-    if (s && Date.now() - (s.startedAt || 0) > STATE_TTL) { await chrome.storage.session.remove(key); return { state: null }; }
+    const r = await chrome.storage.session.get([key, "act:stopAt"]), s = r[key];
+    // A Stop (shortcut, Agent mode off) made after the state was saved wins over a page load that would resume it (audit 4, 1.7).
+    if (s && (Date.now() - (s.startedAt || 0) > STATE_TTL || (r["act:stopAt"] || 0) >= (s.savedAt || 0) || !(await isArmed(tabId)))) { await chrome.storage.session.remove(key); return { state: null }; }
     return { state: s || null };
   }
   if (msg.op === "set") {
     const s = msg.state;
     if (!s || typeof s !== "object" || typeof s.task !== "string" || typeof s.actId !== "string") return { error: "bad state" };
-    await chrome.storage.session.set({ [key]: { actId: s.actId.slice(0, 64), task: s.task.slice(0, 2000), startedAt: Number(s.startedAt) || Date.now(), history: (Array.isArray(s.history) ? s.history : []).slice(-12).map((h) => String(h).slice(0, 100)), done: Number(s.done) || 0, awaiting: !!s.awaiting } });
+    await chrome.storage.session.set({ [key]: { actId: s.actId.slice(0, 64), taskId: String(s.taskId || s.actId).slice(0, 64), task: s.task.slice(0, 2000), startedAt: Number(s.startedAt) || Date.now(), savedAt: Date.now(), history: (Array.isArray(s.history) ? s.history : []).slice(-12).map((h) => String(h).slice(0, 100)), done: Number(s.done) || 0, awaiting: !!s.awaiting } });
     return { ok: true };
   }
   if (msg.op === "clear") { await chrome.storage.session.remove(key); return { ok: true }; }
   return { error: "unknown op" };
 }
-chrome.tabs.onRemoved.addListener((tabId) => { chrome.storage.session.remove(stateKey(tabId)).catch(() => {}); });
+chrome.tabs.onRemoved.addListener((tabId) => { chrome.storage.session.remove([stateKey(tabId), armKey(tabId)]).catch(() => {}); });
+
+// ---- Stop that a page cannot swallow (audit 4, 1.8): a browser command, handled here, with no content script in the way. ----
+chrome.commands?.onCommand.addListener((cmd) => { if (cmd === "stop-agent") disarmAll("shortcut"); });
+
+// ---- Approve / Deny in an extension window, never in the page (audit 4, 1.8). The page cannot see, hide, cover or click it. ----
+// The worker itself posts the answer to the helper and tells the tab only what the HELPER accepted (audit 4, 1.9).
+const approvals = new Map(); // token -> { tabId, actId, n, words, why, risk, winId, done(result) }
+const APPROVAL_MS = 60000;
+function closeApprovals(yes) { for (const [k, a] of approvals) finishApproval(k, { yes: !!yes, accepted: false, closed: true }); }
+async function finishApproval(token, result) {
+  const a = approvals.get(token);
+  if (!a) return;
+  approvals.delete(token);
+  clearTimeout(a.timer);
+  if (a.winId != null) chrome.windows.remove(a.winId).catch(() => {});
+  a.done(result);
+}
+async function askApproval(msg, sender) {
+  const tabId = sender?.tab?.id;
+  if (tabId == null || typeof msg.actId !== "string" || !Number.isInteger(msg.n)) return { yes: false, accepted: false, error: "bad request" };
+  const token = crypto.randomUUID();
+  return new Promise(async (done) => {
+    const a = { tabId, actId: msg.actId, n: msg.n, words: String(msg.words || "").slice(0, 160), why: String(msg.why || "").slice(0, 200), risk: String(msg.risk || "high"), site: sender.tab.url ? new URL(sender.tab.url).host : "", winId: null, done, timer: 0 };
+    approvals.set(token, a);
+    a.timer = setTimeout(() => answerApproval(token, false), APPROVAL_MS); // silence is a no
+    try {
+      const w = await chrome.windows.create({ url: chrome.runtime.getURL("approve.html#" + token), type: "popup", width: 460, height: 300, focused: true });
+      a.winId = w.id;
+    } catch (e) { answerApproval(token, false); }
+  });
+}
+async function answerApproval(token, yes) {
+  const a = approvals.get(token);
+  if (!a) return;
+  const r = await helper("/act/approve", json({ actId: a.actId, n: a.n, approve: !!yes }), 5000);
+  finishApproval(token, { yes: !!yes, accepted: !!(r.data && r.data.accepted === true) });
+}
+chrome.windows.onRemoved.addListener((winId) => { for (const [k, a] of approvals) if (a.winId === winId) answerApproval(k, false); }); // closing the window is a no
+
+// ---- Sessions: one per tab (not per page load), saved to 0G when the tab closes or after 15 idle minutes (audit 4, section 5) ----
+const SESSION_IDLE_MS = 15 * 60 * 1000;
+const sessKey = (tabId) => "sess:" + tabId;
+async function sessionFor(tabId, rotate) {
+  const k = sessKey(tabId);
+  let s = (await chrome.storage.session.get(k))[k];
+  if (!s || rotate) { s = { id: crypto.randomUUID(), last: Date.now(), used: false }; await chrome.storage.session.set({ [k]: s }); }
+  return s;
+}
+async function endSession(tabId, s) {
+  if (!s || !s.used) return;                                     // nothing was asked: nothing to store
+  await chrome.storage.session.remove(sessKey(tabId));
+  helper("/session/end", json({ sessionId: s.id }), 90000).catch(() => {});
+}
+chrome.tabs.onRemoved.addListener(async (tabId) => { const k = sessKey(tabId); const s = (await chrome.storage.session.get(k))[k]; endSession(tabId, s); });
+chrome.alarms.create("session-idle", { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener(async (al) => {
+  if (al.name !== "session-idle") return;
+  const all = await chrome.storage.session.get(null);
+  for (const [k, s] of Object.entries(all)) if (k.startsWith("sess:") && s && s.used && Date.now() - (s.last || 0) > SESSION_IDLE_MS) endSession(Number(k.slice(5)), s);
+});
 
 // Tab-level actions a page cannot do for itself. open_url navigates the CURRENT tab (so the content script of the next page can
 // resume the task) unless newTab is set; a new tab inherits the task state so the work carries on there.
@@ -157,9 +271,8 @@ async function actTab(msg, sender) {
       if (u.protocol !== "http:" && u.protocol !== "https:") return { error: "only http and https links can be opened" };
       if (msg.newTab) {
         const nt = await chrome.tabs.create({ url: u.href, active: true });
-        const r = await chrome.storage.session.get(stateKey(tab.id));
-        if (r[stateKey(tab.id)] && nt.id != null) { await chrome.storage.session.set({ [stateKey(nt.id)]: { ...r[stateKey(tab.id)], awaiting: true } }); await chrome.storage.session.remove(stateKey(tab.id)); }
-        return { ok: true };
+        const moved = nt.id != null && (await copyTask(tab.id, nt.id));
+        return { ok: true, moved };
       }
       // After `tab new`: the blank tab is where this page should load, so the task carries on there.
       const blankKey = "act:blank:" + tab.id;
@@ -168,9 +281,8 @@ async function actTab(msg, sender) {
         await chrome.storage.session.remove(blankKey);
         const bt = await chrome.tabs.get(blank).catch(() => null);
         if (bt) {
+          await copyTask(tab.id, bt.id);
           await chrome.tabs.update(bt.id, { url: u.href, active: true });
-          const r = await chrome.storage.session.get(stateKey(tab.id));
-          if (r[stateKey(tab.id)]) { await chrome.storage.session.set({ [stateKey(bt.id)]: { ...r[stateKey(tab.id)], awaiting: true } }); await chrome.storage.session.remove(stateKey(tab.id)); }
           return { ok: true, moved: true };
         }
       }
@@ -179,10 +291,19 @@ async function actTab(msg, sender) {
     }
     case "tab_op": return actTabOp(msg, tab);
     case "new_tab": { const nt = await chrome.tabs.create({ active: true }); return nt ? { ok: true, detail: "opened a new tab" } : { ok: false, detail: "could not open a tab" }; }
-    case "close_tab": await chrome.storage.session.remove(stateKey(tab.id)); setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 300); return { ok: true, detail: "closing this tab" };
+    // The tab Ishara works in is never closed by a task, whatever the approval (docs/AGENT-MODE.md; audit 4, section 2).
+    case "close_tab": return { ok: false, detail: "refused: that would close the tab I am working in" };
     case "reload": await chrome.tabs.reload(tab.id); return { ok: true, detail: "reloading" };
-    case "back": try { await chrome.tabs.goBack(tab.id); return { ok: true, detail: "went back" }; } catch { return { ok: false, detail: "there is no page to go back to" }; }
-    case "forward": try { await chrome.tabs.goForward(tab.id); return { ok: true, detail: "went forward" }; } catch { return { ok: false, detail: "there is no page to go forward to" }; }
+    // Back / forward: report whether the address actually changed (a single-page app changes it without a page load), instead of
+    // the page sleeping blind for 8 seconds (audit 4, section 2).
+    case "back": case "forward": {
+      const before = tab.url;
+      const changed = waitForChange(tab.id, before, 4000);
+      try { await (msg.cmd === "back" ? chrome.tabs.goBack(tab.id) : chrome.tabs.goForward(tab.id)); }
+      catch { return { ok: false, detail: msg.cmd === "back" ? "there is no page to go back to" : "there is no page to go forward to" }; }
+      const c = await changed;
+      return c ? { ok: true, changed: true, detail: msg.cmd === "back" ? "went back" : "went forward" } : { ok: false, detail: "the page did not change" };
+    }
     case "screenshot": {
       // The picture is returned to the asking page only (to place on the clipboard) and is never sent to the helper or 0G.
       try {
@@ -204,6 +325,18 @@ async function actTab(msg, sender) {
     }
   }
   return { error: "unknown tab command" };
+}
+
+// Resolves true when the tab starts loading or its address changes (same-document history included), false after `ms`.
+function waitForChange(tabId, beforeUrl, ms) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => { chrome.tabs.onUpdated.removeListener(on); resolve(false); }, ms);
+    function on(id, info) {
+      if (id !== tabId) return;
+      if (info.status === "loading" || (info.url && info.url !== beforeUrl)) { clearTimeout(t); chrome.tabs.onUpdated.removeListener(on); resolve(true); }
+    }
+    chrome.tabs.onUpdated.addListener(on);
+  });
 }
 
 // Agent mode tab actions: switch / close by match, and new. `tab` is the tab the task runs in (sender.tab).
@@ -236,13 +369,9 @@ async function actTabOp(msg, tab) {
   await chrome.tabs.update(target.id, { active: true });
   await chrome.windows.update(target.windowId, { focused: true }).catch(() => {});
   // The task moves with the person's attention: copy its state to the target tab and wake that tab's script.
-  const r = await chrome.storage.session.get(stateKey(tab.id));
-  if (r[stateKey(tab.id)]) {
-    await chrome.storage.session.set({ [stateKey(target.id)]: { ...r[stateKey(tab.id)], awaiting: true } });
-    await chrome.storage.session.remove(stateKey(tab.id));
-    setTimeout(() => chrome.tabs.sendMessage(target.id, { type: "act-resume" }).catch(() => {}), 400);
-  }
-  return { ok: true, detail: "switched to the tab " + tabName(target) };
+  const moved = await copyTask(tab.id, target.id);
+  if (moved) setTimeout(() => chrome.tabs.sendMessage(target.id, { type: "act-resume" }).catch(() => {}), 400);
+  return { ok: true, moved, detail: "switched to the tab " + tabName(target) };
 }
 
 // The same relay as /tutor, for POST /act: the content script posts {type:"start", body}; events come back as {event, data}. The task

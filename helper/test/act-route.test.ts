@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
-import { handleActRoute, ActRuns, type ActRouteDeps } from "../src/act-route.ts";
+import { handleActRoute, ActRuns, TaskChains, type ActRouteDeps } from "../src/act-route.ts";
 import type { AskActResult } from "../src/zg.ts";
 import { verifyCtx, page } from "./act-helpers.ts";
 
@@ -192,4 +192,86 @@ test("the registry is bounded and forgets idle runs after 10 minutes", () => {
   now += 11 * 60 * 1000;
   assert.equal(runs.get("run-29-aaaa"), undefined);
   assert.equal(runs.size(), 0);
+});
+
+// ---- audit 4 (docs/audit/AUDIT-4-2026-11-06.md) ----
+test("audit 4 1.6: the 25-action cap holds across pages of one task (same taskId, new actId per page)", async () => {
+  const chains = new TaskChains();
+  const clicks = Array.from({ length: 30 }, () => A({ type: "scroll", direction: "down" }));
+  const t = await start(clicks, { chains, confirm: "off", limits: { execTimeoutMs: 30 } });
+  // page 1: 24 steps happen, then the page "navigates" (client stops with handoff)
+  const p1 = t.post("/act", body({ actId: "act-page-0001", taskId: "task-0000001", executor: "helper" }));
+  const e1 = events(await (await p1).text());
+  assert.equal(e1.at(-1)!.event, "failed"); // the helper executor is missing in the test: three failures end page 1
+  t.close();
+  // a fresh route with a saved chain of 24 steps: only one more step is allowed
+  chains.save("task-0000002", { steps: 24, activeMs: 0 }, Date.now());
+  const t2 = await start([A({ type: "scroll", direction: "down" }), A({ type: "scroll", direction: "down" }), A({ type: "scroll", direction: "down" })], { chains, confirm: "off", helperExecute: async () => ({ ok: true, detail: "ok" }) });
+  const e2 = events(await (await t2.post("/act", body({ actId: "act-page-0002", taskId: "task-0000002", executor: "helper" }))).text());
+  assert.equal(e2.filter((e) => e.event === "action").length, 1);
+  assert.equal(e2.at(-1)!.event, "failed"); assert.match(e2.at(-1)!.data.say, /25 actions/);
+  t2.close();
+});
+test("audit 4 1.6: no task runs past 10 minutes of wall time, whatever the pages", async () => {
+  const chains = new TaskChains();
+  let now = 1_000_000;
+  chains.get("task-0000003", now);                                   // started
+  for (let m = 3; m <= 9; m += 3) chains.save("task-0000003", { steps: m, activeMs: 0 }, now + m * 60_000); // busy the whole time
+  now += 11 * 60 * 1000;
+  const t = await start([A({ type: "done", say: "x" })], { chains, now: () => now });
+  const e = events(await (await t.post("/act", body({ actId: "act-page-0003", taskId: "task-0000003" }))).text());
+  assert.equal(e.at(-1)!.event, "failed"); assert.match(e.at(-1)!.data.say, /10 minutes/);
+  t.close();
+});
+test("audit 4 1.9: an approval is accepted only while that step is asking", async () => {
+  const t = await start([A({ type: "click", id: "b17" })]);
+  // before anything asked: refused
+  const p = t.post("/act", body());
+  const early = await (await t.post("/act/approve", JSON.stringify({ actId: "act-route-0001", n: 2, approve: true }))).json();
+  assert.equal(early.accepted, false);
+  await sleep(60);
+  const ok = await (await t.post("/act/approve", JSON.stringify({ actId: "act-route-0001", n: 1, approve: false }))).json();
+  assert.equal(ok.accepted, true);
+  await (await p).text();
+  t.close();
+  // too late: the 60 s (here 50 ms) ran out
+  const t2 = await start([A({ type: "click", id: "b17" }), A({ type: "ask", say: "?" })], { limits: { approvalMs: 50 } });
+  const p2 = t2.post("/act", body());
+  await sleep(150);
+  const late = await t2.post("/act/approve", JSON.stringify({ actId: "act-route-0001", n: 1, approve: true }));
+  assert.ok(late.status === 404 || (await late.json()).accepted === false);
+  await (await p2).text();
+  t2.close();
+});
+test("audit 4 1.7: POST /act/stop {all:true} stops every task; a handoff stop is logged as continued", async () => {
+  const t = await start([A({ type: "click", id: "b0" }), A({ type: "click", id: "b0" })]);
+  const p = t.post("/act", body({ task: "open Home" }));
+  await sleep(60);
+  assert.equal((await (await t.post("/act/stop", JSON.stringify({ all: true }))).json()).stopped, 1);
+  assert.equal(events(await (await p).text()).at(-1)!.event, "stopped");
+  assert.equal(t.records.at(-1).outcome, "act-stopped");
+  const p2 = t.post("/act", body({ task: "open Home", actId: "act-route-0002" }));
+  await sleep(60);
+  await t.post("/act/stop", JSON.stringify({ actId: "act-route-0002", handoff: true }));
+  await (await p2).text();
+  assert.equal(t.records.at(-1).outcome, "act-continued");
+  t.close();
+});
+test("audit 4 1.5: notes from earlier pages are data for the model, never the person's words", async () => {
+  const f = page([["b1", "input", "Email"], ["b2", "button", "Proceed"]]);
+  const t = await start([A({ type: "click", id: "b2" })], { limits: { approvalMs: 50 } });
+  const e = events(await (await t.post("/act", JSON.stringify({ sessionId: "s", task: "fill my email", history: ["Pressing “Proceed”"], context: f, executor: "client", armed: true, actId: "act-route-0004" }))).text());
+  assert.ok(e.some((x) => x.event === "approval"), "Proceed still needs a tap");
+  t.close();
+});
+test("audit 4 section 5: typed text never reaches the receipts, only its length", async () => {
+  const f = page([["b1", "input", "Email"]]);
+  const t = await start([A({ type: "type", id: "b1", text: "harsh@example.com" }), A({ type: "done", say: "ok" })]);
+  const p = t.post("/act", JSON.stringify({ sessionId: "s", task: "type harsh@example.com in the email box", context: f, executor: "client", armed: true, actId: "act-route-0005" }));
+  await sleep(60);
+  await t.post("/act/result", JSON.stringify({ actId: "act-route-0005", n: 1, ok: true, detail: "typed" }));
+  await (await p).text();
+  assert.doesNotMatch(t.records.at(-1).reason, /harsh@example\.com/);
+  assert.match(t.records.at(-1).reason, /<17 chars>/);
+  t.close();
 });

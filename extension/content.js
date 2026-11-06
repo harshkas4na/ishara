@@ -26,7 +26,11 @@
   }
   // One id per page load: the helper keys its log and the 0G session root on it. A new one after "End session",
   // because the contract takes one root per session and later answers would otherwise never be stored.
+  // The session is the TAB's, kept by the worker across page loads and saved to 0G when the tab closes or goes idle (audit 4,
+  // section 5). A random id until the worker answers (a few ms), so nothing waits on it.
   let sessionId = crypto.randomUUID();
+  try { chrome.runtime.sendMessage({ type: "session-id" }, (r) => { if (!chrome.runtime.lastError && r && r.id) sessionId = r.id; }); } catch { /* extension reloaded */ }
+  const touchSession = () => { try { chrome.runtime.sendMessage({ type: "session-touch", sessionId }, () => void chrome.runtime.lastError); } catch { /* reloaded */ } };
   let recording = false, busy = false, pending = null, inspecting = false; // pending: outline compiled at key-down
   let startP = null, transcribing = false;
   // Agent mode (extension/act.js): the executor and the task loop. Off by default; Option+Shift+A turns it on for this browser session.
@@ -81,6 +85,7 @@
     // Agent mode ON and the request is an order ("fill the form", "open youtube"): the task loop, not an explanation. Every
     // other request, and every request while Agent mode is off, takes the normal tutor path below (the helper tells the user
     // to turn Agent mode on when it recognises a task, so the sentence comes from the router, not from here).
+    touchSession();
     if (NS.act && NS.act.isAgent() && NS.act.isTask(question)) {
       if (NS.act.isBusy()) return NS.overlay.say("I am still working on the last task. Press Esc to stop it first.");
       cancelTurn(); send({ type: "speech-stop" });
@@ -314,7 +319,7 @@
     // A tab the user is not looking at never reacts to a chord, however the event reached it (frame relays, forwarded
     // messages): one press must start ONE question, in the visible, focused tab.
     if (document.visibilityState !== "visible" || !document.hasFocus()) return;
-    if (NS.act && NS.act.handleKey(e)) return; // Y / N answer an approval prompt
+    // (No Y/N keys: an approval is answered only in the Ishara window, which a page cannot fake or press. Audit 4, 1.8.)
     // Ctrl or Cmd held means it is some other chord (e.g. the desktop push-to-talk Control+Option+Space): not ours.
     // Without this, one press started a browser recording AND the desktop recording at the same time.
     if (e.ctrlKey || e.metaKey) return;
@@ -358,7 +363,7 @@
         speech: (toggle) => send({ type: toggle ? "speech-toggle" : "speech-status" }), // debug panel Mute button
         endSession: async () => {
           const r = await send({ type: "session-end", sessionId });
-          if (r.data && r.data.root) sessionId = crypto.randomUUID();
+          if (r.data && r.data.root) { const n = await send({ type: "session-rotate" }); sessionId = (n && n.id) || crypto.randomUUID(); }
           return r;
         },
       });

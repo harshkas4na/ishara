@@ -44,10 +44,28 @@ test("404 is an explicit expired result", async () => {
 });
 
 // Live read-only: provider service record from the mainnet Inference contract (measured working in the lab).
-test("live service record for laya provider", { timeout: 20_000 }, async (t) => {
-  try {
-    const s = await getServiceRecord("0x743cD1F17903cF6cC94ff4792b51929876f51023");
-    assert.match(s.url, /^https?:\/\//);
-    assert.match(s.signer, /^0x[0-9a-fA-F]{40}$/);
-  } catch (e) { t.skip("RPC unreachable: " + (e as Error).message); }
+// Opt-in (ISHARA_LIVE=1, and ISHARA_LAYA_PROVIDER for a provider that is registered today): `npm test` makes no network call.
+// A revert is a FAILURE (the provider is gone or changed), never a skip; only a network error skips (audit 4, section 5).
+test("live service record for laya provider", { timeout: 20_000, skip: process.env.ISHARA_LIVE !== "1" && "live test: set ISHARA_LIVE=1" }, async (t) => {
+  let s;
+  try { s = await getServiceRecord(process.env.ISHARA_LAYA_PROVIDER ?? "0x743cD1F17903cF6cC94ff4792b51929876f51023"); }
+  catch (e: any) { if (e?.code === "CALL_EXCEPTION") throw e; return t.skip("RPC unreachable: " + e.message); }
+  assert.match(s.url, /^https?:\/\//);
+  assert.match(s.signer, /^0x[0-9a-fA-F]{40}$/);
+  assert.equal(s.acknowledged, true);
+});
+
+test("audit 4: an unacknowledged signer or a non-TEE service is 'unattested', never ok", async () => {
+  const svc = { url: "https://p.invalid", model: "laya", signer: "0x0000000000000000000000000000000000000001" };
+  const never = async () => { throw new Error("must not fetch"); };
+  const a = await fetchProof({ chatId: "c", provider: "0x743cD1F17903cF6cC94ff4792b51929876f51023", lookup: async () => ({ ...svc, acknowledged: false }), fetchImpl: never as any });
+  assert.equal(a.status, "error"); assert.equal((a as any).cause, "unattested");
+  const b = await fetchProof({ chatId: "c", provider: "0x743cD1F17903cF6cC94ff4792b51929876f51023", lookup: async () => ({ ...svc, acknowledged: true, verifiability: "none" }), fetchImpl: never as any });
+  assert.equal((b as any).cause, "unattested");
+});
+test("audit 4: a signed text that is not a zg-sig-v1 record is refused", async () => {
+  const r = await fetchProof({ chatId: "c", provider: "0x743cD1F17903cF6cC94ff4792b51929876f51023",
+    lookup: async () => ({ url: "https://p.invalid", model: "laya", signer: "0x0000000000000000000000000000000000000001", acknowledged: true, verifiability: "TeeML" }),
+    fetchImpl: async () => new Response(JSON.stringify({ text: "anything at all", signature: "0x00" }), { status: 200 }) });
+  assert.equal(r.status, "error"); assert.match((r as any).detail, /zg-sig-v1/);
 });

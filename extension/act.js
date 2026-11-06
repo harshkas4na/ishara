@@ -415,6 +415,8 @@
     const field = a && ((a.tagName === "INPUT" && !/^(checkbox|radio|button|submit|reset|file)$/i.test(a.type)) || a.tagName === "TEXTAREA" || a.isContentEditable);
     if (!handled) {
       // Synthetic key events do nothing by themselves (a browser only acts on real ones). Do what the key would do, for the few that matter.
+      // A modifier changes what a key means (Shift+Enter, Ctrl+Enter...): never turn it into a click or a submit (audit 4, 1.4).
+      if (p.mods.length && (p.key === "Enter" || p.key === " ")) return ok("pressed " + combo + " (nothing else done)");
       if (p.key === "Enter" && a) {
         if (a.tagName === "TEXTAREA" || a.isContentEditable) { document.execCommand("insertText", false, "\n"); return ok("pressed Enter"); }
         if (a.tagName === "BUTTON" || (a.tagName === "A" && a.href) || (a.tagName === "INPUT" && /^(button|submit|reset|checkbox|radio)$/i.test(a.type))) { a.click(); return ok("pressed Enter", { navigating: a.tagName === "A" }); }
@@ -451,6 +453,9 @@
     return done ? ok("copied " + text.length + " characters to the clipboard") : fail("the browser did not allow copying");
   }
 
+  const normL = (x) => String(x == null ? "" : x).normalize("NFKC").replace(/[\u00ad\u200b-\u200f\u2060\ufeff]/g, "").replace(/\s+/g, " ").trim().toLowerCase().slice(0, 60);
+  function sameLabel(now, want) { const a = normL(now), b = normL(want); return a === b || (b.length >= 20 && a.startsWith(b.slice(0, 40))); }
+
   // run(action, env): one action on THIS page. env = { resolve(id) -> element|null, tab(cmd), openUrl(url,newTab), copy(text), shot(to) }.
   // Returns { ok, detail, navigating? }. Never throws.
   async function run(raw, env) {
@@ -470,6 +475,8 @@
       }
       const el = env.resolve(a.id);
       if (!el || !el.isConnected) return fail("I can't find that control any more");
+      // The risk was decided on the label the helper saw. If the page changed it since (hover, timer), do nothing (audit 4, 1.10).
+      if (env.expectLabel != null && env.labelNow && !sameLabel(env.labelNow(el), env.expectLabel)) return fail("the control changed since I checked it (now “" + String(env.labelNow(el) || "").slice(0, 40) + "”), so I did not touch it");
       if (a.type === "click") return await doClick(el, env);
       if (a.type === "type") return doType(el, a.text, a.clear);
       if (a.type === "select") return doSelect(el, a.option);
@@ -498,13 +505,19 @@
         p.postMessage({ type: "start", body });
         return { close() { closed = true; try { p.disconnect(); } catch { /* gone */ } } };
       },
-      post: (path, body) => send({ type: "act-post", path, body }), // /act/result | /act/approve | /act/stop | /speech/say
+      post: (path, body) => send({ type: "act-post", path, body }), // /act/result | /act/stop | /speech/say
+      // Approve/Deny happens in an extension window the page cannot touch; the worker answers the helper and returns what it ACCEPTED.
+      approval: (m) => new Promise((res) => {
+        const timer = setTimeout(() => res({ yes: false, accepted: false }), 75000);
+        try { chrome.runtime.sendMessage({ type: "act-approval", ...m }, (r) => { clearTimeout(timer); res(chrome.runtime.lastError || !r ? { yes: false, accepted: false } : r); }); }
+        catch { clearTimeout(timer); res({ yes: false, accepted: false }); }
+      }),
       state: {
         get: () => send({ type: "act-state", op: "get" }).then((r) => r.state || null),
         set: (state) => send({ type: "act-state", op: "set", state }),
         clear: () => send({ type: "act-state", op: "clear" }),
       },
-      agent: { get: () => send({ type: "act-state", op: "agent-get" }).then((r) => !!r.on), set: (on) => send({ type: "act-state", op: "agent-set", on }) },
+      agent: { get: () => send({ type: "act-state", op: "agent-get" }).then((r) => !!r.on), set: (on) => send({ type: "act-state", op: "agent-set", on }), touch: () => send({ type: "act-state", op: "agent-touch" }) },
       tab: (cmd) => send({ type: "act-tab", ...cmd }),
     };
   }
@@ -545,15 +558,23 @@
   }
   const labelFor = (cur, id) => { const e = cur && cur.outline.elements.find((x) => x.id === id); return e ? e.label : ""; };
 
-  function makeEnv(cur) {
+  // The label the outline gives an element now (same labeller as the context the helper classified).
+  function labelNow(el) {
+    try { const now = NS().compileOutline(); for (const e of now.outline.elements) if (now.map.get(e.id) === el) return e.label; } catch { /* fall through */ }
+    return visibleLabel(el);
+  }
+
+  function makeEnv(cur, expectLabel) {
     const T = tp();
     return {
       resolve: (id) => elementFor(cur, id),
+      expectLabel: expectLabel == null ? null : expectLabel,
+      labelNow,
       openUrl: async (url, newTab) => {
         if (runState) { runState.expectNav = true; await saveState({ awaiting: true }); }
         const r = await T.tab({ cmd: "open_url", url, newTab: !!newTab });
         if (r.error) return fail(r.error);
-        if (r.moved) return ok("opened in the new tab");
+        if (r.moved) { handoff(runState, "Carrying on in the new tab."); return ok("opened in the new tab"); }
         if (newTab) return ok("opened in a new tab");
         await sleep(8000); // the page is about to unload and take this script with it; if we are still here, the navigation did not happen
         return fail("the page did not open");
@@ -562,13 +583,24 @@
         if (cmd === "back" || cmd === "forward" || cmd === "reload") { if (runState) await saveState({ awaiting: true }); }
         const r = await T.tab({ cmd });
         if (r.error) return fail(r.error);
-        if (cmd === "back" || cmd === "forward" || cmd === "reload") { await sleep(8000); return fail("the page did not change"); }
+        if (cmd === "back" || cmd === "forward") {
+          // The worker says whether the address changed. A full page load ends this script (the next page resumes); surviving 1.5 s
+          // means it was a same-page history step (a single-page app), which is a success, not "the page did not change".
+          if (r.ok === false || !r.changed) { if (runState) await saveState({ awaiting: false }); return fail(r.detail || "the page did not change"); }
+          await sleep(1500);
+          if (runState) await saveState({ awaiting: false });
+          return ok(r.detail || (cmd === "back" ? "went back" : "went forward"));
+        }
+        if (cmd === "reload") { await sleep(8000); return fail("the page did not reload"); }
         return r.ok === false ? fail(r.detail || "not possible") : ok(r.detail || cmd);
       },
       // switch / close (by match) / new: the service worker does it with chrome.tabs. It refuses to close the tab this task runs in.
       tabOp: async (op, match) => {
+        if (op === "switch" && runState) await saveState({ awaiting: false });
         const r = await T.tab({ cmd: "tab_op", op, match });
         if (r.error) return fail(r.error);
+        // The task moved to the other tab: THIS tab must not act on it again (audit 4, section 2, wrong tab after a switch).
+        if (r.ok !== false && r.moved) handoff(runState, "Carrying on in the other tab.");
         return r.ok === false ? fail(r.detail || "not possible") : ok(r.detail || op);
       },
       copy: async (text) => {
@@ -604,7 +636,7 @@
 
   const saveState = (patch) => {
     if (!runState) return Promise.resolve();
-    const s = { actId: runState.actId, task: runState.task, startedAt: runState.startedAt, history: runState.history.slice(-12), done: runState.done, awaiting: false, ...patch };
+    const s = { actId: runState.actId, taskId: runState.taskId, task: runState.task, startedAt: runState.startedAt, history: runState.history.slice(-12), done: runState.done, awaiting: false, ...patch };
     return tp().state.set(s);
   };
 
@@ -613,9 +645,10 @@
     chip: (on) => OV() && OV().agent.chip(on),
     thinking(n) { OV().agent.pill("thinking", n > 1 ? "Looking at the page for step " + n + "…" : "Working out how to do that…", { n: Math.max(1, n || 1), live: true, buttons: [{ label: "Stop", kbd: "Esc", cls: "no", onClick: () => stop("button") }] }); },
     step(n, text) { OV().agent.pill("acting", "Step " + n + ": " + text, { n, live: true, buttons: [{ label: "Stop", kbd: "Esc", cls: "no", onClick: () => stop("button") }] }); },
-    approval(n, words, why, onYes, onNo) {
-      OV().agent.pill("approval", words, { amber: true, n, why: why || "", live: false,
-        buttons: [{ label: "Approve", kbd: "Y", cls: "ok", onClick: onYes }, { label: "Deny", kbd: "N", cls: "no", onClick: onNo }] });
+    // The answer is given in the Ishara window (an extension window the page cannot touch), never here (audit 4, 1.8).
+    approval(n, words, why) {
+      OV().agent.pill("approval", words, { amber: true, n, why: (why ? why + " " : "") + "Approve or deny in the Ishara window.", live: false,
+        buttons: [{ label: "Stop", kbd: "Esc", cls: "no", onClick: () => stop("button") }] });
     },
     end(kind, text, ms) {
       const o = OV().agent;
@@ -629,7 +662,7 @@
   async function start(task, o = {}) {
     if (runState) return;
     const actId = o.actId || uid();
-    runState = { actId, task, history: o.history || [], done: o.done || 0, n: 0, stopped: false, finished: false, handle: null, queue: Promise.resolve(), startedAt: o.startedAt || Date.now(), last: null, cap: 0, askBody: null };
+    runState = { actId, taskId: o.taskId || actId, task, history: o.history || [], done: o.done || 0, n: 0, stopped: false, finished: false, handle: null, queue: Promise.resolve(), startedAt: o.startedAt || Date.now(), last: null, cap: 0, askBody: null };
     const R = runState;
     ui.chip(true); ui.thinking(R.done + 1);
     R.cap = setTimeout(() => { if (runState === R) stop("time limit"); }, CAP_MS);
@@ -637,7 +670,10 @@
     try { cur = await compile(); } catch (e) { return end(R, "failed", { say: "I could not read this page: " + ((e && e.message) || e) }); }
     if (R.stopped) return;
     R.cur = cur;
-    const body = { sessionId: cfg.getSessionId ? cfg.getSessionId() : cfg.sessionId, task: continuation(task, R.history), context: cur.ctx, executor: "client", armed: true, actId };
+    // The task stays the person's words. What happened on earlier pages goes separately, as data (audit 4, 1.5); the taskId makes the
+    // helper keep ONE 25-action / 3-minute budget for the whole task across pages (audit 4, 1.6).
+    tp().agent.touch && tp().agent.touch();
+    const body = { sessionId: cfg.getSessionId ? cfg.getSessionId() : cfg.sessionId, task, history: R.history.slice(-12), taskId: R.taskId, context: cur.ctx, executor: "client", armed: true, actId };
     R.body = body;
     await saveState({ awaiting: false });
     open(R, body);
@@ -690,7 +726,9 @@
   async function execute(R, J) {
     if (R.stopped || runState !== R) return;
     await saveState({ awaiting: true }); // if this action navigates, the next page resumes from here
-    const res = await run(J.a, makeEnv(R.cur));
+    // Controls (b-ids) are re-checked by label; text blocks (t-ids) have no control label to compare.
+    const want = J.a && typeof J.a.id === "string" && J.a.id[0] === "b" ? (J.d && J.d.targetLabel != null ? J.d.targetLabel : J.label) : null;
+    const res = await run(J.a, makeEnv(R.cur, want));
     if (R.stopped || runState !== R) return;
     if (res.navigating) await sleep(6000); // a real navigation unloads this script; surviving means it was blocked or in-page
     else await settle();
@@ -715,20 +753,19 @@
     const label = a.id ? labelFor(R.cur, a.id) : "";
     const words = describe(a, label, { question: true });
     const myN = d.n;
-    const answer = (yes) => {
-      if (!approvalState || approvalState.n !== myN) return;
-      clearTimeout(approvalState.timer); approvalState = null;
-      tp().post("/act/approve", { actId: R.actId, n: myN, approve: !!yes });
-      if (yes) {
-        ui.step(n, "approved, doing it");
-        const held = R.held || { d: { n: myN, action: a }, a, n, target, label, say: words.replace(/\?$/, "") };
-        R.held = null;
-        R.queue = R.queue.then(() => execute(R, held)).catch(() => {});
-      } else { R.held = null; R.acting = false; ui.thinking(n); } // denied: the helper plans again or ends; nothing ran
-    };
-    // No answer in 60 s = deny (the helper does the same); the pill must not keep offering a button that no longer works.
-    approvalState = { n: myN, answer, timer: setTimeout(() => { if (approvalState && approvalState.n === myN) answer(false); }, 60000) };
-    ui.approval(n, words, d.why && d.why !== words ? String(d.why).slice(0, 120) : "", () => answer(true), () => answer(false));
+    approvalState = { n: myN };
+    ui.approval(n, words, d.why && d.why !== words ? String(d.why).slice(0, 120) : "");
+    // The worker opens the window, posts the answer to the helper itself, and tells us whether the helper ACCEPTED it. Only an
+    // accepted yes runs: a late tap (the 60 s ran out) or a stopped task does nothing (audit 4, 1.9).
+    const r = await tp().approval({ actId: R.actId, n: myN, words, why: d.why || "", risk: d.risk || "high" });
+    if (!approvalState || approvalState.n !== myN || R.stopped || runState !== R) return;
+    approvalState = null;
+    if (r && r.yes && r.accepted) {
+      ui.step(n, "approved, doing it");
+      const held = R.held || { d: { n: myN, action: a }, a, n, target, label, say: words.replace(/\?$/, "") };
+      R.held = null;
+      R.queue = R.queue.then(() => execute(R, held)).catch(() => {});
+    } else { R.held = null; R.acting = false; if (r && r.yes && !r.accepted) ui.step(n, "that approval came too late, so I did nothing"); else ui.thinking(n); }
   }
 
   // The task paused for an answer (event `ask`): show the question and open the type box; the reply continues the same actId.
@@ -772,22 +809,15 @@
     return true;
   }
 
-  // Y / N while an approval is on screen. Returns true when the key was consumed. Only real key presses reach here (content.js).
-  function handleKey(e) {
-    if (!approvalState || e.ctrlKey || e.metaKey || e.altKey) return false;
-    const k = (e.key || "").toLowerCase();
-    if (k !== "y" && k !== "n") return false;
-    e.preventDefault(); e.stopPropagation();
-    approvalState.answer(k === "y");
-    return true;
-  }
+  // Approval is never given from the page's keyboard (a page can fake the prompt and ask you to press Y): audit 4, 1.8.
+  function handleKey() { return false; }
 
   // ---- agent mode switch ----
   function setAgent(on, o = {}) {
     agentOn = !!on;
     ui.chip(agentOn);
-    if (!o.silent) tp().agent.set(agentOn);
     if (!agentOn) stop("agent off");
+    if (!o.silent) tp().agent.set(agentOn); // off: the worker disarms every tab and stops every task
     if (!o.quiet && OV()) OV().say(agentOn ? "Agent mode on. Ask me to do something, for example “fill this form”. Esc stops me." : "Agent mode off.", { });
     return agentOn;
   }
@@ -799,12 +829,40 @@
     try { st = await tp().state.get(); } catch { return false; }
     if (!st || !st.awaiting || !st.task) return false;
     if (Date.now() - (st.startedAt || 0) > STATE_TTL || (st.done || 0) >= 25) { tp().state.clear(); return false; }
+    // The worker returns no state when Agent mode is off for this tab, timed out, or a Stop came after the save (audit 4, 1.7).
+    // Check the arming again here anyway: never act unarmed.
+    let armed = false; try { armed = await tp().agent.get(); } catch { armed = false; }
+    if (!armed) { tp().state.clear(); return false; }
     agentOn = true; ui.chip(true);
     tp().state.set({ ...st, awaiting: false }); // consumed: a reload of THIS page must not restart the task a second time
-    if (st.actId) tp().post("/act/stop", { actId: st.actId });
+    if (st.actId) tp().post("/act/stop", { actId: st.actId, handoff: true }); // the earlier page's run is logged as continued, not stopped
     await sleep(500); await settle();
-    start(st.task, { history: st.history || [], done: st.done || 0, startedAt: st.startedAt });
+    // Esc during the load is checked once more: a stop that arrived while we waited wins.
+    let again = null; try { again = await tp().state.get(); } catch { again = null; }
+    if (!again) return false;
+    start(st.task, { history: st.history || [], done: st.done || 0, startedAt: st.startedAt, taskId: st.taskId || st.actId });
     return true;
+  }
+
+  // The task moved to another tab or page: end it HERE quietly, without clearing the saved state the other side resumes from.
+  function handoff(R, text) {
+    if (!R || R.finished) return;
+    R.stopped = true; R.finished = true; clearTimeout(R.cap);
+    tp().post("/act/stop", { actId: R.actId, handoff: true });
+    if (R.handle) R.handle.close();
+    approvalState = null; if (runState === R) runState = null;
+    ui.end("done", text, 4000);
+  }
+
+  // A page restored from the back/forward cache runs no content script again: its old, frozen task must not wake up, and the saved
+  // state must be picked up as if the page had loaded (audit 4, section 2).
+  if (typeof addEventListener === "function" && typeof window !== "undefined" && window === window.top) {
+    addEventListener("pageshow", (ev) => {
+      if (!ev.persisted) return;
+      const R = runState;
+      if (R) { R.stopped = true; R.finished = true; clearTimeout(R.cap); if (R.handle) R.handle.close(); runState = null; approvalState = null; }
+      resume().catch(() => {});
+    });
   }
 
   // ---- dev hook: drive the executor from a page under http://127.0.0.1:7777/test/ (never on real sites) ----
@@ -842,7 +900,12 @@
   // A tab switch hands the task to another, already loaded tab: no page load happens there, so the worker nudges it to pick the task up.
   try {
     if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage && window === window.top) {
-      chrome.runtime.onMessage.addListener((m, sender) => { if (m && m.type === "act-resume" && sender && sender.id === chrome.runtime.id && !runState) resume(); });
+      chrome.runtime.onMessage.addListener((m, sender) => {
+        if (!m || !sender || sender.id !== chrome.runtime.id) return;
+        if (m.type === "act-resume" && !runState) resume();
+        // The browser-level Stop shortcut (or Agent mode off in any tab): handled by the worker, which no page can intercept.
+        if (m.type === "act-stop-cmd") { stop(m.why === "shortcut" ? "shortcut" : "agent off"); agentOn = false; ui.chip(false); }
+      });
     }
   } catch { /* not an extension page */ }
 

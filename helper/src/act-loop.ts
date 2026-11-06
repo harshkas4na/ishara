@@ -29,6 +29,8 @@ export type ActDeps = {
   /** Resolves with the person's answer; false on deny, timeout or stop. */
   approve: (n: number, action: Action, risk: ActRisk, why: string, timeoutMs: number) => Promise<boolean>;
   stopped: () => boolean;
+  /** Why the stop happened: "handoff" = the task carried on in the next page or tab (logged as continued, not stopped). */
+  stopReason?: () => string | undefined;
   now?: () => number;
   /** One episode-log entry per task. Never throws into the loop. */
   record?: (sessionId: string, d: { question: string; outcome: string; say: string; reason: string; calls: CallRec[]; testRouter?: boolean }) => void;
@@ -42,12 +44,26 @@ export type ActState = {
   actId: string; sessionId: string; task: string; context: PageContext;
   history: HistoryItem[]; steps: number; activeMs: number; failures: number; malformed: number; rejects: number; plans: number; denied: number;
   ids: ActIds; calls: CallRec[]; receipts: string[]; testRouter: boolean; awaitingAnswer: string | null; lastUsed: number;
+  /** The person's answers to `ask`. With `task` they are the ONLY words that may lower a risk (audit 4, 1.5). */
+  answers: string[];
+  /** Notes from earlier pages of the same task (the extension's), shown to the model inside the fence as data. */
+  earlier: string[];
 };
-export function newState(req: Pick<ActRequest, "sessionId" | "task" | "context">, actId: string, now = Date.now()): ActState {
+export function newState(req: Pick<ActRequest, "sessionId" | "task" | "context"> & { history?: string[] }, actId: string, now = Date.now()): ActState {
   return {
     actId, sessionId: req.sessionId, task: req.task, context: req.context, history: [], steps: 0, activeMs: 0, failures: 0, malformed: 0, rejects: 0, plans: 0, denied: 0,
-    ids: { brain: [], laya: [] }, calls: [], receipts: [], testRouter: false, awaitingAnswer: null, lastUsed: now,
+    ids: { brain: [], laya: [] }, calls: [], receipts: [], testRouter: false, awaitingAnswer: null, lastUsed: now, answers: [],
+    earlier: (req.history ?? []).filter((h) => typeof h === "string").slice(-12).map((h) => clip(h, 100)),
   };
+}
+/** The person's own words: the task and every answer they gave. What `classify` may trust. */
+export const authorityOf = (s: Pick<ActState, "task" | "answers">): string => [s.task, ...(s.answers ?? [])].join("\n");
+
+/** A receipt line that never carries typed or copied text (it lands in the episode log): only its length. */
+export function receiptOf(a: Action): string {
+  if (a.type === "type") return `type id=${JSON.stringify(a.id)} text=<${a.text.length} chars>${a.clear ? " clear=true" : ""}`;
+  if (a.type === "copy") return `copy text=<${a.text.length} chars>`;
+  return describeAction(a);
 }
 
 export const confirmFromEnv = (): "all" | "off" | undefined => (process.env.ISHARA_ACT_CONFIRM === "all" ? "all" : process.env.ISHARA_ACT_CONFIRM === "off" ? "off" : undefined);
@@ -89,6 +105,7 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
   state.lastUsed = now();
   if (state.awaitingAnswer !== null) {
     state.history.push({ n: state.history.length + 1, action: `ask "${clip(state.awaitingAnswer, 80)}"`, result: `the person answered: "${clip(req.answer ?? "", 300)}"` });
+    if (req.answer) (state.answers ??= []).push(clip(req.answer, 2000));
     state.awaitingAnswer = null;
     state.failures = 0; state.rejects = 0; state.malformed = 0;
   }
@@ -107,7 +124,9 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
     } catch { /* receipts must never break a task */ }
     return { event, data } as ActEvent;
   };
-  const stopEnd = () => end("stopped", "Stopped. I did not do anything more.", "act-stopped");
+  const handoff = () => deps.stopReason?.() === "handoff";
+  // A stop because the task moved to the next page or tab is not the person stopping it: the receipt says so (audit 4, section 5).
+  const stopEnd = () => (handoff() ? end("stopped", "Carried on in the next page.", "act-continued") : end("stopped", "Stopped. I did not do anything more.", "act-stopped"));
 
   for (;;) {
     if (deps.stopped()) { yield stopEnd(); return; }
@@ -119,7 +138,7 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
     const n = state.steps + 1;
     yield { event: "thinking", data: { n, actId: state.actId } };
     state.plans++;
-    const messages = buildActMessages({ task: state.task, context: state.context, history: state.history, ...(note ? { note } : {}) });
+    const messages = buildActMessages({ task: state.task, context: state.context, history: state.history, ...(state.earlier?.length ? { earlier: state.earlier } : {}), ...(note ? { note } : {}) });
     note = undefined;
     const r = await deps.askAct(messages);
     if (r.ok) {
@@ -163,10 +182,10 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
     if (action.type === "ask") { state.awaitingAnswer = action.say; yield end("ask", action.say, "act-asked"); return; }
 
     // ---- risk and the injection rule
-    const c = classify(action, state.context, state.task);
+    const c = classify(action, state.context, authorityOf(state));
     if (c.risk === "refused") {
       state.failures++;
-      state.receipts.push(`#${n} ${describeAction(action)} REFUSED (${c.why})`);
+      state.receipts.push(`#${n} ${receiptOf(action)} REFUSED (${c.why})`);
       state.history.push({ n: state.history.length + 1, action: describeAction(action), result: `REFUSED, nothing was done: ${c.why}. Do something else, or call ask.` });
       yield { event: "result", data: { n, ok: false, detail: c.why, refused: true } };
       continue;
@@ -195,7 +214,7 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
       }
       if (status === "rejected") {
         state.rejects++;
-        state.receipts.push(`#${n} ${describeAction(action)} not done: laya doubted the target (p=${chk.ok ? chk.p.toFixed(2) : "?"})`);
+        state.receipts.push(`#${n} ${receiptOf(action)} not done: laya doubted the target (p=${chk.ok ? chk.p.toFixed(2) : "?"})`);
         if (state.rejects >= 2) {
           yield { event: "result", data: { n, ok: false, detail: "that control does not look right", refused: true } };
           yield end("ask", `I am not sure "${targetLabel}" is the right control for this. Can you show me which one, or do this step yourself?`, "act-asked");
@@ -220,7 +239,7 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
       if (deps.stopped()) { yield stopEnd(); return; }
       if (!ok) {
         state.denied++;
-        state.receipts.push(`#${n} ${describeAction(action)} (${c.risk}) NOT APPROVED`);
+        state.receipts.push(`#${n} ${receiptOf(action)} (${c.risk}) NOT APPROVED`);
         yield { event: "result", data: { n, ok: false, detail: "not approved" } };
         yield end("stopped", `Okay, I did not do that. I stopped before: ${say}`, "act-stopped");
         return;
@@ -234,11 +253,11 @@ export async function* runAct(req: ActRequest, deps: ActDeps, state: ActState = 
     try { res = await sleepRace(deps.execute(action, n, state.context), L.execTimeoutMs, { ok: false, detail: "the screen did not answer in time" }); }
     catch (e: any) { res = { ok: false, detail: `executor error: ${clip(String(e?.message ?? e), 100)}` }; }
     if (deps.stopped()) {
-      state.receipts.push(`#${n} ${describeAction(action)} (${c.risk}${approvedNote}) interrupted`);
+      state.receipts.push(`#${n} ${receiptOf(action)} (${c.risk}${approvedNote}) ${handoff() ? "done, the page changed" : "interrupted"}`);
       yield { event: "result", data: { n, ok: res.ok, detail: res.detail } };
       yield stopEnd(); return;
     }
-    state.receipts.push(`#${n} ${describeAction(action)} (${c.risk}${approvedNote}) ${res.ok ? "ok" : "FAILED: " + clip(res.detail, 60)}`);
+    state.receipts.push(`#${n} ${receiptOf(action)} (${c.risk}${approvedNote}) ${res.ok ? "ok" : "FAILED: " + clip(res.detail, 60)}`);
     // `data` (a file's text) goes to the model inside the fence and nowhere else: not the receipts, not the episode log, not the SSE result.
     if (res.ok && res.data) for (const h of state.history) delete h.data; // only the newest file text is kept
     state.history.push({ n: state.history.length + 1, action: describeAction(action), result: res.ok ? `ok${res.detail ? ": " + clip(res.detail, 120) : ""}` : `FAILED: ${clip(res.detail, 120)}`, ...(res.ok && res.data ? { data: res.data } : {}) });

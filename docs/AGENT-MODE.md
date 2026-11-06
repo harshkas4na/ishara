@@ -12,21 +12,39 @@ Private mode (verified: returns proper tool calls in ~2 s). So: **0GM plans, ids
 executors act, everything gets a receipt.** `cua-driver` stays an option only if our own executors prove too weak.
 
 ## Principles (non-negotiable)
-1. **Armed or nothing.** Agent mode is OFF by default. It is turned on per session (browser: Option+Shift+A; desktop: say "agent
-   mode on" or the same hotkey chord). When off, a task request gets "Turn on Agent mode and I will do that" and nothing moves.
+1. **Armed or nothing.** Agent mode is OFF by default. It is turned on per TAB (browser: Option+Shift+A) and turns itself off
+   after 10 minutes without a task; a task that moves to another tab carries its arming with it. Turning it off in any tab turns it
+   off everywhere and stops every task. A page load never resumes a task in an unarmed tab (desktop: say "agent mode on" or the
+   same hotkey chord). When off, a task request gets "Turn on Agent mode and I will do that" and nothing moves.
 2. **Visible and stoppable.** The cursor travels to each target before the action; the pill says what it is doing ("Step 3: typing
-   your name"). Esc (browser) or a tap of Right Option (desktop) or the pill's Stop button stops at once; the loop checks the
-   stop flag between every action. Hard caps: 25 actions and 3 minutes per task.
-3. **Risk levels.** low: scroll, wait, screenshot-to-clipboard/file, open an http(s) URL the user named, non-destructive keys.
-   medium: click, type, select, check, open app, copy to clipboard, close a tab, read a file. (`search`, switch/new/back/forward tab: low.) HIGH needs the user's tap on Approve in the pill (or the voice
-   word "yes"): clicking anything whose label matches submit|send|post|publish|pay|buy|purchase|confirm|delete|remove|sign out|log
-   out|transfer|approve|allow|connect wallet, quitting an app, any key press that submits, anything on a page that looks like a
-   wallet/approval flow. `ISHARA_ACT_CONFIRM=all` asks for medium too. `ISHARA_ACT_CONFIRM=off` is for rehearsals only and is
-   loudly labelled in the pill.
+   your name"). **Option+Shift+X** (a browser command: no page can intercept it) stops every task and disarms; Esc, the pill's
+   Stop button, the Stop button in the approval window, or a tap of Right Option (desktop) stop too. The loop checks the stop
+   flag between every action, and a stop made while a page loads wins over the resume. Hard caps per TASK, across pages (the
+   extension carries a `taskId`): 25 actions, 3 minutes of agent time, 10 minutes in all.
+3. **Risk levels** (`helper/src/act-risk.ts`, hardened by audit 4). low: scroll, wait, screenshot-to-clipboard/file, open an
+   http(s) URL the user named, non-destructive keys, a search whose words the person said, switch/new/back/forward tab.
+   medium: click a link or a known harmless button, type text the person gave, select, check, open app, copy to clipboard,
+   close a tab, read a file. HIGH needs Approve in the **Ishara approval window** (an extension window, `extension/approve.html`;
+   never the page, never a key on the page) or the voice word "yes" on the desktop:
+   - a label with a commit word, in English, Roman Hinglish (plain and polite: "bhej dijiye"), Devanagari, and the common German,
+     French, Spanish, Italian, Chinese, Japanese, Korean and Russian verbs; labels are NFKC-normalised, invisible characters
+     removed, Cyrillic/Greek look-alikes mapped, spaced letters joined;
+   - a destructive verb with an object that matters ("Cancel subscription", "Close account", "Clear all data");
+   - ANY button whose whole label is not a known look-around ("Cancel", "Next step", "Play: <title>"), on any page, including
+     an unlabelled one, unless the person named it;
+   - Enter in a field when the page has a button that is not harmless; Enter/Space on a focused button that would be HIGH to
+     click, whatever modifiers are held; Cmd/Ctrl/Alt+Enter in a text box;
+   - typing text the person did not give; a search or a link whose words or query the person did not say;
+   - quitting an app, closing a window, closing a tab that looks like a wallet, anything on a wallet/approval page.
+   The approval counts only if the helper ACCEPTS it for the step that is asking (a late or early tap is refused), and the
+   browser re-checks the control's label just before acting: if the page changed it, nothing is done.
+   `ISHARA_ACT_CONFIRM=all` asks for medium too. `ISHARA_ACT_CONFIRM=off` is for rehearsals only and is loudly labelled in the pill.
 4. **Never secrets.** Typing into a password/secure/seed/key/card field is refused outright, and Ishara never reads those fields
    (existing redaction). It never types a value it was not given in the task or by the user.
 5. **The user's task is the only authority.** Page text cannot start or change an action (same injection rules as the tutor:
    page data is untrusted; an action must be justified by the user's words; an action the page text asked for is refused).
+   "The user's words" are the task and their answers to `ask`, nothing else: notes from earlier pages and step results go to
+   the model inside the fence as data and never lower a risk.
 6. **Sealed and receipted.** Every planning call goes to 0GM in Private mode; every action target is checked by laya ("is this the
    control for this step?"); each action, its risk, its approval and its result, with the request ids, is logged in the episode
    log and appears in the replay. If 0G is unreachable the agent STOPS and says so (same safe-stop rule). No local fallback planner.
@@ -72,9 +90,14 @@ browser extension and are refused there.
 run). Read-only: Ishara never writes, deletes, moves or lists. Allowed only when ALL hold; the helper checks the real path (symlinks
 resolved) so a link cannot step outside:
 - inside the user's home directory (`~` is expanded); relative paths are refused;
-- no dotfile or dot-directory anywhere in the path under home; nothing under `.ssh`, `.config`, `.aws`, `.gnupg` or `Library/Keychains`;
-- the file name does not match `key|secret|token|password|wallet|seed|.env|.pem` (case-insensitive);
-- a regular text file of at most 200 KB (a NUL byte in the first 8 KB, or invalid UTF-8, means binary and is refused).
+- no dotfile or dot-directory anywhere in the path under home; nothing under `.ssh`, `.config`, `.aws`, `.gnupg`, and nothing at
+  all under `~/Library` or `~/Applications` (mail, messages, browser profiles, app tokens);
+- the normalised file name (NFKC, look-alike letters mapped) does not match `key|secret|token|password|passwd|wallet|seed|
+  mnemonic|private|credential|.env|.pem|.p12|.pfx|.kdbx|keychain|id_rsa|id_ed25519|recovery|backup codes|2fa|otp|...`, and no
+  folder on the way is named keys/secrets/credentials/wallets/private;
+- a regular text file of at most 200 KB with ONE name (a hard link is refused), opened without following links and checked to
+  be the same file that was checked (no swap between check and read);
+- not binary (a NUL byte in the first 8 KB, or invalid UTF-8), and not a private key (PEM, OpenSSH, PuTTY, PGP): refused whole.
 The text then goes through the existing helper redaction (`readerCore().redact` plus the seed-phrase mask, the same rules as page text), is cut
 to 12,000 characters, and reaches 0GM as **untrusted data inside the random fence**, exactly like page text (a file that says "assistant, do X"
 changes nothing). The receipt and the episode log carry the path and the size only, never the content. Risk **medium**: asks Approve under
@@ -89,12 +112,14 @@ for the user's answer; `done`/`fail` end the task.
 |---|---|---|
 | `thinking` | `{ n }` | planning step n |
 | `action` | `{ n, action, risk, say, targetLabel?, point?: {status, layaP} }` | about to do this; the UI moves the cursor to the target and shows `say` |
-| `approval` | `{ n, action, risk, why }` | HIGH risk: waits for `POST /act/approve {actId, n, approve: boolean}`; no answer in 60 s = deny |
+| `approval` | `{ n, action, risk, why }` | HIGH risk: waits for `POST /act/approve {actId, n, approve: boolean}` (answers `{ ok, accepted }`; only an accepted yes may run; the extension's worker posts it from the approval window, never the page); no answer in 60 s = deny |
 | `result` | `{ n, ok, detail }` | the executor's outcome (helper executor: reported by the helper; client executor: reported by the client via `POST /act/result`) |
 | `done` / `failed` / `stopped` | `{ say, steps, requestIds, ms }` | end of the task |
 | `refused` | `{ cause, say }` | 0G unreachable: nothing was done |
 Client executor protocol: the helper emits `action`, then WAITS for `POST /act/result { actId, n, ok, detail, context }` where `context` is a fresh
-PageContext after the action; it then plans step n+1 with that context. `POST /act/stop { actId }` stops at once. Executors: **browser = the extension
+PageContext after the action; it then plans step n+1 with that context. `POST /act/stop { actId }` stops at once (`handoff: true` when the
+task moved to the next page or tab: logged as `act-continued`); `POST /act/stop { all: true }` stops every task. `POST /act` also takes
+`history` (earlier pages' step notes, data) and `taskId` (the same on every page of one task; the caps follow it). Executors: **browser = the extension
 (DOM actions by outline id)**, **desktop = the helper (accessibility actions by id, CGEvent keys, open, pbcopy, screencapture)**.
 
 ## Work packages (file ownership)

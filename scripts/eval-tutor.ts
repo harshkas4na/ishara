@@ -127,7 +127,12 @@ async function main() {
   console.log(`\n(${ok}/${tot} passed overall: for orientation only; read the per-class rows above, never quote this total)`);
   if (testRouter) console.log("TEST ROUTER (not real 0G): numbers may not be quoted");
   mkdirSync("helper/.data", { recursive: true });
-  const out = testRouter ? "helper/.data/eval-tutor-test-router.json" : "helper/.data/eval-tutor-latest.json";
+  // A filtered run (--class, --case, --limit) never overwrites the latest FULL run, and every full run is also kept under its own
+  // date, so a number quoted in the README can always be traced to a file (audit 4, section 6).
+  const partial = cases.length < loadCases().length;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const out = testRouter ? "helper/.data/eval-tutor-test-router.json" : partial ? "helper/.data/eval-tutor-partial.json" : "helper/.data/eval-tutor-latest.json";
+  if (!testRouter && !partial) writeFileSync(`helper/.data/eval-tutor-full-${stamp}.json`, JSON.stringify({ at: new Date().toISOString(), testRouter, rows }, null, 2));
   writeFileSync(out, JSON.stringify({ at: new Date().toISOString(), testRouter, ...(testRouter ? { warning: "TEST ROUTER (not real 0G): do not quote" } : {}), rows, raw: done.map((d) => ({ id: d.c.id, question: d.c.question, events: d.events })) }, null, 2));
   console.log("saved", out);
   if (!flag("no-sample") && !testRouter && cases.length >= 12) {

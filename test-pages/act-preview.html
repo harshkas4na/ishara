@@ -5,7 +5,8 @@
      the real executor runs on the real form below, so every state can be seen and screenshotted.
      ?state=chip | planning | action | approval | done | failed | stopped | refused | full
      full = a whole scripted task: name, email, country, newsletter, then "Create account" (risky, so it asks first).
-       &answer=yes|no answers the prompt by itself after 1.5 s; omit it and use the buttons or the Y / N keys.
+       &answer=yes|no answers the prompt by itself after 1.5 s; omit it and use the stand-in "Ishara window" box (bottom right).
+       There are no Y / N keys any more: an approval is given only in the extension's own window (audit 4, 1.8).
        &stopafter=N stops (as the Stop button would) after N completed steps.
      &dark=1 for a dark host page. Served by the helper at /test/act-preview.html; loads /ext scripts. -->
 <style>
@@ -85,13 +86,27 @@
       if (path === "/act/result") (waiters["result:" + body.n] || (() => {}))(body);
       return { data: { ok: true } };
     },
+    // Stands in for the extension's Approve window (extension/approve.html): a box OUTSIDE the overlay, as the real one is outside the page.
+    approval: (m) => new Promise((res) => {
+      note("approval window: " + m.words);
+      const box = document.createElement("div");
+      box.id = "approval-window";
+      box.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:10;padding:12px;border:2px solid #b45309;background:#fff;color:#111;font:14px system-ui";
+      box.textContent = "[Ishara window] " + m.words + " ";
+      for (const [id, yes] of [["win-yes", true], ["win-no", false]]) {
+        const b = document.createElement("button"); b.id = id; b.textContent = yes ? "Approve" : "Deny";
+        b.onclick = () => { box.remove(); (waiters["approve:" + m.n] || (() => {}))(yes); res({ yes, accepted: true }); };
+        box.append(b);
+      }
+      document.body.append(box);
+    }),
     state: { get: async () => null, set: async () => ({}), clear: async () => ({}) },
-    agent: { get: async () => false, set: async () => ({}) },
+    agent: { get: async () => false, set: async () => ({}), touch: async () => ({}) },
     tab: async () => ({ ok: true }),
   };
   A.init({ transport, sessionId: "preview", speak: false });
   document.addEventListener("preview-stop", () => A.stop("button"));
-  // The same Esc / Y / N handling content.js does, so the keys can be tried here too.
+  // The same Esc handling content.js does (Y / N no longer approve anything).
   addEventListener("keydown", (e) => { if (A.handleKey(e)) return; if (e.key === "Escape" && A.isBusy()) A.stop("esc"); });
 
   (async () => {
@@ -109,7 +124,7 @@
     await sleep(600);
     A.start("fill the form: name Harsh Kasana, email harsh@example.com, country India, tick the newsletter box, then create the account");
     const ans = q.get("answer");
-    if (ans) { const iv = setInterval(() => { if (A.hasApproval()) { clearInterval(iv); setTimeout(() => A.handleKey({ key: ans === "yes" ? "y" : "n", preventDefault() {}, stopPropagation() {} }), 1500); } }, 200); }
+    if (ans) { const iv = setInterval(() => { const b = $(ans === "yes" ? "win-yes" : "win-no"); if (b) { clearInterval(iv); setTimeout(() => b.click(), 1500); } }, 200); }
   })();
   document.addEventListener("ishara-act-end", (e) => { document.documentElement.dataset.end = e.detail.kind; });
 </script>

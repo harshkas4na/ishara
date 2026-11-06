@@ -35,7 +35,8 @@ test("root is deterministic for the same bytes", async () => {
 });
 
 // Live: costs about 0.001 0G of testnet gas, only when the wallet file exists.
-test("live upload and download", { skip: !existsSync(WALLET_PATH) && "wallet file missing", timeout: 180_000 }, async () => {
+// Opt-in: it signs with the wallet and spends testnet gas, so plain `npm test` never runs it (audit 4, section 7).
+test("live upload and download", { skip: (process.env.ISHARA_LIVE !== "1" && "live test: set ISHARA_LIVE=1") || (!existsSync(WALLET_PATH) && "wallet file missing"), timeout: 180_000 }, async () => {
   const key = newLogKey();
   const { ciphertext, plaintextSha256 } = encryptLog(text, key);
   const up = await uploadToStorage(ciphertext);

