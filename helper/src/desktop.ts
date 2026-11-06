@@ -34,7 +34,12 @@ export type OverlayCmd =
   | { cmd: "steps"; n: number; m: number }          // guide mode chip "n/m" and the ‹ › ✕ buttons; m <= 1 hides them
   | { cmd: "ask"; text: string }
   | { cmd: "stop"; text: string; sub?: string }
-  | { cmd: "clear" };
+  | { cmd: "clear" }
+  // Agent mode (desktop-act.ts, docs/DESKTOP.md "Agent mode"): the "Agent" chip, the step display with its stop button
+  // (step 0 = the task ended), and the HIGH-risk approval prompt with approve / deny.
+  | { cmd: "agentmode"; on: boolean }
+  | { cmd: "agent"; text: string; step: number; risk?: string }
+  | { cmd: "approval"; text: string; sub?: string };
 
 // ---------- pure parts (unit tested) ----------
 
@@ -180,6 +185,9 @@ export function createWalkButtons(ask: (utterance: string, signal: AbortSignal) 
     },
   };
 }
+// Other modules (desktop-act.ts) register here for the overlay lines that are not walk buttons; one hook returns true when it
+// took the line. A list, not an import, because desktop-act.ts imports this file.
+export const overlayEventHooks: Array<(line: string) => boolean> = [];
 const walkButtons = createWalkButtons((u, signal) => desktopAsk(u, { signal }));
 
 function startOverlay(): ChildProcess {
@@ -191,7 +199,10 @@ function startOverlay(): ChildProcess {
   p.stdout!.on("data", (c) => {
     buf += c;
     let i: number;
-    while ((i = buf.indexOf("\n")) >= 0) { walkButtons.onLine(buf.slice(0, i)); buf = buf.slice(i + 1); }
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 1);
+      if (!walkButtons.onLine(line)) for (const h of overlayEventHooks) if (h(line)) break; // agent mode: approve / deny / stop presses
+    }
   });
   p.on("exit", () => { if (child === p) child = null; });
   child = p;
@@ -355,12 +366,38 @@ export function summarizeContext(ctx: PageContext, n = 10): string {
   return lines.join("\n");
 }
 
+// ---------- agent mode: the stable selector of each control (docs/AGENT-MODE.md, desktop/ishara-act.swift) ----------
+// `ishara-ax context` gives each control {role, axRole, label, index among same-labelled, secure}; buildContext drops it (the
+// PageContext contract has no such field and the model must not see it), so the book keeps it here by control id, valid for the
+// window it was read from. desktop-act.ts looks the id up; a missing entry is rebuilt from the context itself.
+export type ControlSelector = { axRole?: string; index: number; secure?: boolean };
+export const selectorBook = {
+  bundleId: "", title: "", sels: new Map<string, ControlSelector>(),
+  get(ctx: PageContext, id: string): ControlSelector | undefined { return ctx.title === this.title ? this.sels.get(id) : undefined; },
+  set(bundleId: string, ctx: PageContext, sels: Map<string, ControlSelector>): void { this.bundleId = bundleId; this.title = ctx.title; this.sels = sels; },
+};
+/** Pair the raw controls with the built context's controls (same order: buildContext skips only malformed ones). Pure. */
+export function selectorsFromRaw(raw: any, ctx: PageContext): Map<string, ControlSelector> {
+  const out = new Map<string, ControlSelector>();
+  let k = 0;
+  for (const c of Array.isArray(raw?.controls) ? raw.controls : []) {
+    if (!rectOf(c?.rect) || typeof c.label !== "string" || typeof c.role !== "string") continue;
+    const built = ctx.controls[k++];
+    if (!built) break;
+    const s = c.selector;
+    if (s && typeof s === "object" && Number.isFinite(s.index)) out.set(built.id, { index: Number(s.index), ...(typeof s.axRole === "string" && s.axRole ? { axRole: s.axRole } : {}), ...(s.secure === true || c.ctl === "password" ? { secure: true } : {}) });
+  }
+  return out;
+}
+
 export type DesktopCtx = { context: PageContext; bundleId: string; display?: { x: number; y: number; w: number; h: number }; ocr?: string; timing?: string };
 /** Read the frontmost window (or --app X) into a PageContext. */
 export async function desktopContext(opts: { app?: string; ocr?: "auto" | "always" | "never"; timeoutMs?: number } = {}): Promise<DesktopCtx> {
   const args = ["context", "--ocr", opts.ocr ?? "auto", ...(opts.app ? ["--app", opts.app] : [])];
   const { json, timing } = await runAx(args, opts.timeoutMs);
-  return { context: buildContext(json), bundleId: String(json?.bundleId ?? ""), display: rectOf(json?.display), ocr: json?.ocr, timing };
+  const context = buildContext(json);
+  selectorBook.set(String(json?.bundleId ?? ""), context, selectorsFromRaw(json, context));
+  return { context, bundleId: String(json?.bundleId ?? ""), display: rectOf(json?.display), ocr: json?.ocr, timing };
 }
 
 // ---------- tutor events -> overlay commands (pure, unit tested) ----------

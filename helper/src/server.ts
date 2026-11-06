@@ -10,6 +10,7 @@ import { realBaseDeps } from "./act-loop.ts";
 import { hasKey, warm, testRouterActive } from "./zg.ts";
 import { episodeLog } from "./episode-log.ts";
 import { desktopAsk, warmDesktop } from "./desktop.ts";
+import { desktopSay } from "./desktop-act.ts";
 import { readdirSync, statSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.ts";
@@ -185,7 +186,9 @@ const server = createServer(async (req, res) => {
       const b = JSON.parse((await readBody(req)).toString("utf8"));
       if (typeof b?.question !== "string" || !b.question.trim()) return send(res, 400, { error: "need { question }" });
       try {
-        const r = await desktopAsk(b.question.trim(), { sessionId: String(b.sessionId ?? "desktop"), speak: b.speak !== false });
+        // desktopSay: "agent mode on/off", tasks (while armed), approval answers, else the same tutor turn as before.
+        const said = await desktopSay(b.question.trim(), { ask: (q) => desktopAsk(q, { sessionId: String(b.sessionId ?? "desktop"), speak: b.speak !== false }) });
+        const r = said.outcome === "tutor" ? said.detail : said;
         return send(res, 200, r);
       } catch (e: any) { return send(res, 503, { error: String(e?.message ?? e) }); } // e.g. the Accessibility permission message
     }

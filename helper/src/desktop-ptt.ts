@@ -13,6 +13,10 @@ import { desktopAsk, frontApp, isBrowserBundle, overlay, BROWSER_HINT, type Fron
 import { transcribe } from "./whisper.ts";
 import { minRms, transcribeGuarded } from "./transcript-guard.ts";
 import { interrupt } from "./speech.ts";
+import { desktopSay, stopTask, taskRunning } from "./desktop-act.ts";
+
+// Agent mode words live in desktop-act.ts (pure, tested); re-exported here because the push-to-talk pipeline is where they are used.
+export { agentModeCommand, isTaskUtterance, approvalAnswer } from "./desktop-act.ts";
 
 export const PTT_BIN = fileURLToPath(new URL("../../desktop/ishara-ptt", import.meta.url));
 
@@ -35,6 +39,8 @@ export type PttDeps = {
   front: () => Promise<FrontApp | null>;   // which app is in front, read without reading its window
   spawnDaemon: (onLine: (l: string) => void, onExit: (code: number | null) => void) => DaemonHandle;
   now: () => number;
+  /** Agent mode: is a task running, and stop it. A tap of Right Option (the daemon's `cancel`) is the stop chord while one runs. */
+  stopTask?: () => boolean;
   interrupt?: () => void;                  // silence the speaker (default: the speech module's); injectable for tests
   tick: () => void;                        // the short soft "speak now" sound (no-op when ISHARA_TICK=0)
   setTimer: (fn: () => void, ms: number) => unknown;
@@ -143,6 +149,9 @@ export function createPtt(d: PttDeps) {
       }
       case "cancel": { // released or interrupted inside the hold: a tap. The daemon dropped the audio; drop the pill.
         takeActive = false;
+        // A tap while an agent task runs IS the stop chord (docs/AGENT-MODE.md principle 2): it stops the task and the pill says so,
+        // instead of being dropped as a stray tap. Nothing is running = the old behaviour, unchanged.
+        if (d.stopTask?.()) { if (feedbackTimer) { d.clearTimer(feedbackTimer); feedbackTimer = null; } pill = "none"; break; }
         if (feedbackTimer) { d.clearTimer(feedbackTimer); feedbackTimer = null; }
         if (pill !== "none") d.send({ cmd: "state", state: "idle" });
         pill = "none";
@@ -242,7 +251,9 @@ function playTick(): void {
 const real = createPtt({
   send: (c) => overlay.send(c),
   transcribe: (wav) => transcribeGuarded(wav, undefined, transcribe), // same guard as POST /transcribe
-  ask: (q, signal) => desktopAsk(q, { signal, alreadyThinking: true }),
+  // desktopSay decides: an approval answer, "agent mode on/off", a task for the act loop (only while armed), else the tutor.
+  ask: (q, signal) => desktopSay(q, { signal }),
+  stopTask: () => (taskRunning() ? stopTask() : false),
   front: frontApp,
   spawnDaemon(onLine, onExit) {
     // stdout carries events; stderr is inherited so the daemon's own diagnostics reach the helper log.
