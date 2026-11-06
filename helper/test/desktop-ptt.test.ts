@@ -1,7 +1,7 @@
 // The push-to-talk pipeline with fakes: no daemon, no mic, no whisper, no 0G.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createPtt, meter, MIN_SAMPLES, type PttDeps } from "../src/desktop-ptt.ts";
+import { createPtt, MIN_SAMPLES, FEEDBACK_AFTER_MS, type PttDeps } from "../src/desktop-ptt.ts";
 import type { OverlayCmd } from "../src/desktop.ts";
 
 const tick = () => new Promise((r) => setImmediate(r));
@@ -9,7 +9,7 @@ const up = (o: Record<string, unknown> = {}) => JSON.stringify({ ev: "up", sampl
 
 function rig(over: Partial<PttDeps> = {}) {
   const sent: OverlayCmd[] = [], asked: string[] = [], transcribed: Uint8Array[] = [];
-  let clock = 0; const timers: { fn: () => void; ms: number }[] = []; let spawns = 0, killed = 0;
+  let clock = 0; const timers: { fn: () => void; ms: number; off?: boolean }[] = []; let spawns = 0, killed = 0, ticks = 0;
   let line!: (l: string) => void, exit!: (c: number | null) => void;
   const ptt = createPtt({
     send: (c) => sent.push(c),
@@ -18,31 +18,54 @@ function rig(over: Partial<PttDeps> = {}) {
     front: async () => ({ app: "Notes", bundleId: "com.apple.Notes" }),
     spawnDaemon: (l, e) => { spawns++; line = l; exit = e; return { kill: () => { killed++; } }; },
     now: () => clock,
+    tick: () => { ticks++; },
     setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
-    clearTimer: () => {},
+    clearTimer: (t) => { const x = timers[(t as number) - 1]; if (x) x.off = true; },
     ...over,
   });
   ptt.start();
-  return { ptt, sent, asked, transcribed, timers, line: (l: string) => line(l), exit: (c: number | null) => exit(c), advance: (ms: number) => { clock += ms; }, spawns: () => spawns, killed: () => killed };
+  return { ptt, sent, asked, transcribed, timers, line: (l: string) => line(l), exit: (c: number | null) => exit(c), advance: (ms: number) => { clock += ms; }, spawns: () => spawns, killed: () => killed, ticks: () => ticks,
+    // fire the pending feedback debounce (the only non-restart timer a take sets)
+    feedback: async () => { for (const t of timers) if (!t.off && t.ms === FEEDBACK_AFTER_MS) { t.off = true; t.fn(); } await tick(); } };
 }
 
-test("down shows the listening bubble", () => {
-  const r = rig(); r.line('{"ev":"down"}');
-  assert.deepEqual(r.sent, [{ cmd: "think", text: "Listening… release to send" }]);
+test("down alone shows nothing: a tap or an Option keystroke must not flash a pill", async () => {
+  const r = rig(); r.line('{"ev":"down"}'); await tick();
+  assert.deepEqual(r.sent, []);
 });
-test("meter blocks follow sqrt(rms)*28, capped at 10", () => {
-  assert.equal(meter(0), "Listening…\n▯▯▯▯▯▯▯▯▯▯");
-  assert.equal(meter(0.0123), "Listening…\n▮▮▮▯▯▯▯▯▯▯");
-  assert.equal(meter(1), "Listening…\n▮▮▮▮▮▮▮▮▮▮");
+test("still not live after the debounce: PREPARING; `live` then switches to LISTENING with one tick", async () => {
+  const r = rig(); r.line('{"ev":"down"}'); await r.feedback();
+  assert.deepEqual(r.sent, [{ cmd: "state", state: "preparing" }]);
+  r.line('{"ev":"live","ms":140}'); await tick();
+  assert.deepEqual(r.sent.slice(1), [{ cmd: "state", state: "listening" }]);
+  assert.equal(r.ticks(), 1);
+  r.line('{"ev":"live","ms":150}'); await tick();
+  assert.equal(r.ticks(), 1, "one tick per take");
 });
-test("level updates are throttled and unchanged bars are not redrawn", () => {
-  const r = rig(); r.line('{"ev":"down"}'); r.sent.length = 0;
-  r.line('{"ev":"level","rms":0.0123}');          // first: drawn
-  r.advance(120); r.line('{"ev":"level","rms":0.04}'); // 120 ms later: throttled
-  r.advance(40); r.line('{"ev":"level","rms":0.04}');  // 160 ms: different bar, drawn
-  r.advance(200); r.line('{"ev":"level","rms":0.04}'); // same bar: skipped
-  assert.equal(r.sent.length, 2);
-  assert.match((r.sent[1] as any).text, /▮▮▮▮▮▮/);
+test("warm path: live arrives before the debounce, so the pill goes straight to LISTENING (never PREPARING)", async () => {
+  const r = rig(); r.line('{"ev":"down"}'); r.line('{"ev":"live","ms":12}'); await tick();
+  assert.deepEqual(r.sent, [], "nothing until the debounce, so a 50 ms tap shows nothing");
+  await r.feedback();
+  assert.deepEqual(r.sent, [{ cmd: "state", state: "listening" }]); assert.equal(r.ticks(), 1);
+});
+test("levels reach the pill only once it says LISTENING, and are throttled by time", async () => {
+  const r = rig(); r.line('{"ev":"down"}'); await r.feedback();
+  r.line('{"ev":"level","rms":0.01}'); // PREPARING: no bars yet
+  assert.deepEqual(r.sent, [{ cmd: "state", state: "preparing" }]);
+  r.line('{"ev":"live"}'); await tick(); r.sent.length = 0;
+  r.line('{"ev":"level","rms":0.0123}');
+  r.advance(120); r.line('{"ev":"level","rms":0.04}');  // throttled
+  r.advance(40); r.line('{"ev":"level","rms":0.04}');   // drawn
+  assert.deepEqual(r.sent, [{ cmd: "level", rms: 0.0123 }, { cmd: "level", rms: 0.04 }]);
+});
+test("cancel (a tap or typing) discards: pill removed if it was shown, nothing transcribed, no tick if cancelled early", async () => {
+  const r = rig(); r.line('{"ev":"down"}'); await r.feedback();
+  r.line('{"ev":"cancel"}'); await tick();
+  assert.deepEqual(r.sent.at(-1), { cmd: "state", state: "idle" });
+  assert.equal(r.transcribed.length, 0); assert.deepEqual(r.asked, []); assert.equal(r.ticks(), 0);
+  const q = rig(); q.line('{"ev":"down"}'); q.line('{"ev":"live"}'); q.line('{"ev":"cancel"}'); await q.feedback();
+  assert.deepEqual(q.sent, [], "cancelled inside the debounce: nothing ever shown, no tick");
+  assert.equal(q.ticks(), 0);
 });
 test("too short is refused without transcribing", async () => {
   const r = rig(); r.line(up({ samples: MIN_SAMPLES - 1 })); await tick();
@@ -107,7 +130,6 @@ test("a new key-down cuts off the running turn and the old take never answers la
   assert.equal(signal.aborted, false);
   r.line('{"ev":"down"}');                              // the user presses again while it is answering
   assert.equal(signal.aborted, true, "the turn is aborted, not just its voice");
-  assert.match((r.sent.at(-1) as any).text, /Listening/);
   release(); await tick(); await tick();
   r.line(up()); await tick(); await tick();
   assert.match((r.sent.at(-1) as any).text, /I heard/, "the next take is accepted");
@@ -129,20 +151,41 @@ test("a 200 ms tap makes the daemon print nothing, so nothing happens at all", a
 });
 test("a 400 ms hold: down at the 350 ms mark, levels, up with audio, then the question is asked", async () => {
   const r = rig(); r.line('{"ev":"ready","chord":"rightoption","holdMs":350}');
-  r.line('{"ev":"down"}'); assert.deepEqual(r.sent, [{ cmd: "think", text: "Listening… release to send" }]);
+  r.line('{"ev":"down"}'); r.line('{"ev":"live","ms":120}'); r.line('{"ev":"confirmed"}'); await r.feedback();
+  assert.deepEqual(r.sent, [{ cmd: "state", state: "listening" }]);
   r.line('{"ev":"level","rms":0.02}');
   r.line(up({ samples: 0.4 * 16000 })); await tick(); await tick();
   assert.deepEqual(r.asked, ["Where is the search box?"]);
 });
-test("in a browser the take is ignored: hint shown, nothing recorded, transcribed or asked", async () => {
-  const r = rig({ front: async () => ({ app: "Brave Browser", bundleId: "com.brave.Browser" }) });
-  r.line('{"ev":"down"}'); await tick();
-  assert.deepEqual(r.sent.at(-1), { cmd: "ask", text: "In the browser, use Option+Space" });
+const brave = { front: async () => ({ app: "Brave Browser", bundleId: "com.brave.Browser" }) };
+test("in a browser the take is ignored: the hint appears only on a confirmed hold, nothing transcribed or asked", async () => {
+  const r = rig(brave);
+  r.line('{"ev":"down"}'); r.line('{"ev":"live","ms":30}'); await r.feedback();
+  assert.deepEqual(r.sent, [], "no pill, no hint, no tick before the hold is confirmed");
+  r.line('{"ev":"confirmed"}'); await tick();
+  assert.deepEqual(r.sent, [{ cmd: "ask", text: "In the browser, use Option+Space" }]);
   r.sent.length = 0;
   r.line('{"ev":"level","rms":0.05}'); r.advance(500); r.line('{"ev":"level","rms":0.01}');
   r.line(up()); await tick(); await tick();
   assert.deepEqual(r.sent, [], "the level meter and the transcription bubbles stay off");
-  assert.equal(r.transcribed.length, 0); assert.deepEqual(r.asked, []);
+  assert.equal(r.transcribed.length, 0); assert.deepEqual(r.asked, []); assert.equal(r.ticks(), 0);
+});
+test("a Right-Option tap, or Right Option + Space, in a browser: the daemon cancels, nothing at all happens", async () => {
+  // Option+Space typed with the RIGHT Option is a key-down inside the hold: the daemon emits cancel, never confirmed.
+  const r = rig(brave);
+  r.line('{"ev":"down"}'); r.line('{"ev":"live","ms":30}'); r.line('{"ev":"cancel"}'); await r.feedback();
+  assert.deepEqual(r.sent, []); assert.equal(r.ticks(), 0); assert.equal(r.transcribed.length, 0); assert.deepEqual(r.asked, []);
+});
+test("in a browser a key-down never cuts the extension's voice (no interrupt, no turn abort)", async () => {
+  // interrupt() is the speech module's global stop: calling it for a browser-front key-down would be the stray
+  // /speech/stop the extension's answer does not deserve. The front check runs first; only a non-browser app interrupts.
+  const calls: string[] = [];
+  const r = rig({ ...brave, interrupt: () => calls.push("interrupt") } as any);
+  r.line('{"ev":"down"}'); await tick(); await tick();
+  assert.deepEqual(calls, []);
+  const n = rig({ interrupt: () => calls.push("interrupt") } as any);
+  n.line('{"ev":"down"}'); await tick(); await tick();
+  assert.deepEqual(calls, ["interrupt"]);
 });
 test("a runtime microphone error (fatal:false) is shown but never stops the daemon being restarted", () => {
   const r = rig();

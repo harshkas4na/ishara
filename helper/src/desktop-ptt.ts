@@ -35,6 +35,7 @@ export type PttDeps = {
   front: () => Promise<FrontApp | null>;   // which app is in front, read without reading its window
   spawnDaemon: (onLine: (l: string) => void, onExit: (code: number | null) => void) => DaemonHandle;
   now: () => number;
+  interrupt?: () => void;                  // silence the speaker (default: the speech module's); injectable for tests
   tick: () => void;                        // the short soft "speak now" sound (no-op when ISHARA_TICK=0)
   setTimer: (fn: () => void, ms: number) => unknown;
   clearTimer: (t: unknown) => void;
@@ -119,7 +120,7 @@ export function createPtt(d: PttDeps) {
         frontCheck = d.front().then((f) => {
           if (mine !== gen) return;
           if (f && isBrowserBundle(f.bundleId)) skipTake = true;
-          else interrupt(); /* silence the voice: no echo into the recording */
+          else (d.interrupt ?? interrupt)(); /* silence the voice: no echo into the recording */
         }, () => {});
         break;
       }
