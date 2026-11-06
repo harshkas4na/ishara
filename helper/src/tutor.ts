@@ -5,6 +5,7 @@
 //  - laya unreachable: the explanation continues, every pointer is "suppressed" (never point on 0GM alone).
 //  - a pointer moves the ring only on `confirmed` (laya p >= VERIFY_MIN_P about the USER's question).
 import { VERIFY_MIN_P } from "./config.ts";
+import { pageAskedFor } from "./pointer-gate.ts";
 import { askTutorStream, BRAIN_MODEL, LAYA_MODEL } from "./zg.ts";
 import { buildTutorMessages } from "./prompt.ts";
 import { TutorStreamParser, type ParseEvent } from "./stream-parse.ts";
@@ -56,6 +57,13 @@ function launchPointer(ctl: Ctl, deps: TutorDeps, question: string, ctx: PageCon
   const target = lookupTarget(ctx, id);
   if (!target) { then?.(); return; } // cannot happen after parser validation; harmless if it does
   const kind = target.kind;
+  // Injection rule first: a pointer the page scripted is rejected without asking laya (pointer-gate.ts pageAskedFor).
+  const injected = pageAskedFor(ctx, { id, kind, label: target.label }, question);
+  if (injected) {
+    ctl.ch.push({ event: "point", data: { seq, targetId: id, kind, status: "rejected", reason: `not pointing: ${injected}` } });
+    then?.();
+    return;
+  }
   const p = (async () => {
     let v: PointerVerdict;
     try { v = await deps.checkPointer(question, { id, kind, label: target.label, ...(target.role ? { role: target.role } : {}), ...(sentence ? { sentence } : {}) }); }
