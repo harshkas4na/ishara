@@ -77,7 +77,8 @@ export async function handleTutorRoute(req: IncomingMessage, res: ServerResponse
   // A comment line every 10 s keeps proxies and the extension port from timing out while 0GM thinks.
   const ping = setInterval(() => write(": ping\n\n"), d.heartbeatMs ?? HEARTBEAT_MS);
 
-  const speak = b.speak !== false && !walk; // the walk repeats text the user already heard; speech is per-question
+  // Walk commands speak too: each Next shows a NEW step sentence the person has not heard (they reported silence after step 1).
+  const speak = b.speak !== false;
   const emit = (name: string, data: unknown) => write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
   if (speak) safe(d.onStart, emit);
   try {

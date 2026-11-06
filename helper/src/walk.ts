@@ -1,5 +1,5 @@
 // walk.ts: the state of a step-by-step walkthrough, per tab (docs/TUTOR-INTERFACE.md section 6).
-// One model call writes the whole plan (at most 6 steps); after that "next / back / repeat / where / stop" are answered
+// One model call writes the whole plan (at most 12 steps); after that "next / back / repeat / where / stop" are answered
 // from this state with NO 0G call. The one thing that can send us back to the model is a step whose target has left
 // the page: pointing at a stale id would put the ring on the wrong thing, so we re-plan (at most 3 times) instead.
 import type { PageContext, WalkCmd } from "./types.ts";

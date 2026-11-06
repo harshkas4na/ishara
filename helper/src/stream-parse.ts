@@ -13,7 +13,8 @@ export type ParseEvent =
 
 export const MAX_POINTS = 2;       // per answer outside guide mode
 export const MAX_GUIDE_POINTS = 6; // one per step
-export const MAX_STEPS = 6;
+// 12, not 6: "walk me through the whole form" has 10-12 fields and a 6-step cap made the tutor stop at the fourth field.
+export const MAX_STEPS = 12;
 const HOLD_MAX = 40; // an unclosed "[" this far back is plain text, not a split tag
 
 // Words after which a period does not end a sentence.

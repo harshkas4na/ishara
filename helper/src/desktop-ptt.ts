@@ -107,6 +107,7 @@ export function createPtt(d: PttDeps) {
   function onLine(line: string): void {
     let ev: any;
     try { ev = JSON.parse(line); } catch { return; } // the daemon only prints JSON; anything else is ignorable noise
+    if (ev?.ev && ev.ev !== "level") console.log(`[ptt] ${ev.ev} ${Date.now() % 100000}`); // evidence for "stuck on Getting ready" reports
     switch (ev?.ev) {
       case "ready": ready = true; chord = ev.chord; lastError = undefined; break;
       case "down": {
@@ -115,6 +116,15 @@ export function createPtt(d: PttDeps) {
         takeActive = true; liveSeen = false; feedbackDue = false; pill = "none";
         if (feedbackTimer) d.clearTimer(feedbackTimer);
         feedbackTimer = d.setTimer(() => { feedbackTimer = null; feedbackDue = true; void frontCheck.then(() => showFeedback(mine)); }, FEEDBACK_AFTER_MS);
+        // Watchdog: the daemon says `live` within ~150 ms normally. If it never does (a stale audio engine, e.g. after a Bluetooth
+        // headset changed its input format while the answer was playing), the pill would sit on "Getting ready" forever (seen
+        // live on 6 Nov). Say so and restart the daemon, which comes back with a fresh engine.
+        d.setTimer(() => {
+          if (mine !== gen || !takeActive || liveSeen || skipTake) return;
+          console.error("[ptt] no `live` 1.5 s after key-down: restarting the daemon");
+          stopBubble("The microphone did not start.", "Let go and press again.");
+          handle?.kill();
+        }, 1500);
         // Which app is in front decides everything else. A browser is the extension's: this take is ignored and the daemon
         // must not touch its answer (no interrupt: a stray Right-Option tap in the browser must not cut the extension's voice).
         frontCheck = d.front().then((f) => {

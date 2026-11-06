@@ -82,12 +82,12 @@ test("an unclosed tag at the very end is flushed as text without markers", () =>
 test("a trailing sentence without punctuation is flushed by end()", () => {
   assert.deepEqual(says(run(["No full stop here"])), ["No full stop here"]);
 });
-test("guide: steps, points and waits come out in order, max 6 steps", () => {
-  const plan = Array.from({ length: 8 }, (_, i) => `[STEP ${i + 1}/8] Do thing ${i + 1}. [POINT:b${i === 0 ? 1 : 7}] [WAIT]`).join(" ");
+test("guide: steps, points and waits come out in order, capped at MAX_STEPS (12)", () => {
+  const plan = Array.from({ length: 14 }, (_, i) => `[STEP ${i + 1}/14] Do thing ${i + 1}. [POINT:b${i === 0 ? 1 : 7}] [WAIT]`).join(" ");
   const ev = run(chunks(plan, 4), "guide");
   const steps = ev.filter((e) => e.type === "step") as Extract<ParseEvent, { type: "step" }>[];
-  assert.deepEqual(steps.map((s) => s.n), [1, 2, 3, 4, 5, 6]);
-  assert.ok(steps.every((s) => s.m <= 6));
+  assert.deepEqual(steps.map((s) => s.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.ok(steps.every((s) => s.m <= 12));
   assert.equal(ev.filter((e) => e.type === "wait").length, 6);
   assert.equal(says(ev).length, 6);
   assert.deepEqual(ev.slice(0, 4).map((e) => e.type), ["step", "say", "point", "wait"]);
