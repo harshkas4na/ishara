@@ -1,12 +1,16 @@
-// ishara-ptt: global push-to-talk for the desktop path. Hold a chord (default Control+Option+Space), speak, release.
+// ishara-ptt: global push-to-talk for the desktop path. HOLD RIGHT OPTION ALONE for 350 ms (default), speak, release.
+// ISHARA_PTT_KEY=ctrl+opt+cmd+space (any modifiers plus one key) is the documented alternative for keyboards without a right Option.
 // It is a daemon that talks JSON lines on stdout; helper/src/desktop-ptt.ts does everything else.
-//   {"ev":"ready","chord":"ctrl+opt+space"}
+//   {"ev":"ready","chord":"rightoption"}
 //   {"ev":"down"}  {"ev":"level","rms":0.0123}  {"ev":"up","samples":N,"maxRms":x,"wavBase64":"..."}
-//   {"ev":"error","code":"input-monitoring"|"microphone","message":"..."}   (then exit 2)
+//   {"ev":"error","code":"input-monitoring"|"microphone","message":"..."}   (permission: then exit 2)
+//   {"ev":"error","code":"microphone","fatal":false,"message":"..."}          (runtime: the daemon keeps running)
 // Why these choices:
 // - The key tap is .listenOnly: we can observe keys but never change or swallow them, so a bug here can not
 //   break the keyboard. (It needs Input Monitoring, not Accessibility.)
-// - Control+Option+Space on purpose: the browser extension owns Option+Space.
+// - Right Option alone, after a 350 ms hold: one key, collides with no macOS shortcut and with no extension chord
+//   (the extension owns Option+Space). Taps, Option+letter typing, Left Option and any other-modifier chord never start
+//   a take (audit: docs/audit/desktop.md section 2). The mic is opened only after the hold is confirmed.
 // - The mic is opened only while the chord is held (no standing orange dot, nothing recorded otherwise), and the
 //   audio is kept in memory and handed over as base64. It is never written to disk.
 import Foundation
@@ -20,7 +24,7 @@ func emit(_ o: [String: Any]) {
     fflush(stdout)
 }
 func fail(_ code: String, _ message: String) -> Never {
-    emit(["ev": "error", "code": code, "message": message])
+    emit(["ev": "error", "code": code, "fatal": true, "message": message])
     exit(2)
 }
 
@@ -46,52 +50,88 @@ func parseChord(_ s: String) -> (mods: CGEventFlags, key: Int64)? {
     guard let k = key, !mods.isEmpty else { return nil } // a bare key would hijack typing; require a modifier
     return (mods, k)
 }
-let chordText = ProcessInfo.processInfo.environment["ISHARA_PTT_KEY"] ?? "ctrl+opt+space"
+let chordText = (ProcessInfo.processInfo.environment["ISHARA_PTT_KEY"] ?? "rightoption").trimmingCharacters(in: .whitespaces)
 var chordMods = CGEventFlags(); var chordKey: Int64 = 0
-if let c = parseChord(chordText) { chordMods = c.mods; chordKey = c.key } else {
-    fail("config", "ISHARA_PTT_KEY=\"\(chordText)\" is not understood. Use modifiers (ctrl, opt, cmd, shift) plus one key, e.g. ctrl+opt+space.")
+// Modifier-only mode: Right Option held alone. keyCode 61 is the physical right Option; the device-dependent bit 0x40
+// in the raw flags says which Option is down (0x20 is the left one), because maskAlternate alone cannot tell.
+let modOnly = ["rightoption", "right-option", "ropt", "roption", "rightalt"].contains(chordText.lowercased())
+let RIGHT_OPT_KEYCODE: Int64 = 61, RIGHT_OPT_BIT: UInt64 = 0x40, LEFT_OPT_BIT: UInt64 = 0x20
+let HOLD_S = 0.350 // long enough that nobody triggers it while typing a symbol, short enough to feel instant
+if !modOnly {
+    if let c = parseChord(chordText) { chordMods = c.mods; chordKey = c.key } else {
+        fail("config", "ISHARA_PTT_KEY=\"\(chordText)\" is not understood. Use \"rightoption\" or modifiers (ctrl, opt, cmd, shift) plus one key, e.g. ctrl+opt+cmd+space.")
+    }
 }
 let debug = ProcessInfo.processInfo.environment["ISHARA_PTT_DEBUG"] == "1" // log chord-related key events to stderr
 let modMask: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand, .maskShift]
 
 // ---------- recorder ----------
+// Why a new AVAudioEngine per take: one engine kept for the daemon's life cached the input format, and when the input
+// device changed (AirPods connect, a call app reconfigures the mic, an aggregate device at another rate) installTap threw
+// an Objective-C NSException ("format mismatch, 1 ch 16000 Hz") that Swift cannot catch and that killed the daemon
+// (measured, docs/audit/desktop.md section 1). Now the engine is built fresh at key-down, the tap is installed with
+// format nil (= whatever the node outputs right now, so there is nothing to mismatch), and the converter is built from
+// the format of the buffers that actually arrive. A device change mid-take rebuilds the engine and keeps the audio so far.
 final class Recorder {
-    let engine = AVAudioEngine()
+    var engine: AVAudioEngine? = nil
+    var observer: NSObjectProtocol? = nil
     let lock = NSLock()
     var pcm = [Int16]()
     var windowSumSq = 0.0, windowN = 0   // since the last level report
     var maxRms = 0.0
     var running = false
-    var tapRunning = false
+    var conv: AVAudioConverter? = nil
+    var convFrom: AVAudioFormat? = nil
+    let outFmt = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+    var onTrouble: ((String) -> Void)? = nil   // runtime failure during a take (device vanished): reported, never fatal
 
     func start() -> String? {
-        let input = engine.inputNode
-        let inFmt = input.outputFormat(forBus: 0)
-        guard inFmt.sampleRate > 0, inFmt.channelCount > 0,
-              let outFmt = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true),
-              let conv = AVAudioConverter(from: inFmt, to: outFmt) else { return "no usable microphone input" }
         lock.lock(); pcm = []; windowSumSq = 0; windowN = 0; maxRms = 0; lock.unlock()
-        input.installTap(onBus: 0, bufferSize: 2048, format: inFmt) { [self] buf, _ in
-            let cap = AVAudioFrameCount(Double(buf.frameLength) * 16000 / inFmt.sampleRate) + 64
-            guard let out = AVAudioPCMBuffer(pcmFormat: outFmt, frameCapacity: cap) else { return }
-            var fed = false
-            var err: NSError?
-            conv.convert(to: out, error: &err) { _, status in
-                if fed { status.pointee = .noDataNow; return nil }
-                fed = true; status.pointee = .haveData; return buf
-            }
-            guard err == nil, let p = out.int16ChannelData?[0] else { return }
-            let n = Int(out.frameLength)
-            lock.lock()
-            for i in 0..<n { let v = Double(p[i]) / 32768; windowSumSq += v * v }
-            windowN += n
-            pcm.append(contentsOf: UnsafeBufferPointer(start: p, count: n))
-            lock.unlock()
-        }
-        tapRunning = true
-        do { try engine.start() } catch { input.removeTap(onBus: 0); tapRunning = false; return "could not start audio: \(error.localizedDescription)" }
+        if let e = attach() { return e }
         running = true
         return nil
+    }
+    private func consume(_ buf: AVAudioPCMBuffer) {
+        let inFmt = buf.format
+        if convFrom == nil || convFrom! != inFmt { conv = AVAudioConverter(from: inFmt, to: outFmt); convFrom = inFmt }
+        guard let conv = conv, inFmt.sampleRate > 0 else { return }
+        let cap = AVAudioFrameCount(Double(buf.frameLength) * 16000 / inFmt.sampleRate) + 64
+        guard let out = AVAudioPCMBuffer(pcmFormat: outFmt, frameCapacity: cap) else { return }
+        var fed = false
+        var err: NSError?
+        conv.convert(to: out, error: &err) { _, status in
+            if fed { status.pointee = .noDataNow; return nil }
+            fed = true; status.pointee = .haveData; return buf
+        }
+        guard err == nil, let p = out.int16ChannelData?[0] else { return }
+        let n = Int(out.frameLength)
+        lock.lock()
+        for i in 0..<n { let v = Double(p[i]) / 32768; windowSumSq += v * v }
+        windowN += n
+        pcm.append(contentsOf: UnsafeBufferPointer(start: p, count: n))
+        lock.unlock()
+    }
+    private func attach() -> String? {
+        let eng = AVAudioEngine()
+        let input = eng.inputNode
+        let f = input.outputFormat(forBus: 0)
+        guard f.sampleRate > 0, f.channelCount > 0 else { return "no usable microphone input (is one connected, and is it the system input?)" }
+        conv = nil; convFrom = nil
+        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buf, _ in self?.consume(buf) }
+        do { try eng.start() } catch { input.removeTap(onBus: 0); return "could not start audio: \(error.localizedDescription)" }
+        engine = eng
+        observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: eng, queue: .main) { [weak self] _ in
+            // The input device or its format changed under us. Rebuild on the new default input; keep what we recorded.
+            guard let self = self, self.running else { return }
+            self.detach()
+            if let e = self.attach() { self.running = false; self.onTrouble?(e) }
+        }
+        return nil
+    }
+    private func detach() {
+        if let o = observer { NotificationCenter.default.removeObserver(o); observer = nil }
+        if let e = engine { e.inputNode.removeTap(onBus: 0); e.stop() }
+        engine = nil
     }
     // RMS of the audio since the previous call; the max over the whole take is kept for the silence check.
     func level() -> Double {
@@ -103,8 +143,8 @@ final class Recorder {
         return r
     }
     func stop() -> (samples: [Int16], maxRms: Double) {
-        if tapRunning { engine.inputNode.removeTap(onBus: 0); tapRunning = false }
-        engine.stop(); running = false
+        running = false
+        detach()
         _ = level() // fold in the tail
         lock.lock(); defer { lock.unlock() }
         let s = pcm; pcm = []
@@ -145,11 +185,31 @@ var levelTimer: Timer? = nil
 var downAt = Date()
 let MAX_TAKE_S = 30.0 // a lost key-up (tap disabled mid-hold) must not leave the mic on and the buffer growing
 
+var holdItem: DispatchWorkItem? = nil   // the pending 350 ms hold (modifier-only mode)
+func cancelHold() { holdItem?.cancel(); holdItem = nil }
+
+// The mic failed while a take was running (device unplugged mid-hold): say so, end the take, keep the daemon alive.
+rec.onTrouble = { msg in
+    guard held else { return }
+    held = false
+    levelTimer?.invalidate(); levelTimer = nil
+    _ = rec.stop()
+    emit(["ev": "error", "code": "microphone", "fatal": false, "message": "The microphone stopped: \(msg). Hold the key again."])
+}
+
 func chordDown() {
     guard !held else { return }  // key repeat sends keyDown again; ignore it
     held = true
-    if let e = rec.start() { held = false; emit(["ev": "error", "code": "microphone", "message": "Microphone failed: \(e). If this keeps happening, check System Settings > Privacy & Security > Microphone for the app that started the helper."]); return }
+    // Feedback first: the helper puts up the Listening bubble on "down", so the user sees the hold registered at the
+    // 350 ms mark and not after the audio engine has spun up.
     emit(["ev": "down"])
+    let t = Date()
+    if let e = rec.start() {
+        held = false
+        emit(["ev": "error", "code": "microphone", "fatal": false, "message": "Microphone failed: \(e). If this keeps happening, check System Settings > Privacy & Security > Microphone for the app that started the helper."])
+        return
+    }
+    if debug { fputs("ptt: recorder started in \(Int(Date().timeIntervalSince(t) * 1000)) ms\n", stderr) }
     downAt = Date()
     levelTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
         if Date().timeIntervalSince(downAt) > MAX_TAKE_S { chordUp(); return }
@@ -157,6 +217,7 @@ func chordDown() {
     }
 }
 func chordUp() {
+    cancelHold()
     guard held else { return }
     held = false
     levelTimer?.invalidate(); levelTimer = nil
@@ -165,10 +226,38 @@ func chordUp() {
 }
 
 let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
+    // Option-click and Option-drag are not a request to talk: any pointer press or scroll cancels a pending hold.
+    | (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.rightMouseDown.rawValue) | (1 << CGEventType.scrollWheel.rawValue)
 func handleKey(_ type: CGEventType, _ event: CGEvent) {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         if let t = tapRef { CGEvent.tapEnable(tap: t, enable: true) } // macOS turns a slow tap off; turn it back on
+        cancelHold()
         if held { chordUp() } // the key-up may have been missed while the tap was off: end the take now
+        return
+    }
+    if modOnly {
+        switch type {
+        case .keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel:
+            cancelHold() // Option was used for typing a symbol / clicking; a take already running is left alone
+        case .flagsChanged:
+            let kc = event.getIntegerValueField(.keyboardEventKeycode)
+            let raw = event.flags.rawValue
+            if kc == RIGHT_OPT_KEYCODE {
+                let down = event.flags.contains(.maskAlternate) && (raw & RIGHT_OPT_BIT) != 0
+                let clean = event.flags.intersection([.maskControl, .maskCommand, .maskShift]).isEmpty && (raw & LEFT_OPT_BIT) == 0
+                if debug { fputs("ptt: right-option down=\(down) clean=\(clean)\n", stderr) }
+                if down {
+                    if clean && !held && holdItem == nil {
+                        let item = DispatchWorkItem { holdItem = nil; chordDown() }
+                        holdItem = item
+                        DispatchQueue.main.asyncAfter(deadline: .now() + HOLD_S, execute: item)
+                    }
+                } else { cancelHold(); if held { chordUp() } }
+            } else {
+                cancelHold() // another modifier changed (Left Option, Cmd, Shift, Ctrl): that is a chord or typing, not us
+            }
+        default: break
+        }
         return
     }
     // Debug logs only the chord's own key and modifier changes, never other keys: stderr goes to the helper log,
@@ -210,5 +299,5 @@ let parentAtStart = getppid()
 Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
     if getppid() != parentAtStart { if rec.running { _ = rec.stop() }; exit(0) }
 }
-emit(["ev": "ready", "chord": chordText])
+emit(["ev": "ready", "chord": modOnly ? "rightoption" : chordText, "holdMs": modOnly ? Int(HOLD_S * 1000) : 0])
 CFRunLoopRun()
