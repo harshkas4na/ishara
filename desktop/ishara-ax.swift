@@ -70,6 +70,7 @@ guard AXIsProcessTrusted() else {
 // ---------- model ----------
 struct El {
     var role: String; var label: String; var x: Double; var y: Double; var w: Double; var h: Double; var ctl: String = ""
+    var axRole: String = ""               // context mode: the raw AX role, for the selector ishara-act re-finds the control by
     var elem: AXUIElement? = nil          // context mode: to match the focused element
     var state: [String: Any] = [:]        // context mode: checked / value / selectedOption / disabled / filledChars / empty / invalid
 }
@@ -247,6 +248,7 @@ func walk(_ e: AXUIElement, _ depth: Int, _ c: WalkCtx = WalkCtx()) {
             if label.isEmpty && !help.isEmpty { label = help }
             let ctl = secure ? "password" : (role == "AXSearchField" ? "search" : (mapped == "input" ? "text" : ""))
             var el = El(role: mapped, label: clip(label), x: fr.minX, y: fr.minY, w: fr.width, h: fr.height, ctl: ctl)
+            el.axRole = role
             if mapped == "text" {
                 if !el.label.isEmpty { statics.append(el) }
                 if ctxMode && !val.isEmpty || ctxMode && !el.label.isEmpty {
@@ -399,12 +401,18 @@ if ctxMode {
     if ctls.count > 150 { ctls = Array(ctls.prefix(150)) }
     var controlsJSON: [[String: Any]] = []
     var focusedId: String? = nil
+    var sameSoFar: [String: Int] = [:] // (mapped role, label) -> how many earlier controls share it, in reading order
     for (i, e) in ctls.enumerated() {
         let id = "b\(i)"
         var o: [String: Any] = ["id": id, "label": e.label, "role": e.role,
                                 "rect": ["x": Int(e.x.rounded()), "y": Int(e.y.rounded()), "w": Int(e.w.rounded()), "h": Int(e.h.rounded())]]
         if !e.ctl.isEmpty { o["ctl"] = e.ctl }
         if !e.state.isEmpty { o["state"] = e.state }
+        // The STABLE selector for ishara-act (agent mode): a pointer dies with this process, so the executor re-finds the
+        // control by role + label + its index among same-labelled controls (the same reading order and filters as here).
+        let key = e.role + "|" + norm(e.label)
+        let idx = sameSoFar[key] ?? 0; sameSoFar[key] = idx + 1
+        o["selector"] = ["role": e.role, "axRole": e.axRole, "label": e.label, "index": idx, "secure": e.ctl == "password"] as [String: Any]
         controlsJSON.append(o)
         if let f = focusedEl, let ee = e.elem, CFEqual(f, ee) { focusedId = id }
     }
