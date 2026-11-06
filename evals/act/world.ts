@@ -23,7 +23,7 @@ export type WControl = {
 };
 export type WBlock = { key: string; kind?: "p" | "h" | "li" | "code" | "cell" | "error" | "caption" | "text"; text: string; minScroll?: number };
 export type WPage = { url: string; title: string; controls: WControl[]; blocks: WBlock[] };
-export type WorldSpec = { start: string; pages: Record<string, WPage>; clipboard?: string };
+export type WorldSpec = { start: string; pages: Record<string, WPage>; clipboard?: string; results?: string[] /* what any search results page says */ };
 
 /** Everything the model asks for, in the frozen schema (docs/AGENT-MODE.md). */
 export type Action =
@@ -34,6 +34,8 @@ export type Action =
   | { type: "key"; combo: string }
   | { type: "scroll"; direction: "up" | "down"; amount?: "line" | "page" }
   | { type: "open_url"; url: string }
+  | { type: "search"; query: string; engine?: "brave" | "google" | "duckduckgo" }
+  | { type: "tab"; op: "switch" | "close" | "back" | "forward" | "new"; match?: string }
   | { type: "open_app"; name: string }
   | { type: "quit_app"; name: string }
   | { type: "copy"; text: string }
@@ -191,6 +193,21 @@ export class World {
         }
         this.scroll = 0; this.focus = null;
         return rec(true, "opened " + action.url);
+      }
+      case "search": {
+        // The results page is just a page: the next planning step reads it from the fresh context, like any other.
+        const url = ({ brave: "https://search.brave.com/search?q=", google: "https://www.google.com/search?q=", duckduckgo: "https://duckduckgo.com/?q=" })[action.engine ?? "brave"] + encodeURIComponent(action.query);
+        this.navigations.push(url);
+        const key = "_search:" + url;
+        this.spec.pages[key] = { url, title: "Search results", controls: [], blocks: [{ key: "h", kind: "h", text: "Search results for " + action.query }, ...(this.spec.results ?? []).map((t, i) => ({ key: "r" + i, text: t }))] };
+        this.ctl[key] = {};
+        this.history.push(this.page); this.page = key; this.scroll = 0; this.focus = null;
+        return rec(true, "opened the search results");
+      }
+      case "tab": {
+        if (action.op === "back" && this.history.length) { this.page = this.history.pop()!; this.scroll = 0; return rec(true, "went back"); }
+        if (action.op === "back" || action.op === "forward") return rec(false, "there is no page to go " + action.op + " to");
+        return rec(true, "tab " + action.op);
       }
       case "copy": this.clipboard = action.text; return rec(true, `copied ${action.text.length} chars`);
       case "screenshot": this.screenshots++; return rec(true, "screenshot to " + action.to);

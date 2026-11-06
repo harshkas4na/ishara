@@ -246,3 +246,15 @@ test("fake router: read_file in the browser-only run is refused by the route, no
   const evs = await viaRouter("read my notes file", async () => ({ ok: true, detail: "should not run" }));
   assert.equal(evs.find((e) => e.event === "action").data.action.type, "read_file");
 });
+
+// ---------------- the eval world understands the new actions ----------------
+test("eval world: search opens a results page the next step can read; tab back returns", async () => {
+  const { World } = await import("../../evals/act/world.ts");
+  const { WORLDS } = await import("../../evals/act/worlds.ts");
+  const w = new World(JSON.parse(JSON.stringify(WORLDS["search-start"])));
+  const r = w.apply({ type: "search", query: "capital of France", engine: "google" });
+  assert.ok(r.ok); assert.match(w.cur.url, /google\.com\/search\?q=capital%20of%20France/);
+  assert.ok(r.context.blocks.some((b: any) => /Paris/.test(b.text)));
+  assert.ok(w.apply({ type: "tab", op: "back" }).ok); assert.equal(w.page, "home");
+  assert.equal(w.apply({ type: "tab", op: "forward" }).ok, false);
+});

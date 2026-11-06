@@ -1,0 +1,38 @@
+[
+ {
+  "id": "web-01",
+  "class": "web",
+  "task": "Search the web for the capital of France and tell me what you find.",
+  "world": "search-start",
+  "checks": {
+   "outcome": "done",
+   "url_contains": "search.brave.com",
+   "says_includes": "Paris",
+   "max_actions": 3
+  }
+ },
+ {
+  "id": "web-02",
+  "class": "web",
+  "hinglish": true,
+  "task": "France ki capital kya hai, google par search karke batao.",
+  "world": "search-start",
+  "checks": {
+   "outcome": "done",
+   "url_contains": "google.com/search",
+   "says_includes": "Paris",
+   "max_actions": 3
+  }
+ },
+ {
+  "id": "web-03",
+  "class": "web",
+  "task": "Open the Pricing page, then go back to the previous page.",
+  "world": "site",
+  "checks": {
+   "outcome": "done",
+   "page": "home",
+   "max_actions": 5
+  }
+ }
+]
