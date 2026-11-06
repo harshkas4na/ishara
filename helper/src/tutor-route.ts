@@ -16,10 +16,14 @@ export type RouteDeps = {
   walk: (req: any) => AsyncGenerator<any>;
   heartbeatMs?: number;
   // Speech seam: no-ops unless server.ts wires speech.ts in. Must never throw into the stream (wrapped below).
-  onStart?: () => void;
-  onSay?: (text: string) => void;
-  onEnd?: () => void;
+  // onStart gets `emit`, which writes one SSE event to THIS response: speech uses it to send `speaking`
+  // (playback of sentence `seq` started; `{seq:null}` = the voice went quiet). onEnd may return a promise that
+  // resolves when the voice is quiet; the stream is held open for it (see the end of handleTutorRoute).
+  onStart?: (emit: (event: string, data: unknown) => void) => void;
+  onSay?: (text: string, seq?: number) => void;
+  onEnd?: () => void | Promise<void>;
 };
+export const SPEAKING_WAIT_MS = 120_000; // never hold a stream open longer than this for the voice to finish
 
 const json = (res: ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
 const safe = (f?: (...a: any[]) => void, ...a: any[]) => { try { f?.(...a); } catch { /* speech must never break an answer */ } };
@@ -74,7 +78,8 @@ export async function handleTutorRoute(req: IncomingMessage, res: ServerResponse
   const ping = setInterval(() => write(": ping\n\n"), d.heartbeatMs ?? HEARTBEAT_MS);
 
   const speak = b.speak !== false && !walk; // the walk repeats text the user already heard; speech is per-question
-  if (speak) safe(d.onStart);
+  const emit = (name: string, data: unknown) => write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+  if (speak) safe(d.onStart, emit);
   try {
     // On disconnect we keep draining the generator without writing: the 0G stream must be read to the end so the
     // request/chat ids exist for the proof (contract section 3), and the turn gets logged once.
@@ -82,15 +87,27 @@ export async function handleTutorRoute(req: IncomingMessage, res: ServerResponse
       const name = String(ev.event ?? ev.type);
       const data = ev.data ?? (({ event: _e, type: _t, ...rest }) => rest)(ev);
       if (open) write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
-      if (speak && name === "say" && typeof data.text === "string" && open) safe(d.onSay, data.text);
+      if (speak && name === "say" && typeof data.text === "string" && open) safe(d.onSay, data.text, typeof data.seq === "number" ? data.seq : undefined);
     }
   } catch (e: any) {
     console.error("[tutor] turn failed:", e?.message);
     // The stream already started, so the only honest signal is a refused event: never a made-up answer.
     write(`event: refused\ndata: ${JSON.stringify({ cause: "unavailable", say: "I couldn't reach the sealed model, so I won't guess." })}\n\n`);
   } finally {
+    // The turn is over but the voice usually is not: it is still reading the last sentences. Hold the stream open
+    // (heartbeat still running) until the speaker reports idle so the final `speaking {seq:null}` can be sent, but
+    // not past a client that left, and not for more than SPEAKING_WAIT_MS. A client that stops reading at `done`
+    // (the extension relay does) is unaffected; one that waits for the end of the body waits for the voice.
+    if (speak) {
+      let quiet: void | Promise<void> = undefined;
+      try { quiet = d.onEnd?.(); } catch { /* speech must never break an answer */ }
+      if (quiet && open) {
+        let t: NodeJS.Timeout;
+        await Promise.race([Promise.resolve(quiet).catch(() => {}), new Promise<void>((r) => { t = setTimeout(r, SPEAKING_WAIT_MS); }), new Promise<void>((r) => res.once("close", () => r()))]);
+        clearTimeout(t!);
+      }
+    }
     clearInterval(ping);
-    if (speak) safe(d.onEnd);
     if (open) res.end();
   }
   return true;

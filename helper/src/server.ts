@@ -14,6 +14,7 @@ import { startWhisper, stopWhisper, transcribe, whisperStatus } from "./whisper.
 import { minRms, transcribeGuarded } from "./transcript-guard.ts";
 import { pttStatus, startPtt, stopPtt } from "./desktop-ptt.ts";
 import { startSpeech, stopSpeech, speechStatus, speaker } from "./speech.ts";
+import { INSTALLED_VOICES } from "./speech-lang.ts";
 import { memory, memoryRoute } from "./memory.ts";
 import { allowedOrigin, refuse, staticPath } from "./http-guard.ts";
 
@@ -62,9 +63,19 @@ async function optional(file: string): Promise<any | null> {
 const speechMod: Promise<any | null> = optional("./speech.ts");
 // (tutor-route.ts only calls these when the request did not say speak:false.)
 const tutorSpeech = {
-  onStart: () => { speechMod.then((m) => m?.speaker.interrupt()).catch(() => {}); },
-  onSay: (t: string) => { speechMod.then((m) => { if (m && !m.speaker.isMuted()) m.speaker.enqueue(t); }).catch(() => {}); },
-  onEnd: () => { speechMod.then((m) => m?.speaker.flush()).catch(() => {}); },
+  // `emit` writes to this request's SSE stream. interrupt() first, so the previous answer's stream hears its own
+  // "idle"; then this turn's hooks turn playback events into `speaking` events (docs/TUTOR-INTERFACE.md section 2).
+  // Muted, disabled or no engine: the speaker never starts a sentence, so no `speaking` event is ever sent.
+  onStart: (emit: (e: string, d: unknown) => void) => {
+    speechMod.then((m) => {
+      m?.speaker.interrupt();
+      m?.speaker.setHooks({ onSentenceStart: (seq: number, text: string) => emit("speaking", { seq, text }), onIdle: () => emit("speaking", { seq: null }) });
+    }).catch(() => {});
+  },
+  // The seq goes with the sentence so the speaker can say which `say` it is now playing.
+  onSay: (t: string, seq?: number) => { speechMod.then((m) => { if (m && !m.speaker.isMuted()) m.speaker.enqueue(t, seq); }).catch(() => {}); },
+  // flush() speaks a trailing unpunctuated sentence and resolves when the voice is quiet.
+  onEnd: () => speechMod.then((m) => m?.speaker.flush()).catch(() => {}),
 };
 
 const server = createServer(async (req, res) => {
@@ -117,7 +128,15 @@ const server = createServer(async (req, res) => {
     if (path === "/speech/say" && req.method === "POST") {
       const b = JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}");
       if (typeof b?.text !== "string") return send(res, 400, { error: "need { text }" });
-      speaker.interrupt(); speaker.speak(b.text); return send(res, 200, speechStatus());
+      // Optional { voice, lang, translit } is for scripts/voice-sampler.ts: it must name an installed voice
+      // (allowlist, so a request can never put a path or a flag into the voice process).
+      let o: { voice?: string; lang?: string; translit?: boolean } | undefined;
+      if (b.voice !== undefined) {
+        if (typeof b.voice !== "string" || !INSTALLED_VOICES.has(b.voice)) return send(res, 400, { error: "unknown voice" });
+        if (b.lang !== undefined && !["en-us", "en-gb", "hi"].includes(b.lang)) return send(res, 400, { error: "lang must be en-us, en-gb or hi" });
+        o = { voice: b.voice, lang: b.lang, translit: b.translit !== false };
+      }
+      speaker.interrupt(); speaker.speak(b.text, o); return send(res, 200, speechStatus());
     }
     // Static pages: web/ at /app (proof sheet, replay), test-pages/ at /test, and /ext for the dev panel preview
     // (test-pages/panel-preview.html loads the overlay code from it; scripts and styles only).
