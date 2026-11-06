@@ -8,7 +8,7 @@
 // Engines, first that works: "kokoro" (neural), "system" (macOS `say`, so it is never silent by accident),
 // "none" (status.reason says why). ISHARA_VOICE_ENGINE=system forces the macOS voice.
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -123,7 +123,12 @@ export function prepare(raw: string, ceiling = MAX_ANSWER_WORDS): string[] {
 // ---------- the queue (all outside effects injected) ----------
 
 export type Engine = "kokoro" | "system" | "none";
-export type Playing = { done: Promise<void>; kill(): void };
+// `ms` (optional) is the known length of the audio. afplay keeps running 0.4 to 0.9 s after the sound has ended
+// (measured here: a 3.18 s clip takes 3.87 s from spawn to exit), so waiting for it to exit before starting the
+// next sentence put an audible half-second hole after every sentence. With `ms`, the next piece is started
+// LEAD_MS before the sound ends (afplay needs ~0.2 s to start making sound), and the old process just finishes.
+export type Playing = { done: Promise<void>; kill(): void; ms?: number };
+export const LEAD_MS = Number(process.env.ISHARA_VOICE_LEAD_MS ?? 250);
 export type Voice = {
   engine: Engine;
   // Synthesise one piece to a WAV file and resolve its path; reject on failure. Absent for the "system" engine.
@@ -179,6 +184,7 @@ export function createSpeaker(d: SpeechDeps, cfg: VoiceConfig = voiceConfig(), m
   let pending: Piece[] = [];    // pieces waiting to be synthesised
   let ready: Job[] = [];        // synthesised or in flight, in order
   let current: Playing | null = null;
+  const ringing = new Set<Playing>(); // started and not yet exited (a finished sentence can still be winding down)
   let pumping = false;
   let buf = "";                 // enqueue() text not yet ended by a sentence boundary
   let used = 0;                 // words of the current answer already queued (the runaway ceiling)
@@ -198,7 +204,7 @@ export function createSpeaker(d: SpeechDeps, cfg: VoiceConfig = voiceConfig(), m
     await starting;
   }
   const fire = (f: () => void) => { try { f(); } catch { /* a UI callback must never break speech */ } };
-  const quiet = () => !current && !pending.length && !ready.length && !pumping;
+  const quiet = () => !current && !ringing.size && !pending.length && !ready.length && !pumping;
   // The voice is silent and the turn is over (or was cut): tell the UI once and release whoever awaits flush().
   function settle() {
     const w = waiters; waiters = []; ending = false;
@@ -260,15 +266,23 @@ export function createSpeaker(d: SpeechDeps, cfg: VoiceConfig = voiceConfig(), m
         if (f && voice) {
           const t = d.now();
           if (lastEnd) maxGap = Math.max(maxGap, t - lastEnd);
-          current = voice.play(f);
+          const pl = voice.play(f);
+          current = pl; ringing.add(pl);
+          const synthesised = !!voice.synth;
+          // When it has really exited: forget it, delete its temp file, and report idle if that was the last sound.
+          void pl.done.catch((e: any) => { lastError = String(e?.message ?? e); }).then(() => {
+            ringing.delete(pl); if (synthesised) d.cleanup(f);
+            if (ending && quiet()) settle();
+          });
           const p = item.piece;
           if (p.tag !== undefined && !muted) { announced = true; fire(() => hooks.onSentenceStart?.(p.tag!, p.shown ?? p.text)); }
           fill(); // start making the next pieces now, while this one plays
           if (!firstDone) { firstDone = true; lastFirst = d.now() - answerStart; }
-          try { await current.done; pieces++; if (p.last) spoken++; } catch (e: any) { lastError = String(e?.message ?? e); }
-          lastEnd = d.now();
-          current = null;
-          if (voice.synth) d.cleanup(f);
+          // Wait for the sound to end: by its known length minus the lead when we have one, else for the exit.
+          const early = pl.ms !== undefined ? new Promise<void>((r) => setTimeout(r, Math.max(0, pl.ms! - LEAD_MS))) : null;
+          try { await (early ? Promise.race([pl.done, early]) : pl.done); pieces++; if (p.last) spoken++; } catch (e: any) { lastError = String(e?.message ?? e); }
+          lastEnd = d.now(); // maxGapMs = how late the NEXT piece was started after this one was due (0 = on time)
+          if (current === pl) current = null;
         }
       }
     } finally {
@@ -307,7 +321,7 @@ export function createSpeaker(d: SpeechDeps, cfg: VoiceConfig = voiceConfig(), m
       gen++; pending = []; buf = ""; newAnswer();
       const old = ready; ready = [];
       for (const r of old) void r.file.then((f) => { if (f && voice?.synth) d.cleanup(f); });
-      current?.kill(); current = null;
+      current = null; for (const r of ringing) r.kill(); // the sentence now playing AND any still winding down
       settle(); // the UI must hear "idle" for the answer that was just cut
     },
     setHooks(h: SpeechHooks): void { hooks = h; },
@@ -323,7 +337,7 @@ export function createSpeaker(d: SpeechDeps, cfg: VoiceConfig = voiceConfig(), m
       return {
         engine: voice?.engine ?? "none", voice: voice?.engine === "kokoro" ? cfg.en : voice?.engine === "system" ? "macOS" : "-",
         voiceHi: voice?.engine === "kokoro" ? cfg.hi : "-",
-        muted, enabled: d.enabled, ready: !!voice, speaking: !!current, queued: pending.length + ready.length, spoken, pieces,
+        muted, enabled: d.enabled, ready: !!voice, speaking: !!current || ringing.size > 0, queued: pending.length + ready.length, spoken, pieces,
         ...(maxGap ? { maxGapMs: maxGap } : {}), ...(clipped ? { clipped } : {}),
         ...(lastFirst !== undefined ? { lastFirstAudioMs: lastFirst } : {}),
         ...(voice ? {} : { reason: reason ?? "not started" }), ...(lastError ? { lastError } : {}),
@@ -342,7 +356,9 @@ const waiting = new Map<number, { ok: (p: string) => void; fail: (e: Error) => v
 function afplay(path: string): Playing {
   const p = spawn("/usr/bin/afplay", [path], { stdio: "ignore" });
   const done = new Promise<void>((res, rej) => { p.on("exit", () => res()); p.on("error", rej); });
-  return { done, kill: () => p.kill("SIGKILL") }; // SIGKILL: stop at once, not at the end of the buffer
+  let ms: number | undefined;
+  try { ms = Math.max(0, (statSync(path).size - 44) / 48); } catch { /* unknown length: wait for the exit instead */ } // 24 kHz mono 16-bit = 48 bytes per ms
+  return { done, ms, kill: () => p.kill("SIGKILL") }; // SIGKILL: stop at once, not at the end of the buffer
 }
 function sayCmd(text: string): Playing {
   const p = spawn("/usr/bin/say", [text], { stdio: "ignore" });
