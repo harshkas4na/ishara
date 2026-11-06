@@ -152,3 +152,25 @@ ignores a take when a browser is in front (and cancels it anyway when another ke
 (2) two browsers with the extension, one voice: a question in either stops the other's audio (one speaker, by design);
 (3) the old Esc handler stopping the voice from a tab that asked nothing (fixed). Not reproduced: Chrome plus Brave at once
 (only Chrome available). To confirm, tell me which two browsers, and whether the Ishara pill showed in both on one press.
+
+## 8. Agent mode (docs/AGENT-MODE.md)
+Agent mode is OFF by default. **Option+Shift+A** (or the debug panel button) turns it on for this browser session; an amber "Agent mode"
+chip shows above the pill. With it on, an order ("fill the form: name Harsh, email ...", "open youtube", "scroll down", "take a screenshot")
+goes to `POST /act` instead of `/tutor` (`isTask()` in `extension/act.js` decides; questions like "where do I click to submit?" never do).
+The pill shows "Step n: ..." with progress dots and a Stop button; the cursor travels to the target and the marker draws, then ~0.7 s later
+the action runs. A risky action turns the pill amber: "Press Delete account?" with **Approve (Y) / Deny (N)**; no answer in 60 s is a deny.
+**Esc** stops at once.
+
+- No helper needed: `test-pages/act-preview.html?state=chip|planning|action|approval|done|failed|stopped|refused|full` plays scripted
+  events and runs the real executor on its own form (`&answer=yes|no`, `&stopafter=N`).
+- The executor alone: open `http://127.0.0.1:7777/test/act-form.html` (name, email, password and card fields that must be refused, a country
+  select, plan radios, a checkbox, a React-style controlled input, a custom div button, a danger button, a long page, a link). On that URL
+  prefix only, the content script answers `window.dispatchEvent(new CustomEvent("ishara-dev-act", {detail: JSON.stringify({type:"type", label:"Full name", text:"Harsh"})}))`
+  and writes `{ok, detail}` to `document.documentElement.dataset.isharaActResult`. Fire it and read the result in a separate call (a long
+  `await` inside one tool call gets the debugger detached). Copy: check with `pbpaste`. Screenshot: PNG on the clipboard, or `Downloads/Ishara-screenshot-*.png`.
+- End to end: `npm run helper:dev` (real 0G) or `helper:fake` (scripted; note the fake laya scores by word overlap and rejects many targets),
+  open act-form, Option+Shift+A, Option+Shift+Space, type the task, Enter. The tool-driven browser ignores synthetic key events: press
+  real chords (`alt+shift+a`).
+- New permissions for this: `downloads` (screenshot file), `clipboardWrite` (copy without a user gesture), host `<all_urls>` (screenshots
+  of any page; Chrome's "Site access" for the extension must be "On all sites"). Screenshots stay on this machine.
+- Unit tests: `node --test helper/test/act-browser.test.ts` (isTask, action validation, key combos, the act stream relay).
