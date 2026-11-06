@@ -197,14 +197,14 @@ export const MAX_CONTROLS = 150;
 // ids must survive re-reads of the same window: "next" in a walkthrough looks its step's target up by id in a NEW
 // context, and ids numbered by reading order would point at a different control the moment one appears above it.
 // The book remembers which signature got which number for one window, so the same control keeps its id.
-export type IdBook = { ids: Map<string, number>; next: number; last: number; key: string };
-export function newIdBook(key = ""): IdBook { return { ids: new Map(), next: 0, last: 0, key }; }
+export type IdBook = { ids: Map<string, number>; next: Record<string, number>; last: number; key: string };
+export function newIdBook(key = ""): IdBook { return { ids: new Map(), next: {}, last: 0, key }; } // one counter per prefix: b0.. and t0.. as the contract says
 const BOOK_IDLE_MS = 10 * 60 * 1000;
 function takeId(book: IdBook, prefix: string, sig: string, seen: Map<string, number>): string {
   const n = (seen.get(sig) ?? 0) + 1; seen.set(sig, n); // two identical rows in one read stay distinct
   const full = prefix + "|" + sig + "|" + n;
   let id = book.ids.get(full);
-  if (id === undefined) { id = book.next++; book.ids.set(full, id); }
+  if (id === undefined) { id = book.next[prefix] ?? 0; book.next[prefix] = id + 1; book.ids.set(full, id); }
   return prefix + id;
 }
 const books = new Map<string, IdBook>();
