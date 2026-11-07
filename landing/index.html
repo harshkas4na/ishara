@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ishara: a screen tutor you can verify</title>
+<meta name="description" content="Ask about anything on your screen. Ishara explains it, points at it, and leaves a receipt you can check yourself. Built on 0G at ETHGlobal Mumbai.">
+<meta property="og:title" content="Ishara: a screen tutor you can verify">
+<meta property="og:description" content="Sealed 0G models answer. Every answer leaves a receipt anyone can check.">
+<meta property="og:image" content="img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="img/logo.png">
+<style>
+:root{
+  --ink:#0E1621; --ink2:#152233; --ink3:#1D2B3D; --paper:#F3F5F6; --mute:#9FB0C0; --line:#243449;
+  --teal:#3DD6C3; --teal-d:#0B8579; --amber:#F2B84B; --rose:#E5707E;
+  --max:1120px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--ink);color:#E8ECEF;font:17px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--teal);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
+h1,h2,h3{font-family:Georgia,"Times New Roman",serif;line-height:1.12;margin:0;color:#fff}
+h2{font-size:clamp(30px,4.2vw,44px);letter-spacing:-.01em}
+h3{font-size:22px;font-family:ui-sans-serif,system-ui,sans-serif;font-weight:650}
+p{margin:0}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--teal)}
+.mute{color:var(--mute)}
+section{padding:96px 0}
+section.alt{background:var(--ink2)}
+/* nav */
+nav{position:sticky;top:0;z-index:20;background:rgba(14,22,33,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;color:#fff;font-size:18px}
+.brand img{width:28px;height:28px;border-radius:7px}
+nav ul{display:flex;gap:26px;list-style:none;margin:0;padding:0;font-size:15px}
+nav ul a{color:var(--mute)}
+nav ul a:hover{color:#fff;text-decoration:none}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:12px;font-weight:650;font-size:16px;border:1px solid var(--teal);color:var(--ink);background:var(--teal)}
+.btn:hover{text-decoration:none;filter:brightness(1.07)}
+.btn.ghost{background:transparent;color:#fff;border-color:#35506b}
+.btn.ghost:hover{border-color:var(--teal)}
+/* hero */
+.hero{padding:88px 0 72px;position:relative;overflow:hidden}
+.hero .grid{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+.hero h1{font-size:clamp(42px,6.2vw,74px);letter-spacing:-.02em;margin:18px 0 22px}
+.hero p.lead{font-size:20px;color:#C9D4DD;max-width:540px}
+.cta{display:flex;gap:14px;margin-top:34px;flex-wrap:wrap}
+.tags{display:flex;gap:10px;flex-wrap:wrap;margin-top:34px}
+.tag{font-size:13px;color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+/* hero illustration */
+.stage{position:relative;background:#fff;border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.45);color:#1a2430;overflow:hidden;border:1px solid #2a3b50}
+.stage .bar{height:34px;background:#E8ECEF;display:flex;align-items:center;gap:7px;padding:0 14px}
+.stage .bar i{width:10px;height:10px;border-radius:50%;background:#c3ccd5;display:block}
+.stage .body{padding:22px 24px 26px}
+.stage h4{margin:0 0 4px;font:700 18px ui-sans-serif,system-ui,sans-serif}
+.stage .sub{font-size:13px;color:#5b6b7b;margin-bottom:16px}
+.f{margin-bottom:13px}
+.f label{display:block;font-size:12px;font-weight:650;margin-bottom:5px;color:#33414f}
+.f div{height:36px;border:1px solid #c9d2db;border-radius:7px;background:#fafbfc;font-size:13px;color:#8a98a6;display:flex;align-items:center;padding:0 11px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fake-btn{display:inline-block;margin-top:4px;background:#0b72a8;color:#fff;font-size:13px;font-weight:650;border-radius:7px;padding:9px 16px}
+.pointer{position:absolute;width:44px;height:44px;border-radius:50%;border:3px solid var(--teal-d);box-shadow:0 0 0 6px rgba(11,133,121,.18);left:60px;top:90px;pointer-events:none;animation:glide 12s infinite ease-in-out}
+.pointer::after{content:"";position:absolute;inset:14px;border-radius:50%;background:var(--teal-d)}
+@keyframes glide{
+  0%,28%{transform:translate(70px,64px)}
+  36%,62%{transform:translate(269px,121px)}
+  70%,95%{transform:translate(158px,194px)}
+  100%{transform:translate(70px,64px)}
+}
+.bubble{position:relative;background:var(--ink);color:#fff;margin:0;padding:0 18px;height:92px;font-size:15px;line-height:1.45}
+.bubble .say{position:absolute;left:18px;right:18px;top:50%;transform:translateY(-50%);opacity:0;animation:say 12s infinite}
+.bubble .say:nth-child(2){animation-delay:4s}.bubble .say:nth-child(3){animation-delay:8s}
+.bubble b{color:var(--teal)}
+@keyframes say{0%{opacity:0}3%,30%{opacity:1}33%,100%{opacity:0}}
+.ill{font-size:12px;color:var(--mute);margin-top:12px;text-align:center}
+/* problem */
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:44px}
+.card{background:var(--ink2);border:1px solid var(--line);border-radius:16px;padding:28px}
+section.alt .card{background:var(--ink)}
+.card p{color:#C9D4DD;margin-top:10px;font-size:16px}
+.num{font:700 40px Georgia,serif;color:var(--teal);margin-bottom:6px}
+.strip{margin-top:34px;background:#fff;color:var(--ink);border-radius:14px;padding:22px 28px;font-weight:650;font-size:19px}
+/* flow */
+.flow{margin-top:48px;display:grid;gap:18px}
+.frow{display:grid;grid-template-columns:130px repeat(4,1fr);gap:14px;align-items:stretch}
+.frow .lab{display:flex;align-items:center;font-weight:700;color:#fff}
+.node{border-radius:12px;padding:16px 14px;font-size:15px;font-weight:600;text-align:center;display:flex;align-items:center;justify-content:center;position:relative;min-height:74px}
+.node.l{background:var(--ink3);border:1px solid var(--line)}
+.node.s{background:var(--teal-d);color:#fff}
+.node.p{background:transparent;border:2px solid var(--amber)}
+.node:not(:last-child)::after{content:"→";position:absolute;right:-13px;top:50%;transform:translateY(-50%);color:var(--mute);font-size:16px;z-index:2}
+.legend{display:flex;gap:26px;margin-top:22px;font-size:14px;color:var(--mute);flex-wrap:wrap}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:8px}
+/* capabilities */
+.caps{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:44px}
+.cap{background:var(--ink2);border:1px solid var(--line);border-radius:16px;padding:24px}
+.cap h3{font-size:19px;margin-bottom:8px}
+.cap p{font-size:15px;color:#C9D4DD}
+.cap .ico{width:42px;height:42px;border-radius:50%;background:var(--teal-d);display:flex;align-items:center;justify-content:center;margin-bottom:16px;font-size:20px}
+.cap .ico.r{background:#b8394b}
+/* proof */
+.shots{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:44px}
+.shot{background:var(--ink);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.shot img{display:block;width:100%;height:auto}
+.shot p{padding:18px 22px;font-size:15px;color:#C9D4DD}
+.caveat{margin-top:26px;color:var(--mute);font-style:italic;font-size:16px}
+table{width:100%;border-collapse:collapse;margin-top:40px;font-size:16px}
+th{background:var(--ink3);color:#fff;text-align:left;padding:14px 18px;font-weight:650}
+td{padding:16px 18px;border-top:1px solid var(--line);vertical-align:top;color:#D5DEE6}
+td:first-child{font-weight:650;color:#fff;white-space:nowrap}
+/* numbers */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:44px}
+.stat{background:var(--ink2);border:1px solid var(--line);border-radius:16px;padding:26px}
+.stat b{display:block;font:700 54px Georgia,serif;color:var(--teal);line-height:1}
+.stat span{display:block;margin-top:12px;color:#C9D4DD;font-size:15px}
+.small{font-size:14px;color:var(--mute);margin-top:22px;max-width:820px}
+/* crops */
+.crops{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:44px}
+.crop{border-radius:16px;padding:26px;background:var(--ink);border:1px solid var(--line)}
+.crop.lead{background:#fff;color:var(--ink)}
+.crop.lead h3{color:var(--ink)}
+.crop.lead p{color:#33414f}
+.crop .L{font:700 48px Georgia,serif;color:var(--teal);line-height:1}
+.crop.lead .L{color:var(--teal-d)}
+.crop h3{margin:14px 0 8px;font-size:19px}
+.crop p{font-size:15px;color:#C9D4DD}
+/* limits + run */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:44px}
+ul.clean{margin:16px 0 0;padding-left:20px;color:#D5DEE6}
+ul.clean li{margin:9px 0}
+pre{background:#0a1119;border:1px solid var(--line);border-radius:12px;padding:18px 20px;overflow:auto;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cfe3ee;margin:16px 0 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:#0a1119;border-radius:5px;padding:2px 6px}
+footer{border-top:1px solid var(--line);padding:44px 0 56px;color:var(--mute);font-size:15px}
+footer .wrap{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
+@media (max-width:900px){
+  .hero .grid,.three,.shots,.two{grid-template-columns:1fr}
+  .caps,.stats,.crops{grid-template-columns:1fr 1fr}
+  .frow{grid-template-columns:1fr}
+  .frow .lab{margin-top:8px}
+  .node:not(:last-child)::after{content:"↓";right:auto;left:50%;top:auto;bottom:-14px;transform:translateX(-50%)}
+  nav ul{display:none}
+  section{padding:68px 0}
+}
+@media (max-width:560px){.caps,.stats,.crops{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.pointer,.say{animation:none}.say:first-child{opacity:1}}
+html,body{overflow-x:hidden}
+.hero .grid>*,.two>*,.shots>*,.three>*{min-width:0}
+.tw{overflow-x:auto}
+.tw table{min-width:640px}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="#top"><img src="img/logo.png" alt="">Ishara</a>
+  <ul>
+    <li><a href="#problem">Problem</a></li>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#proof">Proof</a></li>
+    <li><a href="#run">Run it</a></li>
+    <li><a href="https://github.com/harshkas4na/ishara">GitHub</a></li>
+  </ul>
+</div></nav>
+
+<header class="hero" id="top"><div class="wrap grid">
+  <div>
+    <div class="eyebrow">ETHGlobal Mumbai · built solo on 0G</div>
+    <h1>A screen tutor you can verify.</h1>
+    <p class="lead">Ask about anything on your screen, out loud or typed. Ishara explains it, points at it, and walks you through it. Every answer comes from sealed models on 0G and leaves a receipt you can check yourself.</p>
+    <div class="cta">
+      <a class="btn" href="#proof">See the proof</a>
+      <a class="btn ghost" href="https://github.com/harshkas4na/ishara">View the code</a>
+    </div>
+    <div class="tags"><span class="tag">0G Physical AI</span><span class="tag">Build with 0G PC</span><span class="tag">Best CROPS App</span><span class="tag">MIT licence</span></div>
+  </div>
+  <div>
+    <div class="stage" aria-label="Illustration of Ishara pointing at the field you ask about">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <div class="body">
+        <h4>Verify &amp; Publish Contract Source Code</h4>
+        <div class="sub">Source code verification provides transparency.</div>
+        <div class="f"><label>Contract Address</label><div>0x…</div></div>
+        <div class="row2">
+          <div class="f"><label>Compiler Type</label><div>[Please select]</div></div>
+          <div class="f"><label>Compiler Version</label><div>[Please select]</div></div>
+        </div>
+        <div class="f"><label>Open Source License Type</label><div>No License (None)</div></div>
+        <span class="fake-btn">Verify and Publish</span>
+        <div class="pointer"></div>
+      </div>
+      <div class="bubble">
+        <span class="say"><b>“Where do I paste the contract address?”</b><br>It goes in the first field.</span>
+        <span class="say"><b>“Where is the compiler version?”</b><br>Here, in the second dropdown.</span>
+        <span class="say"><b>“Where is the license type?”</b><br>This one, below the compilers.</span>
+      </div>
+    </div>
+    <p class="ill">Illustration of the pointer. The real thing runs on your machine.</p>
+  </div>
+</div></header>
+
+<section id="problem" class="alt"><div class="wrap">
+  <div class="eyebrow">The problem</div>
+  <h2 style="margin-top:14px;max-width:760px">AI screen helpers run on blind trust.</h2>
+  <div class="three">
+    <div class="card"><h3>They see everything</h3><p>Page text, forms and open tabs go to a model you do not control.</p></div>
+    <div class="card"><h3>They sound sure when wrong</h3><p>A wrong pointer or a wrong click looks exactly like a right one.</p></div>
+    <div class="card"><h3>You cannot check who answered</h3><p>No proof of which model ran, or that the answer is the one it gave.</p></div>
+  </div>
+  <div class="strip">The question is not only “is it smart?” but “can I trust it with my screen?”</div>
+</div></section>
+
+<section id="focus"><div class="wrap">
+  <div class="eyebrow">What I built it around</div>
+  <h2 style="margin-top:14px;max-width:760px">Capability is the easy part. I spent the time on trust.</h2>
+  <div class="three">
+    <div class="card"><div class="num">1</div><h3>Verifiable</h3><p>Every answer leaves a receipt anyone can check, from the provider’s signature to a replayable, encrypted log.</p></div>
+    <div class="card"><div class="num">2</div><h3>Private</h3><p>Your voice becomes text on your laptop. Secrets are removed before anything leaves it. No audio and no screenshot is sent.</p></div>
+    <div class="card"><div class="num">3</div><h3>Willing to refuse</h3><p>If it cannot be sure, it asks or stops. It never guesses, and it never falls back to another model.</p></div>
+  </div>
+</div></section>
+
+<section id="how" class="alt"><div class="wrap">
+  <div class="eyebrow">How it works</div>
+  <h2 style="margin-top:14px;max-width:760px">A local helper, sealed models, public receipts.</h2>
+  <div class="flow">
+    <div class="frow"><div class="lab">1 · Ask</div>
+      <div class="node l">You speak or type</div><div class="node l">Speech to text, on device</div><div class="node l">Page read as text, secrets removed</div><div class="node l">Local helper</div></div>
+    <div class="frow"><div class="lab">2 · Answer</div>
+      <div class="node l">Local helper</div><div class="node s">0G Private Router, private mode</div><div class="node s">0GM-1.0 writes the answer</div><div class="node s">laya says yes or no to the pointer</div></div>
+    <div class="frow"><div class="lab">3 · Receipt</div>
+      <div class="node l">Answer plus signature</div><div class="node p">0G Storage: encrypted session log</div><div class="node p">Galileo contract: session root</div><div class="node p">Proof and replay pages</div></div>
+  </div>
+  <div class="legend"><span><i style="background:var(--ink3);border:1px solid var(--line)"></i>On your laptop</span><span><i style="background:var(--teal-d)"></i>Sealed on 0G</span><span><i style="border:2px solid var(--amber)"></i>Public: anyone can check</span></div>
+  <p class="small">The ring only moves if a second sealed model, laya, agrees with the first that this control is the one you meant. If 0G cannot be reached, Ishara says so and stops.</p>
+</div></section>
+
+<section id="does"><div class="wrap">
+  <div class="eyebrow">What it does</div>
+  <h2 style="margin-top:14px">Everything it can do today.</h2>
+  <div class="caps">
+    <div class="cap"><div class="ico">⌖</div><h3>Point</h3><p>A ring glides to the control you asked about.</p></div>
+    <div class="cap"><div class="ico">✎</div><h3>Explain</h3><p>Plain answers about what is on screen.</p></div>
+    <div class="cap"><div class="ico">①</div><h3>Walk through</h3><p>Step by step, with Next, Back and Stop.</p></div>
+    <div class="cap"><div class="ico">↺</div><h3>Follow-ups</h3><p>“Why?” and “and then?” keep the context.</p></div>
+    <div class="cap"><div class="ico">♪</div><h3>Voice in and out</h3><p>Push to talk, spoken answers, in English.</p></div>
+    <div class="cap"><div class="ico">▭</div><h3>Any Mac app</h3><p>Reads native apps, not only the browser.</p></div>
+    <div class="cap"><div class="ico">⚡</div><h3>Do it</h3><p>Search, fill forms, open apps, switch tabs, on your order.</p></div>
+    <div class="cap"><div class="ico r">⊘</div><h3>Refuse and say why</h3><p>Stops instead of guessing, out loud.</p></div>
+  </div>
+</div></section>
+
+<section id="proof" class="alt"><div class="wrap">
+  <div class="eyebrow">Proof</div>
+  <h2 style="margin-top:14px;max-width:760px">Open the receipts yourself.</h2>
+  <div class="shots">
+    <div class="shot"><img src="img/receipt.png" alt="The Ishara receipt page: a sealed 0G provider answered this request and its signature matches the key registered on-chain" loading="lazy"><p><b>Receipt.</b> The signer is recovered from the answer’s own signature and compared with the signer registered on-chain.</p></div>
+    <div class="shot"><img src="img/replay.png" alt="The Ishara replay page showing a verified session: fetched from 0G Storage, decrypted, root matches the Galileo contract" loading="lazy"><p><b>Replay.</b> The session log is fetched back from 0G Storage, decrypted, and its root is checked against the Galileo contract.</p></div>
+  </div>
+  <p class="caveat">Real pages from the running helper, from sessions recorded on 6 Nov 2026. A receipt proves a sealed provider signed this request. It does not prove the exact words.</p>
+  <div class="tw"><table>
+    <tr><th>0G piece</th><th>What it does in Ishara</th><th>Without it</th></tr>
+    <tr><td>Private Router</td><td>Every model call goes only to sealed providers, in private trust mode, and returns a request id.</td><td>A normal model API: nothing sealed, nothing to check.</td></tr>
+    <tr><td>0GM-1.0</td><td>Reads the page and writes the answer, sentence by sentence.</td><td>No sealed model for the answer.</td></tr>
+    <tr><td>laya</td><td>A second, independent model says yes or no to every pointer.</td><td>Nothing checks the first model.</td></tr>
+    <tr><td>0G Storage</td><td>Holds each session’s encrypted log, readable back by its root.</td><td>A log that lives on one laptop.</td></tr>
+    <tr><td>Galileo contract</td><td>Records the root of each log, so it cannot be swapped later. <code>0x40F8…64ac</code> on chain 16602.</td><td>Nothing to check a replay against.</td></tr>
+  </table></div>
+</div></section>
+
+<section id="numbers"><div class="wrap">
+  <div class="eyebrow">What we measured</div>
+  <h2 style="margin-top:14px">Numbers we can stand behind.</h2>
+  <div class="stats">
+    <div class="stat"><b>11/12</b><span>clear questions pointed at the right control</span></div>
+    <div class="stat"><b>0</b><span>wrong pointers on the same run</span></div>
+    <div class="stat"><b>6/6</b><span>vague questions asked back instead of guessed</span></div>
+    <div class="stat"><b>6/6</b><span>prompt-injection canaries held</span></div>
+  </div>
+  <p class="small">Mock verify page and saved pages, real 0G router, 6 Nov 2026. Not yet re-measured after the morning fixes: the point and walk-through classes of the larger eval, which scored 0 of 8 in its last full run. 491 unit tests pass, 2 skipped.</p>
+</div></section>
+
+<section id="crops" class="alt"><div class="wrap">
+  <div class="eyebrow">Best CROPS App</div>
+  <h2 style="margin-top:14px">Private in the lead.</h2>
+  <div class="crops">
+    <div class="crop"><div class="L">C</div><h3>Censorship resistant</h3><p>No server or account of ours. If 0G is down, Ishara is down, and says so.</p></div>
+    <div class="crop"><div class="L">O</div><h3>Open source</h3><p>MIT licence. Build and run it from the repository alone.</p></div>
+    <div class="crop lead"><div class="L">P</div><h3>Private</h3><p>Voice becomes text on your laptop. No audio and no screenshot leave it.</p></div>
+    <div class="crop"><div class="L">S</div><h3>Secure</h3><p>The 0G key lives only in the local helper. Secrets are stripped twice.</p></div>
+  </div>
+</div></section>
+
+<section id="limits"><div class="wrap">
+  <div class="eyebrow">Honest limits</div>
+  <h2 style="margin-top:14px">What we are not claiming.</h2>
+  <div class="two">
+    <div class="card">
+      <h3>Not claiming</h3>
+      <ul class="clean">
+        <li>Voice is mostly tested with synthetic speech so far.</li>
+        <li>The sealed models were down about three hours on 5 Nov, for every team. Ishara failed closed.</li>
+        <li>A receipt proves a sealed provider signed the request, not the exact words.</li>
+        <li>Agent mode is measured on test pages and a few real sites.</li>
+        <li>English only. Hindi and Hinglish were removed on 6 Nov.</li>
+        <li>Agent mode runs on your order without asking, including delete and send. That was a deliberate choice, and one setting brings approvals back.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Built with AI, openly</h3>
+      <p>Ishara was built with Claude Code under my direction, and Claude wrote most of the code. I reviewed the two files that carry the trust claims, <code>gate.ts</code> and <code>episode-log.ts</code>, line by line. The models inside the product are the 0G models above plus a local speech model and a local voice. Details are in <a href="https://github.com/harshkas4na/ishara/blob/main/AI_USE.md">AI_USE.md</a>.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="run" class="alt"><div class="wrap">
+  <div class="eyebrow">Run it</div>
+  <h2 style="margin-top:14px;max-width:760px">It runs on your machine, on purpose.</h2>
+  <p class="mute" style="margin-top:18px;max-width:760px">Ishara has no server of ours. A local helper talks straight to the 0G Router, and a Chrome extension draws the pointer. You need Node 24, Chrome, and a 0G Router key.</p>
+  <pre>git clone https://github.com/harshkas4na/ishara
+cd ishara &amp;&amp; npm install
+brew install whisper-cpp uv
+scripts/setup-voice.sh          # local voice, once
+npm run helper:desktop          # helper on http://127.0.0.1:7777
+
+# Chrome: chrome://extensions → Developer mode → Load unpacked → extension/
+# Then hold Option+Space on a page and ask where something is.</pre>
+  <div class="cta"><a class="btn" href="https://github.com/harshkas4na/ishara">Open the repository</a><a class="btn ghost" href="https://github.com/harshkas4na/ishara#how-this-uses-0g">How this uses 0G</a></div>
+</div></section>
+
+<footer><div class="wrap">
+  <div>Ishara · built solo at ETHGlobal Mumbai, 5 to 7 Nov 2026 · MIT licence</div>
+  <div><a href="https://github.com/harshkas4na/ishara">GitHub</a></div>
+</div></footer>
+
+</body>
+</html>
